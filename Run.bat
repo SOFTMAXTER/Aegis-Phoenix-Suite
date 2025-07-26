@@ -1,12 +1,4 @@
 @echo off
-:: ============================================================================
-:: == Lanzador de Aegis Phoenix Suite                                        ==
-:: ============================================================================
-:: == Este script verifica si se esta ejecutando como Administrador.         ==
-:: == Si no es asi, se reinicia a si mismo solicitando los privilegios.      ==
-:: == Una vez obtenidos, ejecuta el script principal de PowerShell.          ==
-:: ============================================================================
-
 :: 1. Verificar privilegios de Administrador
 >nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
 
