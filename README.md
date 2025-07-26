@@ -1,41 +1,33 @@
 Aegis Phoenix Suite v10.2 by SOFTMAXTER
-La Suite Definitiva para Proteger y Revitalizar tu Sistema Windows
-Aegis Phoenix Suite es una herramienta de PowerShell de nivel experto, disenada para usuarios que exigen el maximo control sobre su sistema operativo. Su nombre representa su doble proposito: Aegis (el escudo mitologico) para proteger, reparar y reforzar la seguridad de tu sistema; y Phoenix para revitalizar, limpiar y restaurar el rendimiento perdido, haciendo que tu PC renazca de sus cenizas.
-A traves de una interfaz de menus modular e intuitiva, la suite ofrece un control sin precedentes sobre Windows 11 y 10.
-![Imagen del menu de Aegis Phoenix Suite]
-(Aqui puedes insertar una captura de pantalla del menu principal del script)
-➤ Filosofia del Proyecto
-Este script fue creado con una idea central: centralizar docenas de optimizaciones, reparaciones y tweaks avanzados en una sola herramienta segura y facil de usar. En lugar de buscar comandos y editar el registro manualmente, Aegis Phoenix Suite te guia a traves de cada proceso, explicando cada accion y poniendo el poder en tus manos.
-➤ Caracteristicas Detalladas
-La suite esta organizada en modulos logicos para una navegacion clara y eficiente.
-🛡️ Modulo de Optimizacion y Limpieza
-Este modulo se enfoca en mejorar la velocidad y liberar espacio en disco.
-Desactivar Servicios Innecesarios (Estandar y Avanzado): Libera memoria RAM y reduce la carga del CPU al desactivar de forma segura una lista curada de servicios que la mayoria de los usuarios no necesita, con opciones avanzadas para deshabilitar funciones especificas como el Escritorio Remoto.
-Modulo de Limpieza Profunda: Un submenú completo para elegir el nivel de limpieza, desde una limpieza rapida de archivos temporales hasta una limpieza exhaustiva que incluye la Papelera, cachés de miniaturas, informes de error, e incluso cachés avanzadas de DirectX y archivos de Optimizacion de Entrega.
-Eliminar Apps Preinstaladas (Dinamico): El sistema escanea tu PC en tiempo real para encontrar bloatware de Microsoft. Utiliza una lista de seguridad interna para proteger apps esenciales y te presenta una lista segura y personalizada para que elijas exactamente que eliminar.
-🛠️ Modulo de Mantenimiento y Reparacion
-Herramientas para solucionar problemas y mantener la salud del sistema a largo plazo.
-Verificar y Reparar Archivos del Sistema: Ejecuta las herramientas mas potentes de Windows (SFC /scannow y DISM) para encontrar y corregir archivos corruptos que causan inestabilidad, errores y pantallas azules.
-Limpiar Caches de Sistema: Resuelve problemas de conexion a internet (limpiando la cache de DNS) y errores con la Tienda Windows (reseteando su cache).
-Optimizar Unidades: Mantiene tus discos en optimo estado ejecutando Desfragmentacion en HDDs y el comando TRIM en SSDs para mejorar la velocidad y durabilidad.
-Generar Reporte de Salud del Sistema: Crea un reporte de energia detallado en formato HTML para diagnosticar problemas de bateria y consumo excesivo de energia.
-🚀 Modulo de Herramientas Avanzadas
-Un conjunto de utilidades de nivel experto para un control total.
-Tweaks de Sistema y Rendimiento: Ajustes finos para gaming (desactivar VBS, aceleracion de raton), productividad (menus contextuales mejorados) y comportamiento del sistema, incluyendo la deshabilitacion definitiva de Copilot a nivel de sistema.
-Inventario y Reportes: Genera un reporte .txt completo con el hardware, software y configuracion de red de tu equipo.
-Gestion de Drivers: Incluye la funcion critica de crear una copia de seguridad completa de todos los drivers, esencial para reinstalar Windows sin problemas.
-Gestion de Logs y Tareas: Herramientas para administradores que permiten limpiar los registros de eventos y analizar tareas programadas.
-Gestion de Software (Winget): Actualiza todo tu software obsoleto con un solo comando o instala tus programas favoritos en masa desde un archivo de texto.
-Refuerzo de Seguridad (Hardening): Aplica configuraciones de seguridad recomendadas, como activar la proteccion contra Ransomware y deshabilitar protocolos de red inseguros.
-Personalizacion de UI: Modifica aspectos clave de la interfaz de Windows 11.
-Privacidad: Reduce la cantidad de datos de telemetria que tu sistema envia a Microsoft.
-✅ Compatibilidad con Windows 10
-Aunque la suite fue disenada con Windows 11 en mente, la mayoria de sus funcionalidades son 100% compatibles con Windows 10 (versiones 1909 y posteriores), con excepcion de algunas opciones de personalizacion de UI especificas de Windows 11.
-💾 Instalacion y Uso
-Haz clic en el boton verde < > Code en la parte superior de esta pagina y selecciona Download ZIP.
-Extrae el contenido del archivo .zip.
+Aegis Phoenix Suite es un completo script de PowerShell disenado para simplificar la administracion, optimizacion y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de DISM, directivas de registro, PowerShell y otras herramientas del sistema en una interfaz de menus modular, interactiva y facil de usar.
+
+Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente y controlada.
+
+Caracteristicas Principales
+Interfaz Modular Guiada por Menus: Todas las funciones estan organizadas en categorias y submenus claros para una navegacion intuitiva.
+
+Autoelevacion de Privilegios: El lanzador (Lanzador.bat) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
+
+Deteccion Dinamica de Bloatware: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft no esenciales, las filtra con una lista de seguridad para proteger componentes criticos y presenta una lista segura y personalizada para su eliminacion.
+
+Gestion Integral del Sistema: Abarca desde la limpieza de archivos temporales hasta la gestion de drivers, refuerzo de seguridad y personalizacion de la interfaz.
+
+Descripciones Integradas: Cada opcion del menu incluye una breve explicacion de su proposito, haciendo la herramienta accesible para usuarios de distintos niveles.
+
+Generacion de Reportes: Crea informes detallados sobre el inventario del sistema (hardware/software) y el estado de salud (energia), guardandolos en carpetas organizadas.
+
+Requisitos
+Sistema Operativo Windows 10 (v1909+) o Windows 11.
+
+Privilegios de Administrador para ejecutar el script.
+
+Modo de Uso
+Descarga el repositorio como un archivo .zip y extraelo.
+
 IMPORTANTE: Renombra el archivo de script dentro de la carpeta SCRIPT a AegisPhoenixSuite.ps1.
+
 Asegurate de que la estructura de carpetas sea la siguiente:
+
 TuCarpetaPrincipal/
 │
 ├── Lanzador.bat
@@ -44,12 +36,109 @@ TuCarpetaPrincipal/
     │
     └── AegisPhoenixSuite.ps1
 
+Haz doble clic en Lanzador.bat. El script validara los permisos y se iniciara.
 
-Para iniciar la suite, simplemente haz doble clic en el archivo Lanzador.bat.
+Sigue las instrucciones en pantalla, seleccionando las opciones de los menus.
 
-⚠️ Advertencia
-Este es un script potente disenado para realizar cambios significativos en el sistema. Aunque ha sido probado, el autor no se hace responsable de cualquier problema que pueda surgir.
-Se recomienda encarecidamente utilizar la Opcion [1] "Crear Punto de Restauracion" antes de aplicar cualquier otra optimizacion.
+Explicacion Detallada de los Menus
+Menu Principal
+Al iniciar, se presentan las categorias principales de la suite, disenadas para un acceso rapido y logico.
 
-📄 Licencia
-Este proyecto esta bajo la Licencia MIT. Consulta el archivo LICENSE para mas detalles.
+1. Crear Punto de Restauracion: La accion mas importante antes de realizar cambios. Utiliza el cmdlet Checkpoint-Computer para crear un punto de restauracion del sistema.
+
+2. Modulo de Optimizacion y Limpieza: Accede al submenú con herramientas para mejorar el rendimiento y liberar espacio en disco.
+
+3. Modulo de Mantenimiento y Reparacion: Contiene utilidades para diagnosticar y reparar problemas del sistema operativo.
+
+4. Herramientas Avanzadas: Abre un menu que agrupa todos los modulos de nivel experto para un control total.
+
+2. Modulo de Optimizacion y Limpieza
+1. Desactivar Servicios Innecesarios (Estandar): Deshabilita una lista curada de servicios (Fax, PrintSpooler, RemoteRegistry, SysMain, etc.) que no son criticos para la mayoria de los usuarios, liberando memoria RAM.
+
+2. Desactivar Servicios Opcionales (Avanzado): Permite desactivar servicios especificos como TermService (Escritorio Remoto) y WMPNetworkSvc (Uso Compartido de Red de WMP) si no utilizas estas funciones.
+
+3. Modulo de Limpieza Profunda: Abre un submenú con tres niveles de limpieza:
+
+Estandar: Elimina archivos de las carpetas temporales de Windows y del usuario.
+
+Profunda: Realiza la limpieza estandar y ademas vacia la Papelera de Reciclaje, la cache de miniaturas y los informes de error de Windows.
+
+Avanzada: Elimina la cache de sombreadores de DirectX (util para solucionar problemas en juegos) y los archivos de Optimizacion de Entrega.
+
+4. Eliminar Apps Preinstaladas (Dinamico):
+
+Ejecuta Get-AppxPackage para escanear todas las aplicaciones de Microsoft.
+
+Filtra la lista usando una "lista negra" interna para proteger apps esenciales (Store, Calculadora, Fotos, etc.).
+
+Presenta un menu interactivo donde el usuario selecciona que aplicaciones eliminar.
+
+Ejecuta Remove-AppxPackage y Remove-AppxProvisionedPackage para una eliminacion completa.
+
+3. Modulo de Mantenimiento y Reparacion
+1. Verificar y Reparar Archivos del Sistema: Ejecuta sfc /scannow y DISM /Online /Cleanup-Image /RestoreHealth para reparar la integridad de los archivos del sistema.
+
+2. Limpiar Caches de Sistema: Ejecuta ipconfig /flushdns para resolver problemas de conexion y wsreset.exe para limpiar la cache de la Tienda Windows.
+
+3. Optimizar Unidades: Ejecuta Optimize-Volume -DriveLetter C que aplica TRIM en SSDs y desfragmentacion en HDDs.
+
+4. Generar Reporte de Salud del Sistema: Utiliza powercfg /energy para generar un informe HTML detallado sobre la eficiencia energetica y posibles problemas, y lo abre automaticamente.
+
+4. Herramientas Avanzadas
+Este menu da acceso a todos los modulos de nivel experto.
+
+→ T. Tweaks de Sistema y Rendimiento
+1. Desactivar Aceleracion del Raton: Modifica claves en HKCU:\Control Panel\Mouse para un movimiento 1:1.
+
+2. Desactivar VBS: Ejecuta bcdedit /set hypervisorlaunchtype off para mejorar el rendimiento en juegos.
+
+3. Aumentar prioridad de CPU: Modifica Win32PrioritySeparation en el registro para dar mas recursos a la ventana activa.
+
+4-6. Anadir Menus Contextuales: Anade claves al registro para tener atajos a "Abrir en Terminal Windows", "Copiar como Ruta de Acceso" y "Matar Tareas que no Responden".
+
+7. Desactivar Almacenamiento Reservado: Ejecuta dism /Online /Set-ReservedStorageState /State:Disabled.
+
+8. Habilitar Mensajes de Estado Detallados: Activa VerboseStatus en el registro para un diagnostico de arranque/apagado mas claro.
+
+9. Deshabilitar Copilot: Aplica una directiva en HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot para desactivar Copilot a nivel de sistema.
+
+→ I. Inventario y Reportes del Sistema
+Utiliza Get-ComputerInfo, Get-WmiObject, Get-ItemProperty y Get-NetAdapter para recopilar informacion detallada de hardware, software y red, y la guarda en un archivo .txt en la carpeta AegisPhoenixSuite_Reportes.
+
+→ D. Gestion de Drivers
+1. Copia de Seguridad de Drivers: Ejecuta Export-WindowsDriver -Online para guardar todos los drivers de terceros en una carpeta elegida por el usuario.
+
+2. Listar drivers de terceros: Usa Get-WindowsDriver -Online y filtra los que no son de Microsoft.
+
+→ L. Gestion de Logs y Tareas Programadas
+1. Limpiar Registros de Eventos: Ejecuta Clear-EventLog en los registros de Aplicacion, Seguridad, Sistema y Setup.
+
+2. Analizar Tareas Programadas: Usa Get-ScheduledTask para listar tareas de terceros activas.
+
+→ W. Gestion de Software (Winget)
+1. Actualizar TODO el software: Ejecuta winget upgrade --all de forma silenciosa.
+
+2. Instalar software en masa: Lee un archivo de texto proporcionado por el usuario y ejecuta winget install para cada programa listado.
+
+→ H. Refuerzo de Seguridad (Hardening)
+1. Activar Proteccion contra Ransomware: Habilita el Acceso Controlado a Carpetas de Microsoft Defender.
+
+2. Deshabilitar protocolo inseguro SMBv1: Usa Disable-WindowsOptionalFeature para eliminar este componente vulnerable.
+
+3. Deshabilitar PowerShell v2.0: Usa Disable-WindowsOptionalFeature para eliminar esta version antigua y menos segura.
+
+→ U. Personalizacion Avanzada de UI
+Modifica claves del registro para cambiar la alineacion de la barra de tareas de Windows 11 y para restaurar el explorador de archivos clasico con cinta de opciones.
+
+→ P. Privacidad
+Modifica diversas claves del registro y directivas para desactivar el ID de publicidad, el seguimiento de ubicacion, las sugerencias de contenido y la recoleccion de datos de escritura.
+
+Notas Importantes
+COPIA DE SEGURIDAD: Es altamente recomendable realizar una copia de seguridad de tus archivos importantes antes de utilizar las funciones de este script.
+
+CONOCIMIENTOS TÉCNICOS: Se recomienda tener conocimientos basicos sobre el sistema operativo Windows y las implicaciones de los cambios a realizar.
+
+Descargo de Responsabilidad
+Este script realiza operaciones avanzadas que modifican el sistema. El autor, SOFTMAXTER, no se hace responsable de la perdida de datos o danos que puedan ocurrir en tu sistema.
+
+Se recomienda encarecidamente crear una copia de seguridad y utilizar la funcion "Crear Punto de Restauracion" antes de aplicar cambios importantes.
