@@ -7,7 +7,7 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
 ## Caracteristicas Principales
 
 * **Interfaz Modular Guiada por Menus**: Todas las funciones estan organizadas en categorias y submenus claros para una navegacion intuitiva.
-* **Autoelevacion de Privilegios**: El lanzador (`Lanzador.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
+* **Autoelevacion de Privilegios**: El lanzador (`Run.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
 * **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft no esenciales, las filtra con una lista de seguridad para proteger componentes criticos y presenta una lista segura y personalizada para su eliminacion.
 * **Gestion Integral del Sistema**: Abarca desde la limpieza de archivos temporales hasta la gestion de drivers, refuerzo de seguridad y personalizacion de la interfaz.
 * **Descripciones Integradas**: Cada opcion del menu incluye una breve explicacion de su proposito, haciendo la herramienta accesible para usuarios de distintos niveles.
@@ -30,13 +30,13 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
     ```
     TuCarpetaPrincipal/
     │
-    ├── Lanzador.bat
+    ├── Run.bat
     │
     └── SCRIPT/
         │
         └── AegisPhoenixSuite.ps1
     ```
-4.  Haz doble clic en **`Lanzador.bat`**. El script validara los permisos y se iniciara.
+4.  Haz doble clic en **`Run.bat`**. El script validara los permisos y se iniciara.
 5.  Sigue las instrucciones en pantalla, seleccionando las opciones de los menus.
 
 ---
