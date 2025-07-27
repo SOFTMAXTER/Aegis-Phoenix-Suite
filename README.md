@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v1.0 by SOFTMAXTER
+# Aegis Phoenix Suite v1.1 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
