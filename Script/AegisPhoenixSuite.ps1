@@ -157,9 +157,6 @@ function Manage-ScheduledTasks {
         }
     }
 }
-function Show-SoftwareMenu {
-    $softwareChoice = ''; do { Clear-Host; Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Buscar y aplicar actualizaciones de software (Interactivo)"; Write-Host "   [2] Instalar software en masa desde un archivo de texto"; Write-Host ""; Write-Host "   [V] Volver..." -ForegroundColor Red; $softwareChoice = Read-Host "Selecciona una opcion"; switch ($softwareChoice.ToUpper()) { '1' { Manage-SoftwareUpdates } '2' { Install-SoftwareFromList } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($softwareChoice.ToUpper() -ne 'V')
-}
 function Manage-SoftwareUpdates {
     Write-Host "`n[+] Buscando actualizaciones de software disponibles..." -ForegroundColor Yellow
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Write-Host ""; Write-Error "El comando 'winget' no esta instalado o no se encuentra en la ruta del sistema."; Write-Host "Winget es parte del 'Instalador de aplicacion' de la Tienda de Microsoft." -ForegroundColor Gray; Read-Host "`nPresiona Enter para volver..."; return }
@@ -167,7 +164,7 @@ function Manage-SoftwareUpdates {
         $upgradableOutput = winget upgrade --accept-source-agreements
         if ($LASTEXITCODE -ne 0) { throw "Winget devolvio un error." }
     } catch { Write-Host ""; Write-Error "Ocurrio un error al ejecutar Winget. Puede que sus fuentes esten corruptas o haya un problema de red."; Write-Host "Intenta ejecutar 'winget source reset --force' en una terminal para solucionarlo." -ForegroundColor Gray; Read-Host "`nPresiona Enter para volver..."; return }
-    $lines = $upgradableOutput | Out-String | Split-String -Separator "`n"; $apps = @(); $startProcessing = $false
+    $lines = ($upgradableOutput | Out-String) -split "\r?\n"; $apps = @(); $startProcessing = $false
     foreach ($line in $lines) {
         if ($startProcessing -and $line -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)\s{2,}(?<Source>\S+)') { $apps += [PSCustomObject]@{ Name = $matches.Name.Trim(); Id = $matches.Id.Trim(); Selected = $false } }
         if ($line -like '----*') { $startProcessing = $true }
