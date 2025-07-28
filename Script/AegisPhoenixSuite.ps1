@@ -25,7 +25,7 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 function Create-RestorePoint {
     Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v2.0_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "AegisPhoenixSuite_v11.4_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
     } catch { Write-Error "No se pudo crear el punto de restauracion. Error: $_" }
     Read-Host "`nPresiona Enter para volver..."
@@ -59,7 +59,6 @@ function Show-BloatwareMenu {
 
 function Manage-Bloatware {
     param([string]$Type)
-    
     if ($Type -eq 'Microsoft') {
         Write-Host "`n[+] Escaneando aplicaciones de Microsoft no esenciales..." -ForegroundColor Yellow
         $essentialAppsBlocklist = @("Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs", "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension", "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal", "Microsoft.Paint", "Microsoft.WindowsNotepad")
@@ -69,7 +68,6 @@ function Manage-Bloatware {
         Write-Host "`n[+] Escaneando aplicaciones de terceros..." -ForegroundColor Yellow
         $apps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false } | ForEach-Object { [PSCustomObject]@{Name=$_.Name; PackageName=$_.PackageFullName; Selected=$false} }
     }
-
     if ($apps.Count -eq 0) { Write-Host "`n[OK] No se encontro bloatware de este tipo para eliminar." -ForegroundColor Green; Read-Host "`nPresiona Enter para volver..."; return }
     $choice = ''; while ($choice -ne 'E' -and $choice -ne 'V') { Clear-Host; Write-Host "Eliminacion Selectiva de Bloatware ($Type)" -ForegroundColor Cyan; Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."; for ($i = 0; $i -lt $apps.Count; $i++) { $status = if ($apps[$i].Selected) { "[X]" } else { "[ ]" }; Write-Host ("   [{0,2}] {1} {2}" -f ($i+1), $status, $apps[$i].Name) }; Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [E] Eliminar seleccionados"; Write-Host "   [T] Seleccionar Todos"; Write-Host "   [N] No seleccionar ninguno"; Write-Host "   [V] Volver..." -ForegroundColor Red; $choice = (Read-Host "`nSelecciona una opcion").ToUpper(); if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $apps.Count) { $index = [int]$choice - 1; $apps[$index].Selected = -not $apps[$index].Selected } elseif ($choice -eq 'T') { $apps.ForEach({$_.Selected = $true}) } elseif ($choice -eq 'N') { $apps.ForEach({$_.Selected = $false}) } }; if ($choice -eq 'E') { $appsToUninstall = $apps | Where-Object { $_.Selected }; if ($appsToUninstall.Count -eq 0) { Write-Host "`nNo se selecciono ninguna aplicacion." -ForegroundColor Yellow } else { Write-Host "`n[+] Eliminando aplicaciones seleccionadas..." -ForegroundColor Yellow; foreach ($app in $appsToUninstall) { Write-Host " - Eliminando $($app.Name)..."; Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction SilentlyContinue; $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }; if ($provisionedPackage) { foreach ($pkg in $provisionedPackage) { Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor Gray; Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction SilentlyContinue } } }; Write-Host "`n[OK] Proceso completado." -ForegroundColor Green } }; Read-Host "`nPresiona Enter para volver..."
 }
@@ -135,7 +133,7 @@ function Manage-ScheduledTasks {
         for ($i = 0; $i -lt $script:tasks.Count; $i++) {
             $status = if ($script:tasks[$i].Selected) { "[X]" } else { "[ ]" }
             $stateColor = if ($script:tasks[$i].State -eq 'Ready' -or $script:tasks[$i].State -eq 'Running') { "Green" } else { "Red" }
-            Write-Host ("   [{0,2}] {1} {2,-40} {3}" -f ($i+1), $status, $script:tasks[$i].Name) -NoNewline
+            Write-Host ("   [{0,2}] {1} {2,-40}" -f ($i+1), $status, $script:tasks[$i].Name) -NoNewline
             Write-Host ("[{0}]" -f $script:tasks[$i].State) -ForegroundColor $stateColor
         }
         Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [D] Deshabilitar Seleccionadas"; Write-Host "   [H] Habilitar Seleccionadas"; Write-Host "   [T] Seleccionar Todas"; Write-Host "   [N] No seleccionar ninguna"; Write-Host "   [V] Volver..." -ForegroundColor Red
@@ -164,17 +162,19 @@ function Show-SoftwareMenu {
 }
 function Manage-SoftwareUpdates {
     Write-Host "`n[+] Buscando actualizaciones de software disponibles..." -ForegroundColor Yellow
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Write-Host ""; Write-Error "El comando 'winget' no esta instalado o no se encuentra en la ruta del sistema."; Write-Host "Winget es parte del 'Instalador de aplicacion' de la Tienda de Microsoft." -ForegroundColor Gray; Read-Host "`nPresiona Enter para volver..."; return }
     try {
-        $upgradableOutput = winget upgrade
-        $lines = $upgradableOutput | Out-String | Split-String -Separator "`n"
-        $apps = @(); $startProcessing = $false
-        foreach ($line in $lines) {
-            if ($startProcessing -and $line -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)\s{2,}(?<Source>\S+)') { $apps += [PSCustomObject]@{ Name = $matches.Name.Trim(); Id = $matches.Id.Trim(); Selected = $false } }
-            if ($line -like '----*') { $startProcessing = $true }
-        }
-        if ($apps.Count -eq 0) { Write-Host "`n[OK] ¡Todo tu software esta actualizado!" -ForegroundColor Green; Read-Host "`nPresiona Enter para continuar..."; return }
-        $choice = ''; while ($choice -ne 'I' -and $choice -ne 'V') { Clear-Host; Write-Host "Actualizacion Selectiva de Software" -ForegroundColor Cyan; Write-Host "Se encontraron $($apps.Count) actualizaciones. Escribe el numero para marcar/desmarcar."; for ($i = 0; $i -lt $apps.Count; $i++) { $status = if ($apps[$i].Selected) { "[X]" } else { "[ ]" }; Write-Host ("   [{0,2}] {1} {2}" -f ($i+1), $status, $apps[$i].Name) }; Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [I] Instalar Seleccionadas"; Write-Host "   [T] Seleccionar Todas"; Write-Host "   [N] No seleccionar ninguna"; Write-Host "   [V] Volver..." -ForegroundColor Red; $choice = (Read-Host "`nSelecciona una opcion").ToUpper(); if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $apps.Count) { $index = [int]$choice - 1; $apps[$index].Selected = -not $apps[$index].Selected } elseif ($choice -eq 'T') { $apps.ForEach({$_.Selected = $true}) } elseif ($choice -eq 'N') { $apps.ForEach({$_.Selected = $false}) } }; if ($choice -eq 'I') { $appsToUpgrade = $apps | Where-Object { $_.Selected }; if ($appsToUpgrade.Count -eq 0) { Write-Host "`nNo se selecciono ningun programa para actualizar." -ForegroundColor Yellow } else { Write-Host "`n[+] Actualizando software seleccionado..." -ForegroundColor Yellow; foreach ($app in $appsToUpgrade) { Write-Host " - Actualizando $($app.Name)..."; try { winget upgrade --id $app.Id --silent --accept-package-agreements --accept-source-agreements } catch { Write-Warning "No se pudo actualizar '$($app.Name)'." } }; Write-Host "`n[OK] Proceso de actualizacion completado." -ForegroundColor Green } }
-    } catch { Write-Error "Ocurrio un error con Winget." }; Read-Host "`nPresiona Enter para volver..."
+        $upgradableOutput = winget upgrade --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) { throw "Winget devolvio un error." }
+    } catch { Write-Host ""; Write-Error "Ocurrio un error al ejecutar Winget. Puede que sus fuentes esten corruptas o haya un problema de red."; Write-Host "Intenta ejecutar 'winget source reset --force' en una terminal para solucionarlo." -ForegroundColor Gray; Read-Host "`nPresiona Enter para volver..."; return }
+    $lines = $upgradableOutput | Out-String | Split-String -Separator "`n"; $apps = @(); $startProcessing = $false
+    foreach ($line in $lines) {
+        if ($startProcessing -and $line -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)\s{2,}(?<Source>\S+)') { $apps += [PSCustomObject]@{ Name = $matches.Name.Trim(); Id = $matches.Id.Trim(); Selected = $false } }
+        if ($line -like '----*') { $startProcessing = $true }
+    }
+    if ($apps.Count -eq 0) { Write-Host "`n[OK] ¡Todo tu software esta actualizado!" -ForegroundColor Green; Read-Host "`nPresiona Enter para continuar..."; return }
+    $choice = ''; while ($choice -ne 'I' -and $choice -ne 'V') { Clear-Host; Write-Host "Actualizacion Selectiva de Software" -ForegroundColor Cyan; Write-Host "Se encontraron $($apps.Count) actualizaciones. Escribe el numero para marcar/desmarcar."; for ($i = 0; $i -lt $apps.Count; $i++) { $status = if ($apps[$i].Selected) { "[X]" } else { "[ ]" }; Write-Host ("   [{0,2}] {1} {2}" -f ($i+1), $status, $apps[$i].Name) }; Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [I] Instalar Seleccionadas"; Write-Host "   [T] Seleccionar Todas"; Write-Host "   [N] No seleccionar ninguna"; Write-Host "   [V] Volver..." -ForegroundColor Red; $choice = (Read-Host "`nSelecciona una opcion").ToUpper(); if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $apps.Count) { $index = [int]$choice - 1; $apps[$index].Selected = -not $apps[$index].Selected } elseif ($choice -eq 'T') { $apps.ForEach({$_.Selected = $true}) } elseif ($choice -eq 'N') { $apps.ForEach({$_.Selected = $false}) } }; if ($choice -eq 'I') { $appsToUpgrade = $apps | Where-Object { $_.Selected }; if ($appsToUpgrade.Count -eq 0) { Write-Host "`nNo se selecciono ningun programa para actualizar." -ForegroundColor Yellow } else { Write-Host "`n[+] Actualizando software seleccionado..." -ForegroundColor Yellow; foreach ($app in $appsToUpgrade) { Write-Host " - Actualizando $($app.Name)..."; try { winget upgrade --id $app.Id --silent --accept-package-agreements --accept-source-agreements } catch { Write-Warning "No se pudo actualizar '$($app.Name)'." } }; Write-Host "`n[OK] Proceso de actualizacion completado." -ForegroundColor Green } }
+    Read-Host "`nPresiona Enter para volver..."
 }
 function Install-SoftwareFromList {
     $filePath = Read-Host "Introduce la ruta completa al archivo .txt"; if (Test-Path $filePath) { $programs = Get-Content $filePath; foreach ($program in $programs) { Write-Host "`n[+] Instalando '$program'..." -ForegroundColor Yellow; winget install --id $program --silent --accept-package-agreements --accept-source-agreements }; Write-Host "[OK] Proceso completado." -ForegroundColor Green } else { Write-Error "Archivo no encontrado." }; Read-Host "`nPresiona Enter para volver..."
