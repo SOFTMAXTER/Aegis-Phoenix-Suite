@@ -11,9 +11,9 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
 ## Caracteristicas Principales
 
 * **Interfaz Modular Guiada por Menus**: Todas las funciones estan organizadas en categorias y submenus claros para una navegacion intuitiva.
-* **Autoelevacion de Privilegios**: El lanzador (`Run.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
+* **Autoelevacion de Privilegios**: El lanzador (`Lanzador.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
 * **Logica de Verificacion Inteligente**: Antes de aplicar un cambio, el script comprueba el estado actual del sistema para evitar acciones redundantes y proporcionar un feedback preciso.
-* **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft no esenciales y presenta una lista segura y personalizada para su eliminacion.
+* **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft y de terceros, presentando listas seguras y personalizadas para su eliminacion.
 * **Modulo de Restauracion**: Permite revertir de forma segura y selectiva la mayoria de los cambios aplicados por la suite.
 * **Gestion Interactiva**: Ofrece control total para gestionar tareas programadas y actualizaciones de software.
 
@@ -29,18 +29,18 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
 ## Modo de Uso
 
 1.  Descarga el repositorio como un archivo `.zip` y extraelo.
-2.  **IMPORTANTE:** Renombra el archivo de script dentro de la carpeta `Script` a `AegisPhoenixSuite.ps1`.
+2.  **IMPORTANTE:** Renombra el archivo de script dentro de la carpeta `SCRIPT` a `AegisPhoenixSuite.ps1`.
 3.  Asegurate de que la estructura de carpetas sea la siguiente:
     ```
     TuCarpetaPrincipal/
     │
-    ├── Run.bat
+    ├── Lanzador.bat
     │
-    └── Script/
+    └── SCRIPT/
         │
         └── AegisPhoenixSuite.ps1
     ```
-4.  Haz doble clic en **`Run.bat`**. El script validara los permisos y se iniciara.
+4.  Haz doble clic en **`Lanzador.bat`**. El script validara los permisos y se iniciara.
 5.  Sigue las instrucciones en pantalla, seleccionando las opciones de los menus.
 
 ---
@@ -62,7 +62,7 @@ Al iniciar, se presentan las categorias principales de la suite.
 * `1. Desactivar Servicios Innecesarios (Estandar)`: Deshabilita una lista curada de servicios no criticos.
 * `2. Desactivar Servicios Opcionales (Avanzado)`: Permite desactivar servicios especificos como el de Escritorio Remoto.
 * `3. Modulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza (Estandar, Profunda y Avanzada).
-* `4. Eliminar Apps Preinstaladas (Dinamico)`: Escanea, filtra y presenta un menu interactivo para eliminar bloatware de forma segura.
+* `4. Eliminar Apps Preinstaladas (Dinamico)`: Abre un submenú para elegir entre eliminar bloatware de Microsoft o de terceros (fabricantes de PC). Escanea, filtra y presenta un menu interactivo para una eliminacion segura.
 
 ### 3. Modulo de Mantenimiento y Reparacion
 
@@ -77,11 +77,12 @@ Este menu da acceso a todos los modulos de nivel experto.
 
 #### → L. Gestion de Logs y Tareas Programadas
 * `1. Limpiar Registros de Eventos`: Ejecuta `Clear-EventLog`.
-* `2. Gestionar Tareas Programadas de Terceros`: Abre un menu interactivo que lista las tareas de terceros, mostrando su estado (Habilitada/Deshabilitada). Permite seleccionar y cambiar el estado de multiples tareas a la vez.
+* `2. Gestionar Tareas Programadas de Terceros`: Abre un menu interactivo que lista las tareas de terceros, mostrando su estado y permitiendo habilitarlas o deshabilitarlas.
 
 #### → W. Gestion de Software (Winget)
-* `1. Buscar y aplicar actualizaciones de software (Interactivo)`: **¡Mejorado!** Ejecuta `winget upgrade`, analiza la salida y presenta una lista interactiva de las actualizaciones encontradas, permitiendo al usuario seleccionar cuales instalar.
+* `1. Buscar y aplicar actualizaciones (Interactivo)`: Ejecuta `winget upgrade`, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
 * `2. Instalar software en masa`: Lee un archivo de texto y ejecuta `winget install` para cada programa.
+* `3. Buscar e Instalar un software especifico`: Permite buscar un programa en el catalogo de Winget y seleccionarlo de una lista para instalarlo directamente.
 
 ### 5. Modulo de Restauracion
 * Permite revertir de forma selectiva los cambios realizados en Servicios, Tweaks, Seguridad y Privacidad a sus valores por defecto.
@@ -90,7 +91,7 @@ Este menu da acceso a todos los modulos de nivel experto.
 
 ## Como Contribuir
 
-¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar Aegis Phoenix Suite o quieres corregir un error, sigue estos pasos:
+¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar Aegis Phoenix Suite, quieres anadir una nueva funcionalidad o corregir un error, por favor sigue estos pasos:
 
 1.  Haz un **Fork** de este repositorio.
 2.  Crea una nueva rama para tu funcionalidad (`git checkout -b feature/NuevaFuncionalidadAsombrosa`).
@@ -105,3 +106,4 @@ Este menu da acceso a todos los modulos de nivel experto.
 Este script realiza operaciones avanzadas que modifican el sistema. El autor, **SOFTMAXTER**, no se hace responsable de la perdida de datos o danos que puedan ocurrir en tu sistema.
 
 **Se recomienda encarecidamente crear una copia de seguridad y utilizar la funcion "Crear Punto de Restauracion" antes de aplicar cambios importantes.**
+
