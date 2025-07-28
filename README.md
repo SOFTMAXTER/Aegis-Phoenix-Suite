@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v1.1 by SOFTMAXTER
+# Aegis Phoenix Suite v2.0 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -6,16 +6,16 @@
 
 **Aegis Phoenix Suite** es un completo script de PowerShell disenado para simplificar la administracion, optimizacion y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de `DISM`, directivas de registro, `PowerShell` y otras herramientas del sistema en una interfaz de menus modular, interactiva y facil de usar.
 
-Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente y controlada.
+Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente, controlada y reversible.
 
 ## Caracteristicas Principales
 
 * **Interfaz Modular Guiada por Menus**: Todas las funciones estan organizadas en categorias y submenus claros para una navegacion intuitiva.
 * **Autoelevacion de Privilegios**: El lanzador (`Run.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
-* **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft no esenciales, las filtra con una lista de seguridad para proteger componentes criticos y presenta una lista segura y personalizada para su eliminacion.
-* **Gestion Integral del Sistema**: Abarca desde la limpieza de archivos temporales hasta la gestion de drivers, refuerzo de seguridad y personalizacion de la interfaz.
-* **Descripciones Integradas**: Cada opcion del menu incluye una breve explicacion de su proposito, haciendo la herramienta accesible para usuarios de distintos niveles.
-* **Generacion de Reportes**: Crea informes detallados sobre el inventario del sistema (hardware/software) y el estado de salud (energia), guardandolos en carpetas organizadas.
+* **Logica de Verificacion Inteligente**: Antes de aplicar un cambio, el script comprueba el estado actual del sistema para evitar acciones redundantes y proporcionar un feedback preciso.
+* **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft no esenciales y presenta una lista segura y personalizada para su eliminacion.
+* **Modulo de Restauracion**: Permite revertir de forma segura y selectiva la mayoria de los cambios aplicados por la suite.
+* **Gestion Interactiva**: Ofrece control total para gestionar tareas programadas y actualizaciones de software.
 
 ---
 
@@ -29,14 +29,14 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
 ## Modo de Uso
 
 1.  Descarga el repositorio como un archivo `.zip` y extraelo.
-2.  **IMPORTANTE:** Renombra el archivo de script dentro de la carpeta `SCRIPT` a `AegisPhoenixSuite.ps1`.
+2.  **IMPORTANTE:** Renombra el archivo de script dentro de la carpeta `Script` a `AegisPhoenixSuite.ps1`.
 3.  Asegurate de que la estructura de carpetas sea la siguiente:
     ```
     TuCarpetaPrincipal/
     │
     ├── Run.bat
     │
-    └── SCRIPT/
+    └── Script/
         │
         └── AegisPhoenixSuite.ps1
     ```
@@ -49,87 +49,54 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
 
 ### Menu Principal
 
-Al iniciar, se presentan las categorias principales de la suite, disenadas para un acceso rapido y logico.
+Al iniciar, se presentan las categorias principales de la suite.
 
-* **1. Crear Punto de Restauracion**: La accion mas importante antes de realizar cambios. Utiliza el cmdlet `Checkpoint-Computer` para crear un punto de restauracion del sistema.
+* **1. Crear Punto de Restauracion**: Utiliza el cmdlet `Checkpoint-Computer` para crear un punto de restauracion del sistema.
 * **2. Modulo de Optimizacion y Limpieza**: Accede al submenú con herramientas para mejorar el rendimiento y liberar espacio en disco.
 * **3. Modulo de Mantenimiento y Reparacion**: Contiene utilidades para diagnosticar y reparar problemas del sistema operativo.
-* **4. Herramientas Avanzadas**: Abre un menu que agrupa todos los modulos de nivel experto para un control total.
+* **4. Herramientas Avanzadas**: Abre un menu que agrupa todos los modulos de nivel experto.
+* **5. Modulo de Restauracion**: Permite revertir los cambios aplicados por la suite.
 
 ### 2. Modulo de Optimizacion y Limpieza
 
-* `1. Desactivar Servicios Innecesarios (Estandar)`: Deshabilita una lista curada de servicios (Fax, PrintSpooler, RemoteRegistry, SysMain, etc.) que no son criticos para la mayoria de los usuarios, liberando memoria RAM.
-* `2. Desactivar Servicios Opcionales (Avanzado)`: Permite desactivar servicios especificos como `TermService` (Escritorio Remoto) y `WMPNetworkSvc` (Uso Compartido de Red de WMP) si no utilizas estas funciones.
-* `3. Modulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza:
-    * **Estandar**: Elimina archivos de las carpetas temporales de Windows y del usuario.
-    * **Profunda**: Realiza la limpieza estandar y ademas vacia la Papelera de Reciclaje, la cache de miniaturas y los informes de error de Windows.
-    * **Avanzada**: Elimina la cache de sombreadores de DirectX (util para solucionar problemas en juegos) y los archivos de Optimizacion de Entrega.
-* `4. Eliminar Apps Preinstaladas (Dinamico)`:
-    1.  Ejecuta `Get-AppxPackage` para escanear todas las aplicaciones de Microsoft.
-    2.  Filtra la lista usando una "lista negra" interna para proteger apps esenciales (Store, Calculadora, Fotos, etc.).
-    3.  Presenta un menu interactivo donde el usuario selecciona que aplicaciones eliminar.
-    4.  Ejecuta `Remove-AppxPackage` y `Remove-AppxProvisionedPackage` para una eliminacion completa.
+* `1. Desactivar Servicios Innecesarios (Estandar)`: Deshabilita una lista curada de servicios no criticos.
+* `2. Desactivar Servicios Opcionales (Avanzado)`: Permite desactivar servicios especificos como el de Escritorio Remoto.
+* `3. Modulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza (Estandar, Profunda y Avanzada).
+* `4. Eliminar Apps Preinstaladas (Dinamico)`: Escanea, filtra y presenta un menu interactivo para eliminar bloatware de forma segura.
 
 ### 3. Modulo de Mantenimiento y Reparacion
 
-* `1. Verificar y Reparar Archivos del Sistema`: Ejecuta `sfc /scannow` y `DISM /Online /Cleanup-Image /RestoreHealth` para reparar la integridad de los archivos del sistema.
-* `2. Limpiar Caches de Sistema`: Ejecuta `ipconfig /flushdns` para resolver problemas de conexion y `wsreset.exe` para limpiar la cache de la Tienda Windows.
-* `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C` que aplica TRIM en SSDs y desfragmentacion en HDDs.
-* `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML detallado sobre la eficiencia energetica y posibles problemas, y lo abre automaticamente.
+* `1. Verificar y Reparar Archivos del Sistema`: Ejecuta `sfc /scannow` y `DISM` de forma condicional para reparar la integridad del sistema.
+* `2. Limpiar Caches de Sistema`: Ejecuta `ipconfig /flushdns` y `wsreset.exe`.
+* `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C`.
+* `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML.
 
 ### 4. Herramientas Avanzadas
 
 Este menu da acceso a todos los modulos de nivel experto.
 
-#### → T. Tweaks de Sistema y Rendimiento
-
-* `1. Desactivar Aceleracion del Raton`: Modifica claves en `HKCU:\Control Panel\Mouse` para un movimiento 1:1.
-* `2. Desactivar VBS`: Ejecuta `bcdedit /set hypervisorlaunchtype off` para mejorar el rendimiento en juegos.
-* `3. Aumentar prioridad de CPU`: Modifica `Win32PrioritySeparation` en el registro para dar mas recursos a la ventana activa.
-* `4-6. Anadir Menus Contextuales`: Anade claves al registro para tener atajos a "Abrir en Terminal Windows", "Copiar como Ruta de Acceso" y "Matar Tareas que no Responden".
-* `7. Desactivar Almacenamiento Reservado`: Ejecuta `dism /Online /Set-ReservedStorageState /State:Disabled`.
-* `8. Habilitar Mensajes de Estado Detallados`: Activa `VerboseStatus` en el registro para un diagnostico de arranque/apagado mas claro.
-* `9. Deshabilitar Copilot`: Aplica una directiva en `HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot` para desactivar Copilot a nivel de sistema.
-
-#### → I. Inventario y Reportes del Sistema
-
-* Utiliza `Get-ComputerInfo`, `Get-WmiObject`, `Get-ItemProperty` y `Get-NetAdapter` para recopilar informacion detallada de hardware, software y red, y la guarda en un archivo `.txt` en la carpeta `AegisPhoenixSuite_Reportes`.
-
-#### → D. Gestion de Drivers
-
-* `1. Copia de Seguridad de Drivers`: Ejecuta `Export-WindowsDriver -Online` para guardar todos los drivers de terceros en una carpeta elegida por el usuario.
-* `2. Listar drivers de terceros`: Usa `Get-WindowsDriver -Online` y filtra los que no son de Microsoft.
-
 #### → L. Gestion de Logs y Tareas Programadas
-
-* `1. Limpiar Registros de Eventos`: Ejecuta `Clear-EventLog` en los registros de Aplicacion, Seguridad, Sistema y Setup.
-* `2. Analizar Tareas Programadas`: Usa `Get-ScheduledTask` para listar tareas de terceros activas.
+* `1. Limpiar Registros de Eventos`: Ejecuta `Clear-EventLog`.
+* `2. Gestionar Tareas Programadas de Terceros`: Abre un menu interactivo que lista las tareas de terceros, mostrando su estado (Habilitada/Deshabilitada). Permite seleccionar y cambiar el estado de multiples tareas a la vez.
 
 #### → W. Gestion de Software (Winget)
+* `1. Buscar y aplicar actualizaciones de software (Interactivo)`: **¡Mejorado!** Ejecuta `winget upgrade`, analiza la salida y presenta una lista interactiva de las actualizaciones encontradas, permitiendo al usuario seleccionar cuales instalar.
+* `2. Instalar software en masa`: Lee un archivo de texto y ejecuta `winget install` para cada programa.
 
-* `1. Actualizar TODO el software`: Ejecuta `winget upgrade --all` de forma silenciosa.
-* `2. Instalar software en masa`: Lee un archivo de texto proporcionado por el usuario y ejecuta `winget install` para cada programa listado.
-
-#### → H. Refuerzo de Seguridad (Hardening)
-
-* `1. Activar Proteccion contra Ransomware`: Habilita el Acceso Controlado a Carpetas de Microsoft Defender.
-* `2. Deshabilitar protocolo inseguro SMBv1`: Usa `Disable-WindowsOptionalFeature` para eliminar este componente vulnerable.
-* `3. Deshabilitar PowerShell v2.0`: Usa `Disable-WindowsOptionalFeature` para eliminar esta version antigua y menos segura.
-
-#### → U. Personalizacion Avanzada de UI
-
-* Modifica claves del registro para cambiar la alineacion de la barra de tareas de Windows 11 y para restaurar el explorador de archivos clasico con cinta de opciones.
-
-#### → P. Privacidad
-
-* Modifica diversas claves del registro y directivas para desactivar el ID de publicidad, el seguimiento de ubicacion, las sugerencias de contenido y la recoleccion de datos de escritura.
+### 5. Modulo de Restauracion
+* Permite revertir de forma selectiva los cambios realizados en Servicios, Tweaks, Seguridad y Privacidad a sus valores por defecto.
 
 ---
 
-## Notas Importantes
+## Como Contribuir
 
-* **COPIA DE SEGURIDAD:** Es **altamente recomendable** realizar una copia de seguridad de tus archivos importantes antes de utilizar las funciones de este script.
-* **CONOCIMIENTOS TÉCNICOS:** Se recomienda tener conocimientos basicos sobre el sistema operativo Windows y las implicaciones de los cambios a realizar.
+¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar Aegis Phoenix Suite o quieres corregir un error, sigue estos pasos:
+
+1.  Haz un **Fork** de este repositorio.
+2.  Crea una nueva rama para tu funcionalidad (`git checkout -b feature/NuevaFuncionalidadAsombrosa`).
+3.  Realiza tus cambios y haz **Commit** (`git commit -m 'Anade una nueva funcionalidad asombrosa'`).
+4.  Haz **Push** a tu rama (`git push origin feature/NuevaFuncionalidadAsombrosa`).
+5.  Abre un **Pull Request**.
 
 ---
 
