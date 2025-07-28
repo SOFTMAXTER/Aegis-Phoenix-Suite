@@ -158,11 +158,6 @@ function Manage-ScheduledTasks {
             Read-Host "`nPresiona Enter para continuar..."
         }
     }
-}function Show-SoftwareMenu {
-    $softwareChoice = ''; do { Clear-Host; Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Buscar y aplicar actualizaciones de software (Interactivo)"; Write-Host "   [2] Instalar software en masa desde un archivo de texto"; Write-Host ""; Write-Host "   [V] Volver..." -ForegroundColor Red; $softwareChoice = Read-Host "Selecciona una opcion"; switch ($softwareChoice.ToUpper()) { '1' { Manage-SoftwareUpdates } '2' { Install-SoftwareFromList } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($softwareChoice.ToUpper() -ne 'V')
-}
-function Show-SoftwareMenu {
-    $softwareChoice = ''; do { Clear-Host; Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Buscar y aplicar actualizaciones de software (Interactivo)"; Write-Host "   [2] Instalar software en masa desde un archivo de texto"; Write-Host ""; Write-Host "   [V] Volver..." -ForegroundColor Red; $softwareChoice = Read-Host "Selecciona una opcion"; switch ($softwareChoice.ToUpper()) { '1' { Manage-SoftwareUpdates } '2' { Install-SoftwareFromList } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($softwareChoice.ToUpper() -ne 'V')
 }
 function Show-SoftwareMenu {
     $softwareChoice = ''; do { Clear-Host; Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Buscar y aplicar actualizaciones de software (Interactivo)"; Write-Host "   [2] Instalar software en masa desde un archivo de texto"; Write-Host "   [3] Buscar e Instalar un software especifico"; Write-Host ""; Write-Host "   [V] Volver..." -ForegroundColor Red; $softwareChoice = Read-Host "Selecciona una opcion"; switch ($softwareChoice.ToUpper()) { '1' { Manage-SoftwareUpdates } '2' { Install-SoftwareFromList } '3' { Search-And-Install-Software } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($softwareChoice.ToUpper() -ne 'V')
