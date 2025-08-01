@@ -304,7 +304,36 @@ function Restore-Privacy {
 # --- FUNCIONES DE MENU PRINCIPAL ---
 
 function Show-OptimizationMenu {
-    $optimChoice = ''; do { Clear-Host; Write-Host "=======================================================" -ForegroundColor Cyan; Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan; Write-Host "=======================================================" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Desactivar Servicios Innecesarios (Estandar)"; Write-Host "       (Libera memoria RAM y recursos del sistema)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [2] Desactivar Servicios Opcionales (Avanzado)"; Write-Host "       (Para funciones especificas como Escritorio Remoto)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [3] Modulo de Limpieza Profunda"; Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [4] Eliminar Apps Preinstaladas (Dinamico)"; Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray; Write-Host ""; Write-Host "-------------------------------------------------------"; Write-Host ""; Write-Host "   [V] Volver al menu principal" -ForegroundColor Red; $optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) { '1' { Disable-UnnecessaryServices } '2' { Show-OptionalServicesMenu } '3' { Show-CleaningMenu } '4' { Show-BloatwareMenu } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($optimChoice.ToUpper() -ne 'V')
+    $optimChoice = '';
+    do {
+    Clear-Host;
+    Write-Host "=======================================================" -ForegroundColor Cyan;
+    Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan;
+    Write-Host "=======================================================" -ForegroundColor Cyan;
+    Write-Host "";
+    Write-Host "   [1] Desactivar Servicios Innecesarios (Estandar)";
+    Write-Host "       (Libera memoria RAM y recursos del sistema)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "   [2] Desactivar Servicios Opcionales (Avanzado)";
+    Write-Host "       (Para funciones especificas como Escritorio Remoto)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "   [3] Modulo de Limpieza Profunda";
+    Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray;
+    Write-Host ""; Write-Host "   [4] Eliminar Apps Preinstaladas (Dinamico)";
+    Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "-------------------------------------------------------"; Write-Host "";
+    Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
+    $optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
+    '1' { Disable-UnnecessaryServices }
+    '2' { Show-OptionalServicesMenu }
+    '3' { Show-CleaningMenu }
+    '4' { Show-BloatwareMenu }
+    'V' { continue };
+    default {
+    Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host }
+    }
+  } while ($optimChoice.ToUpper() -ne 'V')
 }
 
 function Show-MaintenanceMenu {
@@ -316,9 +345,38 @@ function Show-AdvancedMenu {
 }
 
 function Show-RestoreMenu {
-    $restoreChoice = ''; do { Clear-Host; Write-Host "=======================================================" -ForegroundColor Cyan; Write-Host "                 Modulo de Restauracion                " -ForegroundColor Cyan; Write-Host "=======================================================" -ForegroundColor Cyan; Write-Host ""; Write-Host "   [1] Restaurar Servicios a valores por defecto"; Write-Host "       (Rehabilita los servicios desactivados por la suite)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [2] Restaurar Tweaks a valores por defecto"; Write-Host "       (Revierte todos los cambios del modulo de Tweaks)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [3] Restaurar Configuraciones de Seguridad"; Write-Host "       (Revierte los cambios del modulo de Refuerzo de Seguridad)" -ForegroundColor Gray; Write-Host ""; Write-Host "   [4] Restaurar Configuraciones de Privacidad"; Write-Host "       (Rehabilita la telemetria y otras funciones de datos)" -ForegroundColor Gray; Write-Host ""; Write-Host "-------------------------------------------------------"; Write-Host ""; Write-Host "   [V] Volver al menu principal" -ForegroundColor Red; $restoreChoice = Read-Host "Selecciona una opcion"; switch ($restoreChoice.ToUpper()) { '1' { Restore-Services } '2' { Restore-Tweaks } '3' { Restore-Security } '4' { Restore-Privacy } 'V' { continue }; default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host } } } while ($restoreChoice.ToUpper() -ne 'V')
+    $restoreChoice = '';
+    do { Clear-Host;
+    Write-Host "=======================================================" -ForegroundColor Cyan;
+    Write-Host "                 Modulo de Restauracion                " -ForegroundColor Cyan;
+    Write-Host "=======================================================" -ForegroundColor Cyan;
+    Write-Host "";
+    Write-Host "   [1] Restaurar Servicios a valores por defecto";
+    Write-Host "       (Rehabilita los servicios desactivados por la suite)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "   [2] Restaurar Tweaks a valores por defecto";
+    Write-Host "       (Revierte todos los cambios del modulo de Tweaks)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "   [3] Restaurar Configuraciones de Seguridad";
+    Write-Host "       (Revierte los cambios del modulo de Refuerzo de Seguridad)" -ForegroundColor Gray;
+    Write-Host "";
+    Write-Host "   [4] Restaurar Configuraciones de Privacidad";
+    Write-Host "       (Rehabilita la telemetria y otras funciones de datos)" -ForegroundColor Gray;
+    Write-Host ""; Write-Host "-------------------------------------------------------";
+    Write-Host "";
+    Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
+    $restoreChoice = Read-Host "Selecciona una opcion"; switch ($restoreChoice.ToUpper()) {
+    '1' { Restore-Services }
+    '2' { Restore-Tweaks }
+    '3' { Restore-Security }
+    '4' { Restore-Privacy }
+    'V' { continue };
+    default {
+    Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
+    Read-Host } 
+    }
+  } while ($restoreChoice.ToUpper() -ne 'V')
 }
-
 
 # --- BUCLE PRINCIPAL DEL SCRIPT ---
 $mainChoice = ''
