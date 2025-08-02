@@ -213,6 +213,61 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     }
 )
+# --- CATALOGO CENTRAL DE SERVICIOS ---
+# Define todos los servicios gestionables, su propósito, categoría y estado por defecto.
+# Esto hace que la función sea fácilmente extensible.
+$script:ServiceCatalog = @(
+    # Categoria: Estándar (Servicios que a menudo se pueden desactivar para liberar recursos)
+    [PSCustomObject]@{
+        Name               = "Fax"
+        Description        = "Permite enviar y recibir faxes. Innecesario si no se usa un módem de fax."
+        Category           = "Estándar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "PrintSpooler"
+        Description        = "Gestiona los trabajos de impresión. Desactivar si no se utiliza ninguna impresora (física o virtual como PDF)."
+        Category           = "Estándar"
+        DefaultStartupType = "Automatic"
+    },
+    [PSCustomObject]@{
+        Name               = "RemoteRegistry"
+        Description        = "Permite a usuarios remotos modificar el registro. Se recomienda desactivarlo por seguridad."
+        Category           = "Estándar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "SysMain"
+        Description        = "Mantiene y mejora el rendimiento del sistema (antes Superfetch). Puede causar uso de disco en HDD."
+        Category           = "Estándar"
+        DefaultStartupType = "Automatic"
+    },
+    [PSCustomObject]@{
+        Name               = "TouchKeyboardAndHandwritingPanelService"
+        Description        = "Habilita el teclado táctil y el panel de escritura. Innecesario en equipos de escritorio sin pantalla táctil."
+        Category           = "Estándar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "WalletService"
+        Description        = "Servicio del sistema para la Cartera de Windows. Innecesario si no se utiliza."
+        Category           = "Estándar"
+        DefaultStartupType = "Manual"
+    },
+    # Categoria: Avanzado/Opcional (Servicios para funciones específicas)
+    [PSCustomObject]@{
+        Name               = "TermService"
+        Description        = "Permite a los usuarios conectarse de forma remota al equipo usando Escritorio Remoto."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "WMPNetworkSvc"
+        Description        = "Comparte bibliotecas de Windows Media Player con otros dispositivos de la red."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    }
+)
 
 # --- FUNCIONES DE ACCION (Las herramientas que hacen el trabajo) ---
 
@@ -225,44 +280,109 @@ function Create-RestorePoint {
     Read-Host "`nPresiona Enter para volver..."
 }
 
-function Disable-UnnecessaryServices {
-    Write-Host "`n[+] Verificando y desactivando servicios innecesarios (Modo Estandar)..." -ForegroundColor Yellow
-    $servicesToDisable = @("Fax", "PrintSpooler", "RemoteRegistry", "SysMain", "TouchKeyboardAndHandwritingPanelService", "WalletService", "dmwappushservice", "DusmSvc", "DsSvc", "lfsvc")
-    foreach ($s in $servicesToDisable) {
-        $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
-        if ($svc) {
-            if ($svc.StartupType -eq 'Disabled') { Write-Host "[INFO] El servicio '$s' ya estaba deshabilitado." -ForegroundColor Gray }
-            else { if ($svc.Status -eq 'Running') { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }; Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue; Write-Host "[OK] Servicio '$s' deshabilitado." -ForegroundColor Green }
-        }
-    }
-    Write-Host "`n[+] Optimizacion de servicios estandar completada." -ForegroundColor Green
-    Read-Host "`nPresiona Enter para volver..."
-}
+function Manage-SystemServices {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
 
-function Show-OptionalServicesMenu {
-    $serviceChoice = '';
-	do { Clear-Host;
-	Write-Host "Desactivar Servicios Opcionales (Avanzado)" -ForegroundColor Cyan;
-	Write-Host "ADVERTENCIA: Desactiva estos servicios solo si sabes que no los necesitas." -ForegroundColor Yellow;
-	Write-Host "";
-	Write-Host "   [1] Desactivar Servicios de Escritorio Remoto (TermService)";
-	Write-Host "";
-	Write-Host "   [2] Desactivar Uso Compartido de Red de Windows Media Player (WMPNetworkSvc)";
-	Write-Host "";
-	Write-Host "   [V] Volver..." -ForegroundColor Red;
-    Write-Host ""
-	$serviceChoice = Read-Host "Selecciona una opcion"; switch ($serviceChoice) {
-		'1' { if ((Read-Host "Estas seguro? (S/N)").ToUpper() -eq
-		'S') { Set-Service -Name "TermService" -StartupType Disabled -ErrorAction SilentlyContinue;
-		Write-Host "[OK] Servicios de Escritorio Remoto desactivados." -ForegroundColor Green } }
-		'2' { if ((Read-Host "Estas seguro? (S/N)").ToUpper() -eq
-		'S') { Set-Service -Name "WMPNetworkSvc" -StartupType Disabled -ErrorAction SilentlyContinue;
-		Write-Host "[OK] Servicio de Uso Compartido de Red de WMP desactivado." -ForegroundColor Green } }
-		'V' { continue };
-		default {
-			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red } };
-			if ($serviceChoice -ne 'V') { Read-Host "`nPresiona Enter para continuar..." }
-			} while ($serviceChoice -ne 'V')
+    $choice = ''
+    while ($choice.ToUpper() -ne 'V') {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "             Gestor Interactivo de Servicios           " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "Selecciona un servicio para cambiar su estado (Activado/Desactivado)."
+        Write-Host ""
+
+        # Almacenar los objetos de servicio con su estado actual para poder seleccionarlos
+        $displayItems = [System.Collections.Generic.List[object]]::new()
+
+        foreach ($category in ($script:ServiceCatalog | Select-Object -ExpandProperty Category -Unique)) {
+            Write-Host "--- Categoria: $category ---" -ForegroundColor Yellow
+            $servicesInCategory = $script:ServiceCatalog | Where-Object { $_.Category -eq $category }
+
+            foreach ($serviceDef in $servicesInCategory) {
+                $itemIndex = $displayItems.Count + 1
+                $service = Get-Service -Name $serviceDef.Name -ErrorAction SilentlyContinue
+                
+                $statusText = ""
+                $statusColor = "Gray"
+
+                if ($null -ne $service) {
+                    if ($service.StartupType -eq 'Disabled') {
+                        $statusText = "[Desactivado]"
+                        $statusColor = "Red"
+                    } else {
+                        $statusText = "[Activado]"
+                        $statusColor = "Green"
+                        if ($service.Status -eq 'Running') {
+                            $statusText += " [En Ejecución]"
+                        }
+                    }
+                } else {
+                    $statusText = "[No Encontrado]"
+                }
+
+                Write-Host ("   [{0,2}] " -f $itemIndex) -NoNewline
+                Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+                Write-Host $serviceDef.Name -ForegroundColor White
+                Write-Host ("        " + $serviceDef.Description) -ForegroundColor Gray
+                
+                # Añadir el servicio a nuestra lista de seleccionables
+                $displayItems.Add($serviceDef)
+            }
+            Write-Host ""
+        }
+        
+        Write-Host "--- Acciones ---" -ForegroundColor Cyan
+        Write-Host "   [Número] - Activar/Desactivar servicio"
+        Write-Host "   [R <Número>] - Restaurar servicio a su estado por defecto (Ej: R 2)"
+        Write-Host "   [V] - Volver al menú anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $rawChoice = Read-Host "Selecciona una opción"
+        $choice = $rawChoice.Split(' ')[0]
+        $number = if ($rawChoice.Split(' ').Count -gt 1) { $rawChoice.Split(' ')[1] } else { $null }
+
+        try {
+            if ($choice -match '^\d+$') {
+                $index = [int]$choice - 1
+                if ($index -ge 0 -and $index -lt $displayItems.Count) {
+                    $selectedServiceDef = $displayItems[$index]
+                    $service = Get-Service -Name $selectedServiceDef.Name -ErrorAction SilentlyContinue
+                    if ($null -eq $service) { throw "El servicio '$($selectedServiceDef.Name)' no se encuentra en el sistema." }
+
+                    $action = if ($service.StartupType -eq 'Disabled') { "Habilitar" } else { "Deshabilitar" }
+
+                    if ($PSCmdlet.ShouldProcess($selectedServiceDef.Name, $action)) {
+                        if ($action -eq 'Deshabilitar') {
+                            if ($service.Status -eq 'Running') { Stop-Service -Name $service.Name -Force -ErrorAction Stop }
+                            Set-Service -Name $service.Name -StartupType Disabled -ErrorAction Stop
+                            Write-Host "[OK] Servicio '$($selectedServiceDef.Name)' ha sido Desactivado." -ForegroundColor Green
+                        } else {
+                            # Al habilitar, lo restauramos a su estado por defecto
+                            Set-Service -Name $service.Name -StartupType $selectedServiceDef.DefaultStartupType -ErrorAction Stop
+                            Write-Host "[OK] Servicio '$($selectedServiceDef.Name)' ha sido Habilitado a su estado por defecto ('$($selectedServiceDef.DefaultStartupType)')." -ForegroundColor Green
+                        }
+                    }
+                }
+            } elseif ($choice.ToUpper() -eq 'R' -and $number -match '^\d+$') {
+                 $index = [int]$number - 1
+                 if ($index -ge 0 -and $index -lt $displayItems.Count) {
+                    $selectedServiceDef = $displayItems[$index]
+                    if ($PSCmdlet.ShouldProcess($selectedServiceDef.Name, "Restaurar a estado por defecto ($($selectedServiceDef.DefaultStartupType))")) {
+                        Set-Service -Name $selectedServiceDef.Name -StartupType $selectedServiceDef.DefaultStartupType -ErrorAction Stop
+                        Write-Host "[OK] Servicio '$($selectedServiceDef.Name)' restaurado a su estado por defecto." -ForegroundColor Green
+                    }
+                 }
+            } elseif ($choice.ToUpper() -ne 'V') {
+                 Write-Warning "Opción no válida."
+            }
+        } catch {
+            Write-Error "Ocurrió un error: $($_.Exception.Message)"
+        }
+
+        if ($choice.ToUpper() -ne 'V') { Start-Sleep -Seconds 2 }
+    }
 }
 
 function Show-CleaningMenu {
@@ -1075,19 +1195,16 @@ function Show-OptimizationMenu {
 	Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan;
 	Write-Host "=======================================================" -ForegroundColor Cyan;
 	Write-Host "";
-	Write-Host "   [1] Desactivar Servicios Innecesarios (Estandar)";
-	Write-Host "       (Libera memoria RAM y recursos del sistema)" -ForegroundColor Gray;
+    Write-Host "   [1] Gestor Interactivo de Servicios del Sistema";
+    Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [2] Desactivar Servicios Opcionales (Avanzado)";
-	Write-Host "       (Para funciones especificas como Escritorio Remoto)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "   [3] Modulo de Limpieza Profunda";
+	Write-Host "   [2] Modulo de Limpieza Profunda";
 	Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [4] Eliminar Apps Preinstaladas (Dinamico)";
+	Write-Host "   [3] Eliminar Apps Preinstaladas (Dinamico)";
 	Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [5] Gestionar Programas de Inicio (Interactivo)";
+	Write-Host "   [4] Gestionar Programas de Inicio (Interactivo)";
 	Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray;
 	Write-Host "";
 	Write-Host "-------------------------------------------------------";
@@ -1095,11 +1212,10 @@ function Show-OptimizationMenu {
 	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
 	Write-Host ""
 	$optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
-		'1' { Disable-UnnecessaryServices }
-		'2' { Show-OptionalServicesMenu }
-		'3' { Show-CleaningMenu }
-		'4' { Show-BloatwareMenu }
-		'5' { Manage-StartupApps }
+        '1' { Manage-SystemServices } # Llamada a la nueva función
+        '2' { Show-CleaningMenu }     # Nota: el índice de las siguientes opciones puede necesitar ajuste si cambias el texto del menú
+        '3' { Show-BloatwareMenu }
+        '4' { Manage-StartupApps }
 		'V' { continue };
 		default {
 			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
@@ -1225,4 +1341,3 @@ do {
     }
 
 } while ($mainChoice.ToUpper() -ne 'S')
-
