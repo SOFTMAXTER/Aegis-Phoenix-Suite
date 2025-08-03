@@ -2,14 +2,14 @@
 .SYNOPSIS
     Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
 .DESCRIPTION
-    Aegis Phoenix Suite v3.0 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
+    Aegis Phoenix Suite v3.5 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    3.0
+    3.5
 #>
 
 # --- Verificacion de Privilegios de Administrador ---
@@ -22,13 +22,13 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 # --- CATALOGO CENTRAL DE AJUSTES DEL SISTEMA ---
 # Esta es la "fuente de la verdad" para todos los tweaks, ajustes de seguridad, privacidad y UI.
-# Cada objeto define un ajuste, permitiendo que los menús y las acciones se generen dinámicamente.
+# Cada objeto define un ajuste, permitiendo que los menus y las acciones se generen dinamicamente.
 $script:SystemTweaks = @(
     # Categoria: Rendimiento UI
     [PSCustomObject]@{
         Name           = "Acelerar la Aparicion de Menus"
         Category       = "Rendimiento UI"
-        Description    = "Reduce el retraso (en ms) al mostrar los menús contextuales del Explorador."
+        Description    = "Reduce el retraso (en ms) al mostrar los menus contextuales del Explorador."
         Method         = "Registry"
         RegistryPath   = "HKCU:\Control Panel\Desktop"
         RegistryKey    = "MenuShowDelay"
@@ -101,8 +101,8 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "Habilita la proteccion de carpetas controladas de Windows Defender."
         Method         = "Command"
-        EnableCommand  = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no está activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Enabled }
-        DisableCommand = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no está activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Disabled }
+        EnableCommand  = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no esta activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Enabled }
+        DisableCommand = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no esta activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Disabled }
         CheckCommand   = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { return 'NotApplicable' }; return (Get-MpPreference -ErrorAction SilentlyContinue).EnableControlledFolderAccess -eq 1 }
         RestartNeeded  = "None"
     },
@@ -165,6 +165,20 @@ $script:SystemTweaks = @(
         RestartNeeded  = "None"
     },
 
+# Objeto a añadir para Cortana
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Cortana por Completo"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Desactiva Cortana a nivel de sistema para que no se pueda ejecutar ni consuma recursos."
+        Method         = "Registry"
+        RegistryPath   = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+        RegistryKey    = "AllowCortana"
+        EnabledValue   = 0 # Un valor de '0' deshabilita Cortana.
+        DefaultValue   = 1 # Un valor de '1' la permite (estado por defecto).
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    }
+
      # Categoria: Comportamiento del Sistema y UI
     [PSCustomObject]@{
         Name           = "Deshabilitar la Pantalla de Bloqueo"
@@ -212,49 +226,63 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     }
+	
+# Objeto a añadir para el icono de Spotlight
+    [PSCustomObject]@{
+        Name           = "Ocultar Icono 'Más Información' de Spotlight"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Elimina el ícono superpuesto en el escritorio cuando se usa Windows Spotlight como fondo."
+        Method         = "Registry"
+        RegistryPath   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Feeds"
+        RegistryKey    = "ShellFeedsTaskbarViewMode"
+        EnabledValue   = 2 # Un valor de '2' desactiva el icono.
+        DefaultValue   = 0 # Un valor de '0' lo activa (estado por defecto).
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    }
 )
 # --- CATALOGO CENTRAL DE SERVICIOS ---
-# Define todos los servicios gestionables, su propósito, categoría y estado por defecto.
-# Esto hace que la función sea fácilmente extensible.
+# Define todos los servicios gestionables, su proposito, categoria y estado por defecto.
+# Esto hace que la funcion sea facilmente extensible.
 $script:ServiceCatalog = @(
-    # Categoria: Estándar (Servicios que a menudo se pueden desactivar para liberar recursos)
+    # Categoria: Estandar (Servicios que a menudo se pueden desactivar para liberar recursos)
     [PSCustomObject]@{
         Name               = "Fax"
-        Description        = "Permite enviar y recibir faxes. Innecesario si no se usa un módem de fax."
-        Category           = "Estándar"
+        Description        = "Permite enviar y recibir faxes. Innecesario si no se usa un modem de fax."
+        Category           = "Estandar"
         DefaultStartupType = "Manual"
     },
     [PSCustomObject]@{
         Name               = "PrintSpooler"
-        Description        = "Gestiona los trabajos de impresión. Desactivar si no se utiliza ninguna impresora (física o virtual como PDF)."
-        Category           = "Estándar"
+        Description        = "Gestiona los trabajos de impresion. Desactivar si no se utiliza ninguna impresora (fisica o virtual como PDF)."
+        Category           = "Estandar"
         DefaultStartupType = "Automatic"
     },
     [PSCustomObject]@{
         Name               = "RemoteRegistry"
         Description        = "Permite a usuarios remotos modificar el registro. Se recomienda desactivarlo por seguridad."
-        Category           = "Estándar"
+        Category           = "Estandar"
         DefaultStartupType = "Manual"
     },
     [PSCustomObject]@{
         Name               = "SysMain"
         Description        = "Mantiene y mejora el rendimiento del sistema (antes Superfetch). Puede causar uso de disco en HDD."
-        Category           = "Estándar"
+        Category           = "Estandar"
         DefaultStartupType = "Automatic"
     },
     [PSCustomObject]@{
         Name               = "TouchKeyboardAndHandwritingPanelService"
-        Description        = "Habilita el teclado táctil y el panel de escritura. Innecesario en equipos de escritorio sin pantalla táctil."
-        Category           = "Estándar"
+        Description        = "Habilita el teclado tactil y el panel de escritura. Innecesario en equipos de escritorio sin pantalla tactil."
+        Category           = "Estandar"
         DefaultStartupType = "Manual"
     },
     [PSCustomObject]@{
         Name               = "WalletService"
         Description        = "Servicio del sistema para la Cartera de Windows. Innecesario si no se utiliza."
-        Category           = "Estándar"
+        Category           = "Estandar"
         DefaultStartupType = "Manual"
     },
-    # Categoria: Avanzado/Opcional (Servicios para funciones específicas)
+    # Categoria: Avanzado/Opcional (Servicios para funciones especificas)
     [PSCustomObject]@{
         Name               = "TermService"
         Description        = "Permite a los usuarios conectarse de forma remota al equipo usando Escritorio Remoto."
@@ -274,7 +302,7 @@ $script:ServiceCatalog = @(
 function Create-RestorePoint {
     Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.0_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.5_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
     } catch { Write-Error "No se pudo crear el punto de restauracion. Error: $_" }
     Read-Host "`nPresiona Enter para volver..."
@@ -315,7 +343,7 @@ function Manage-SystemServices {
                         $statusText = "[Activado]"
                         $statusColor = "Green"
                         if ($service.Status -eq 'Running') {
-                            $statusText += " [En Ejecución]"
+                            $statusText += " [En Ejecucion]"
                         }
                     }
                 } else {
@@ -334,12 +362,12 @@ function Manage-SystemServices {
         }
         
         Write-Host "--- Acciones ---" -ForegroundColor Cyan
-        Write-Host "   [Número] - Activar/Desactivar servicio"
-        Write-Host "   [R <Número>] - Restaurar servicio a su estado por defecto (Ej: R 2)"
-        Write-Host "   [V] - Volver al menú anterior" -ForegroundColor Red
+        Write-Host "   [Numero] - Activar/Desactivar servicio"
+        Write-Host "   [R <Numero>] - Restaurar servicio a su estado por defecto (Ej: R 2)"
+        Write-Host "   [V] - Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         
-        $rawChoice = Read-Host "Selecciona una opción"
+        $rawChoice = Read-Host "Selecciona una opcion"
         $choice = $rawChoice.Split(' ')[0]
         $number = if ($rawChoice.Split(' ').Count -gt 1) { $rawChoice.Split(' ')[1] } else { $null }
 
@@ -375,10 +403,10 @@ function Manage-SystemServices {
                     }
                  }
             } elseif ($choice.ToUpper() -ne 'V') {
-                 Write-Warning "Opción no válida."
+                 Write-Warning "Opcion no valida."
             }
         } catch {
-            Write-Error "Ocurrió un error: $($_.Exception.Message)"
+            Write-Error "Ocurrio un error: $($_.Exception.Message)"
         }
 
         if ($choice.ToUpper() -ne 'V') { Start-Sleep -Seconds 2 }
@@ -445,19 +473,306 @@ function Show-BloatwareMenu {
     } while ($bloatwareChoice.ToUpper() -ne 'V')
 }
 
-function Manage-Bloatware {
-    param([string]$Type)
+# --- MODULO DE BLOATWARE REFACTORIZADO ---
+
+function Get-RemovableApps {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Microsoft', 'ThirdParty')]
+        [string]$Type
+    )
+
+    Write-Host "`n[+] Escaneando aplicaciones de tipo '$Type'..." -ForegroundColor Yellow
+    $apps = @()
+
     if ($Type -eq 'Microsoft') {
-        Write-Host "`n[+] Escaneando aplicaciones de Microsoft no esenciales..." -ForegroundColor Yellow
-        $essentialAppsBlocklist = @("Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs", "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension", "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal", "Microsoft.Paint", "Microsoft.WindowsNotepad")
-        $allApps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.IsFramework -eq $false -and $_.NonRemovable -eq $false }
-        $apps = @(); foreach ($app in $allApps) { $isEssential = $false; foreach ($essential in $essentialAppsBlocklist) { if ($app.Name -like "*$essential*") { $isEssential = $true; break } }; if (-not $isEssential) { $apps += [PSCustomObject]@{Name=$app.Name; PackageName=$app.PackageFullName; Selected=$false} } }
-    } else {
-        Write-Host "`n[+] Escaneando aplicaciones de terceros..." -ForegroundColor Yellow
-        $apps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false } | ForEach-Object { [PSCustomObject]@{Name=$_.Name; PackageName=$_.PackageFullName; Selected=$false} }
+        # Lista de aplicaciones de Microsoft consideradas esenciales y que no se deben mostrar para eliminar.
+        $essentialAppsBlocklist = @(
+            "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", 
+            "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs",
+            "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension",
+            "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal",
+            "Microsoft.Paint", "Microsoft.WindowsNotepad"
+        )
+        
+        $allApps = Get-AppxPackage -AllUsers | Where-Object { 
+            $_.Publisher -like "*Microsoft*" -and $_.IsFramework -eq $false -and $_.NonRemovable -eq $false 
+        }
+
+        foreach ($app in $allApps) {
+            $isEssential = $false
+            foreach ($essential in $essentialAppsBlocklist) {
+                if ($app.Name -like "*$essential*") {
+                    $isEssential = $true
+                    break
+                }
+            }
+            if (-not $isEssential) {
+                $apps += [PSCustomObject]@{
+                    Name        = $app.Name
+                    PackageName = $app.PackageFullName
+                }
+            }
+        }
+    } else { # ThirdParty
+        $apps = Get-AppxPackage -AllUsers | Where-Object { 
+            $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false 
+        } | ForEach-Object { 
+            [PSCustomObject]@{
+                Name        = $_.Name
+                PackageName = $_.PackageFullName
+            }
+        }
     }
-    if ($apps.Count -eq 0) { Write-Host "`n[OK] No se encontro bloatware de este tipo para eliminar." -ForegroundColor Green; Read-Host "`nPresiona Enter para volver..."; return }
-    $choice = ''; while ($choice -ne 'E' -and $choice -ne 'V') { Clear-Host; Write-Host "Eliminacion Selectiva de Bloatware ($Type)" -ForegroundColor Cyan; Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."; for ($i = 0; $i -lt $apps.Count; $i++) { $status = if ($apps[$i].Selected) { "[X]" } else { "[ ]" }; Write-Host ("   [{0,2}] {1} {2}" -f ($i+1), $status, $apps[$i].Name) }; Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [E] Eliminar seleccionados"; Write-Host "   [T] Seleccionar Todos"; Write-Host "   [N] No seleccionar ninguno"; Write-Host "   [V] Volver..." -ForegroundColor Red; $choice = (Read-Host "`nSelecciona una opcion").ToUpper(); if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $apps.Count) { $index = [int]$choice - 1; $apps[$index].Selected = -not $apps[$index].Selected } elseif ($choice -eq 'T') { $apps.ForEach({$_.Selected = $true}) } elseif ($choice -eq 'N') { $apps.ForEach({$_.Selected = $false}) } }; if ($choice -eq 'E') { $appsToUninstall = $apps | Where-Object { $_.Selected }; if ($appsToUninstall.Count -eq 0) { Write-Host "`nNo se selecciono ninguna aplicacion." -ForegroundColor Yellow } else { Write-Host "`n[+] Eliminando aplicaciones seleccionadas..." -ForegroundColor Yellow; foreach ($app in $appsToUninstall) { Write-Host " - Eliminando $($app.Name)..."; Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction SilentlyContinue; $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }; if ($provisionedPackage) { foreach ($pkg in $provisionedPackage) { Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor Gray; Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction SilentlyContinue } } }; Write-Host "`n[OK] Proceso completado." -ForegroundColor Green } }; Read-Host "`nPresiona Enter para volver..."
+    
+    Write-Host "[OK] Se encontraron $($apps.Count) aplicaciones." -ForegroundColor Green
+    return $apps | Sort-Object Name
+}
+
+function Show-AppSelectionMenu {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$AppList
+    )
+
+    # Añadir una propiedad 'Selected' a cada objeto para el menu
+    $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
+
+    $choice = ''
+    while ($choice.ToUpper() -ne 'E' -and $choice.ToUpper() -ne 'V') {
+        Clear-Host
+        Write-Host "Eliminacion Selectiva de Bloatware" -ForegroundColor Cyan
+        Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."
+        
+        for ($i = 0; $i -lt $AppList.Count; $i++) {
+            $status = if ($AppList[$i].Selected) { "[X]" } else { "[ ]" }
+            Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $AppList[$i].Name)
+        }
+
+        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
+        Write-Host "   [E] Eliminar seleccionados"
+        Write-Host "   [T] Seleccionar Todos"
+        Write-Host "   [N] No seleccionar ninguno"
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        
+        $choice = Read-Host "`nSelecciona una opcion"
+
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $AppList.Count) {
+            $index = [int]$choice - 1
+            $AppList[$index].Selected = -not $AppList[$index].Selected
+        } elseif ($choice.ToUpper() -eq 'T') {
+            $AppList.ForEach({$_.Selected = $true})
+        } elseif ($choice.ToUpper() -eq 'N') {
+            $AppList.ForEach({$_.Selected = $false})
+        }
+    }
+
+    if ($choice.ToUpper() -eq 'E') {
+        # Devolver solo las aplicaciones que el usuario ha seleccionado
+        return $AppList | Where-Object { $_.Selected }
+    } else {
+        # Si el usuario elige volver, devolver un array vacio
+        return @()
+    }
+}
+
+function Start-AppUninstallation {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$AppsToUninstall
+    )
+
+    Write-Host "`n[+] Eliminando $($AppsToUninstall.Count) aplicaciones seleccionadas..." -ForegroundColor Yellow
+    
+    foreach ($app in $AppsToUninstall) {
+        if ($PSCmdlet.ShouldProcess($app.Name, "Desinstalar")) {
+            try {
+                # Eliminar el paquete para el usuario actual y todos los usuarios
+                Write-Host " - Eliminando '$($app.Name)'..." -ForegroundColor Gray
+                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
+
+                # Buscar y eliminar el paquete "provisionado" para que no se reinstale para nuevos usuarios
+                $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
+                if ($provisionedPackage) {
+                    foreach ($pkg in $provisionedPackage) {
+                        Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor DarkGray
+                        Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop
+                    }
+                }
+            } catch {
+                Write-Warning "No se pudo desinstalar por completo '$($app.Name)'. Error: $($_.Exception.Message)"
+            }
+        }
+    }
+    Write-Host "`n[OK] Proceso de desinstalacion completado." -ForegroundColor Green
+}
+
+# --- NUEVA FUNCION ORQUESTADORA ---
+function Get-RemovableApps {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Microsoft', 'ThirdParty')]
+        [string]$Type
+    )
+
+    Write-Host "`n[+] Escaneando aplicaciones de tipo '$Type'..." -ForegroundColor Yellow
+    $apps = @()
+
+    if ($Type -eq 'Microsoft') {
+        # Lista de aplicaciones de Microsoft consideradas esenciales y que no se deben mostrar para eliminar.
+        $essentialAppsBlocklist = @(
+            "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", 
+            "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs",
+            "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension",
+            "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal",
+            "Microsoft.Paint", "Microsoft.WindowsNotepad"
+        )
+        
+        $allApps = Get-AppxPackage -AllUsers | Where-Object { 
+            $_.Publisher -like "*Microsoft*" -and $_.IsFramework -eq $false -and $_.NonRemovable -eq $false 
+        }
+
+        foreach ($app in $allApps) {
+            $isEssential = $false
+            foreach ($essential in $essentialAppsBlocklist) {
+                if ($app.Name -like "*$essential*") {
+                    $isEssential = $true
+                    break
+                }
+            }
+            if (-not $isEssential) {
+                $apps += [PSCustomObject]@{
+                    Name        = $app.Name
+                    PackageName = $app.PackageFullName
+                }
+            }
+        }
+    } else { # ThirdParty
+        $apps = Get-AppxPackage -AllUsers | Where-Object { 
+            $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false 
+        } | ForEach-Object { 
+            [PSCustomObject]@{
+                Name        = $_.Name
+                PackageName = $_.PackageFullName
+            }
+        }
+    }
+    
+    Write-Host "[OK] Se encontraron $($apps.Count) aplicaciones." -ForegroundColor Green
+    return $apps | Sort-Object Name
+}
+
+function Show-AppSelectionMenu {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$AppList
+    )
+
+    # Añadir una propiedad 'Selected' a cada objeto para el menu
+    $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
+
+    $choice = ''
+    while ($choice.ToUpper() -ne 'E' -and $choice.ToUpper() -ne 'V') {
+        Clear-Host
+        Write-Host "Eliminacion Selectiva de Bloatware" -ForegroundColor Cyan
+        Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."
+        
+        for ($i = 0; $i -lt $AppList.Count; $i++) {
+            $status = if ($AppList[$i].Selected) { "[X]" } else { "[ ]" }
+            Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $AppList[$i].Name)
+        }
+
+        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
+        Write-Host "   [E] Eliminar seleccionados"
+        Write-Host "   [T] Seleccionar Todos"
+        Write-Host "   [N] No seleccionar ninguno"
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        
+        $choice = Read-Host "`nSelecciona una opcion"
+
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $AppList.Count) {
+            $index = [int]$choice - 1
+            $AppList[$index].Selected = -not $AppList[$index].Selected
+        } elseif ($choice.ToUpper() -eq 'T') {
+            $AppList.ForEach({$_.Selected = $true})
+        } elseif ($choice.ToUpper() -eq 'N') {
+            $AppList.ForEach({$_.Selected = $false})
+        }
+    }
+
+    if ($choice.ToUpper() -eq 'E') {
+        # Devolver solo las aplicaciones que el usuario ha seleccionado
+        return $AppList | Where-Object { $_.Selected }
+    } else {
+        # Si el usuario elige volver, devolver un array vacio
+        return @()
+    }
+}
+
+function Start-AppUninstallation {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$AppsToUninstall
+    )
+
+    Write-Host "`n[+] Eliminando $($AppsToUninstall.Count) aplicaciones seleccionadas..." -ForegroundColor Yellow
+    
+    foreach ($app in $AppsToUninstall) {
+        if ($PSCmdlet.ShouldProcess($app.Name, "Desinstalar")) {
+            try {
+                # Eliminar el paquete para el usuario actual y todos los usuarios
+                Write-Host " - Eliminando '$($app.Name)'..." -ForegroundColor Gray
+                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
+
+                # Buscar y eliminar el paquete "provisionado" para que no se reinstale para nuevos usuarios
+                $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
+                if ($provisionedPackage) {
+                    foreach ($pkg in $provisionedPackage) {
+                        Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor DarkGray
+                        Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop
+                    }
+                }
+            } catch {
+                Write-Warning "No se pudo desinstalar por completo '$($app.Name)'. Error: $($_.Exception.Message)"
+            }
+        }
+    }
+    Write-Host "`n[OK] Proceso de desinstalacion completado." -ForegroundColor Green
+}
+
+# --- NUEVA FUNCION ORQUESTADORA ---
+function Manage-Bloatware {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Microsoft', 'ThirdParty')]
+        [string]$Type
+    )
+    
+    # 1. Obtener la lista de aplicaciones
+    $removableApps = Get-RemovableApps -Type $Type
+    if ($removableApps.Count -eq 0) {
+        Read-Host "`nPresiona Enter para volver..."
+        return
+    }
+
+    # 2. Mostrar el menu de seleccion y obtener las elegidas por el usuario
+    $appsToUninstall = Show-AppSelectionMenu -AppList $removableApps
+    if ($appsToUninstall.Count -eq 0) {
+        Write-Host "`n[INFO] No se selecciono ninguna aplicacion o se cancelo la operacion." -ForegroundColor Yellow
+        Read-Host "`nPresiona Enter para volver..."
+        return
+    }
+
+    # 3. Iniciar la desinstalacion
+    Start-AppUninstallation -AppsToUninstall $appsToUninstall
+    Read-Host "`nPresiona Enter para volver..."
 }
 
 function Manage-StartupApps {
@@ -476,18 +791,18 @@ function Manage-StartupApps {
         $approvedKeyPath = "$BaseKeyPath\Explorer\StartupApproved\$ItemType"
         
         if (-not (Test-Path $approvedKeyPath)) {
-            return 'Enabled' # Si la clave no existe, todo está habilitado por defecto
+            return 'Enabled' # Si la clave no existe, todo esta habilitado por defecto
         }
 
         $property = Get-ItemProperty -Path $approvedKeyPath -Name $ItemName -ErrorAction SilentlyContinue
         
         if ($null -eq $property) {
-            return 'Enabled' # Si la propiedad no existe para este item, está habilitado
+            return 'Enabled' # Si la propiedad no existe para este item, esta habilitado
         }
 
         $binaryData = $property.$ItemName
         if ($null -ne $binaryData -and $binaryData.Length -gt 0) {
-            # El estado está en el primer byte. Impar = Deshabilitado, Par = Habilitado.
+            # El estado esta en el primer byte. Impar = Deshabilitado, Par = Habilitado.
             if ($binaryData[0] % 2 -ne 0) {
                 return 'Disabled'
             }
@@ -703,21 +1018,74 @@ function Manage-StartupApps {
 }
 
 function Repair-SystemFiles {
-    Write-Host "`n[+] Iniciando la verificacion de archivos del sistema (SFC)..." -ForegroundColor Yellow
-    $sfcOutput = sfc /scannow
-    $sfcRepaired = $false
-    if ($sfcOutput -match "found corrupt files and successfully repaired them|encontro archivos danados y los reparo correctamente") { $sfcRepaired = $true }
-    Write-Host "`n[+] Escaneando la salud de la imagen de Windows (DISM ScanHealth)..." -ForegroundColor Yellow
-    $dismScanOutput = DISM /Online /Cleanup-Image /ScanHealth
-    $dismScanOutputString = $dismScanOutput -join " "
-    $dismRepaired = $false
-    if ($dismScanOutputString -match "The component store is repairable|El almacen de componentes es reparable") {
-        Write-Host "`n[!] Se detecto corrupcion. Iniciando la reparacion (DISM RestoreHealth)..." -ForegroundColor Yellow
-        DISM /Online /Cleanup-Image /RestoreHealth
-        $dismRepaired = $true
-    } else { Write-Host "`n[OK] No se detecto corrupcion en la imagen de Windows." -ForegroundColor Green }
-    Write-Host "`n[+] Verificacion y reparacion del sistema completadas." -ForegroundColor Green
-    if ($sfcRepaired -or $dismRepaired) { Write-Host "[RECOMENDACION] Se realizaron reparaciones en el sistema. Se recomienda reiniciar el equipo." -ForegroundColor Cyan }
+    Write-Host "`n[+] Iniciando la secuencia de reparacion del sistema." -ForegroundColor Cyan
+    Write-Host "Este proceso puede tardar bastante tiempo y no debe interrumpirse." -ForegroundColor Yellow
+    
+    $repairsMade = $false
+    $imageIsRepairable = $false
+
+    # --- PASO 1: Reparar la Imagen de Windows con DISM ---
+    # DISM repara el almacén de componentes que SFC usa como fuente. Es crucial ejecutarlo primero.
+    
+    # --- PASO 1a: Escanear la salud de la imagen ---
+    Write-Host "`n[+] PASO 1/3: Ejecutando DISM para escanear la salud de la imagen de Windows..." -ForegroundColor Yellow
+    Write-Host "    (Este paso busca problemas y puede tardar varios minutos)..." -ForegroundColor Gray
+    
+    # Capturamos la salida para analizarla, pero también la mostramos para que el usuario la vea.
+    $dismScanOutput = (DISM.exe /Online /Cleanup-Image /ScanHealth | Tee-Object -Variable tempOutput) -join "`n"
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "DISM encontro un error durante el escaneo."
+    } else {
+        Write-Host "[OK] Escaneo de DISM completado." -ForegroundColor Green
+        # Verificamos si la imagen necesita reparacion
+        if ($dismScanOutput -match "The component store is repairable|El almacen de componentes es reparable") {
+            $imageIsRepairable = $true
+        }
+    }
+
+    # --- PASO 1b: Reparar la imagen si es necesario ---
+    if ($imageIsRepairable) {
+        Write-Host "`n[+] PASO 2/3: Se detecto corrupcion. Ejecutando DISM para reparar la imagen..." -ForegroundColor Yellow
+        Write-Host "    (Esto puede parecer atascado en ciertos porcentajes, es normal)..." -ForegroundColor Gray
+        DISM.exe /Online /Cleanup-Image /RestoreHealth
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "DISM encontro un error y podria no haber completado la reparacion."
+        } else {
+            Write-Host "[OK] Reparacion de DISM completada." -ForegroundColor Green
+            $repairsMade = $true
+        }
+    } else {
+        Write-Host "`n[+] PASO 2/3: No se detecto corrupcion en la imagen de Windows. Omitiendo reparacion." -ForegroundColor Green
+    }
+
+    # --- PASO 2: Reparar Archivos del Sistema con SFC ---
+    Write-Host "`n[+] PASO 3/3: Ejecutando SFC para verificar los archivos del sistema..." -ForegroundColor Yellow
+    sfc.exe /scannow
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "SFC encontro un error o no pudo reparar todos los archivos."
+    } else {
+        Write-Host "[OK] SFC ha completado su operacion." -ForegroundColor Green
+    }
+
+    # Verificamos si SFC hizo reparaciones.
+    $cbsLogPath = "$env:windir\Logs\CBS\CBS.log"
+    if (Test-Path $cbsLogPath) {
+        $sfcEntries = Get-Content $cbsLogPath | Select-String -Pattern "\[SR\]"
+        if ($sfcEntries -match "Repairing file|Fixed|Repaired") {
+            $repairsMade = $true
+        }
+    }
+
+    # --- Conclusion ---
+    Write-Host "`n[+] Secuencia de reparacion del sistema completada." -ForegroundColor Green
+    if ($repairsMade) {
+        Write-Host "[RECOMENDACIoN] Se realizaron reparaciones en el sistema. Se recomienda encarecidamente reiniciar el equipo." -ForegroundColor Cyan
+    } else {
+        Write-Host "[INFO] No se detectaron corrupciones que requirieran reparacion." -ForegroundColor Green
+    }
+
     Read-Host "`nPresiona Enter para volver..."
 }
 
@@ -731,28 +1099,86 @@ function Show-InventoryMenu {
 }
 
 function Show-DriverMenu {
-    $driverChoice = '';
-    do { Clear-Host;
-    Write-Host "Modulo de Gestion de Drivers" -ForegroundColor Cyan;
-    Write-Host "";
-    Write-Host "   [1] Copia de Seguridad de TODOS los drivers (Backup)";
-    Write-Host ""
-    Write-Host "   [2] Listar drivers de terceros instalados";
-    Write-Host "";
-    Write-Host "   [V] Volver..." -ForegroundColor Red;
-    Write-Host ""
-    $driverChoice = Read-Host "Selecciona una opcion"; switch ($driverChoice) {
-    '1' { $destPath = Read-Host "Introduce la ruta completa para guardar la copia (ej: C:\MisDrivers)";
-    if (-not (Test-Path $destPath)) { New-Item -Path $destPath -ItemType Directory | Out-Null };
-    Write-Host "`n[+] Exportando drivers a '$destPath'..." -ForegroundColor Yellow;
-    Export-WindowsDriver -Online -Destination $destPath; Write-Host "[OK] Copia de seguridad completada." -ForegroundColor Green }
-    '2' { Write-Host "`n[+] Listando drivers no-Microsoft instalados..." -ForegroundColor Yellow;
-    Get-WindowsDriver -Online | Where-Object { $_.ProviderName -ne 'Microsoft' } | Format-Table ProviderName, ClassName, Date, Version -AutoSize }
-    'V' { continue };
-    default {
-    Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red } };
-    if ($driverChoice -ne 'V') { Read-Host "`nPresiona Enter para continuar..." } 
-    } while ($driverChoice -ne 'V')
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $driverChoice = ''
+    do {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "            Modulo de Gestion de Drivers               " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Copia de Seguridad de TODOS los drivers (Backup)"
+        Write-Host "       (Crea un respaldo completo de los drivers instalados)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Listar drivers de terceros instalados"
+        Write-Host "       (Muestra los drivers no provenientes de Microsoft)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Restaurar drivers desde una copia de seguridad"
+        Write-Host "       (Instala masivamente los drivers desde una carpeta de respaldo)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host ""
+        
+        $driverChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($driverChoice) {
+            '1' {
+                $destPath = Read-Host "Introduce la ruta completa para GUARDAR la copia (ej: C:\MisDrivers)"
+                if ([string]::IsNullOrWhiteSpace($destPath)) {
+                    Write-Warning "La ruta no puede estar vacia."
+                } else {
+                    if (-not (Test-Path $destPath)) {
+                        New-Item -Path $destPath -ItemType Directory | Out-Null
+                    }
+                    Write-Host "`n[+] Exportando drivers a '$destPath'..." -ForegroundColor Yellow
+                    Export-WindowsDriver -Online -Destination $destPath
+                    Write-Host "[OK] Copia de seguridad completada." -ForegroundColor Green
+                }
+            }
+            '2' {
+                Write-Host "`n[+] Listando drivers no-Microsoft instalados..." -ForegroundColor Yellow
+                Get-WindowsDriver -Online | Where-Object { $_.ProviderName -ne 'Microsoft' } | Format-Table ProviderName, ClassName, Date, Version -AutoSize
+            }
+            '3' {
+                $sourcePath = Read-Host "Introduce la ruta completa de la CARPETA con la copia de drivers"
+                if (-not (Test-Path $sourcePath)) {
+                    Write-Error "La ruta especificada no existe: '$sourcePath'"
+                } elseif ($PSCmdlet.ShouldProcess("el sistema", "Restaurar todos los drivers desde '$sourcePath'")) {
+                    Write-Host "`n[+] Iniciando restauracion de drivers..." -ForegroundColor Yellow
+                    Write-Host "Esto puede tardar varios minutos y podrias ver ventanas de instalacion." -ForegroundColor Yellow
+
+                    $driverInfFiles = Get-ChildItem -Path $sourcePath -Filter "*.inf" -Recurse
+                    if ($driverInfFiles.Count -eq 0) {
+                        Write-Warning "No se encontraron archivos de driver (.inf) en la ruta especificada."
+                    } else {
+                        $total = $driverInfFiles.Count
+                        $current = 0
+                        foreach ($inf in $driverInfFiles) {
+                            $current++
+                            Write-Host " - Instalando driver ($current de $total): $($inf.FullName)" -ForegroundColor Gray
+                            # PnPUtil es la herramienta moderna para gestionar drivers.
+                            # /add-driver agrega el paquete de drivers.
+                            # /install instala el driver en los dispositivos aplicables.
+                            pnputil.exe /add-driver $inf.FullName /install
+                        }
+                        Write-Host "`n[OK] Proceso de restauracion de drivers completado." -ForegroundColor Green
+                    }
+                }
+            }
+            'V' {
+                continue
+            }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+            }
+        } # Fin del switch
+
+        if ($driverChoice -ne 'V') {
+            Read-Host "`nPresiona Enter para continuar..."
+        }
+    } while ($driverChoice.ToUpper() -ne 'V')
 }
 
 function Show-AdminMenu {
@@ -812,263 +1238,292 @@ function Manage-ScheduledTasks {
     }
 }
 
-# --- MODULO DE GESTION DE SOFTWARE (MULTI-MOTOR) ---
+# --- MODULO DE GESTION DE SOFTWARE (MULTI-MOTOR) REFACTORIZADO ---
+# Version robusta con gestion de actualizaciones unificada y mejores practicas.
+# Autor de la refactorizacion: Experto en PowerShell (Analisis de Gemini)
+# Fecha: 2025-08-02
 
-# Variable global para mantener el motor seleccionado
-
+# Variable global para mantener el motor seleccionado para busqueda e instalacion.
 $script:SoftwareEngine = 'Winget'
 
-function Ensure-ChocolateyIsInstalled {
-    if (Get-Command 'choco' -ErrorAction SilentlyContinue) {
-        return $true
-    }
+#region --- Funciones de Verificacion e Instalacion de Motores ---
 
+# MEJORADO: Se mantiene la excelente logica de autoinstalacion. No se requieren cambios aqui.
+function Ensure-ChocolateyIsInstalled {
+    if (Get-Command 'choco' -ErrorAction SilentlyContinue) { return $true }
     Write-Warning "El gestor de paquetes 'Chocolatey' no esta instalado."
-    $installChoice = Read-Host "¿Deseas instalarlo ahora? (Esto requiere conexion a internet) (S/N)"
-    if ($installChoice.ToUpper() -eq 'S') {
+    if ((Read-Host "¿Deseas instalarlo ahora? (S/N)").ToUpper() -eq 'S') {
         Write-Host "`n[+] Instalando Chocolatey..." -ForegroundColor Yellow
         try {
             Set-ExecutionPolicy Bypass -Scope Process -Force;
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            # Actualizar la variable de entorno PATH para la sesion actual
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-            Write-Host "`n[OK] Chocolatey instalado correctamente." -ForegroundColor Green
+            Write-Host "`n[OK] Chocolatey instalado." -ForegroundColor Green
             return $true
-        } catch {
-            Write-Error "Fallo la instalacion de Chocolatey. Error: $($_.Exception.Message)"
-            return $false
-        }
+        } catch { Write-Error "Fallo la instalacion de Chocolatey. Error: $($_.Exception.Message)"; return $false }
     }
     return $false
 }
 
-function Invoke-SoftwareAction { 
-    [CmdletBinding()] 
-    param( 
-        [Parameter(Mandatory=$true)] 
-        [ValidateSet('Search', 'Install', 'Upgrade')] 
-        [string]$Action, 
-        
-        [Parameter(Mandatory=$true)] 
-        [string]$Engine, 
-        
-        [string]$PackageName, 
-        
-        [string[]]$PackageId 
+function Ensure-ScoopIsInstalled {
+    if (Get-Command 'scoop' -ErrorAction SilentlyContinue) { return $true }
+    Write-Warning "El gestor de paquetes 'Scoop' no esta instalado."
+    if ((Read-Host "¿Deseas instalarlo ahora? (S/N)").ToUpper() -eq 'S') {
+        Write-Host "`n[+] Instalando Scoop..." -ForegroundColor Yellow
+        try {
+            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+            irm get.scoop.sh | iex
+            Write-Host "`n[OK] Scoop instalado." -ForegroundColor Green
+            return $true
+        } catch { Write-Error "Fallo la instalacion de Scoop. Error: $($_.Exception.Message)"; return $false }
+    }
+    return $false
+}
+# ... (Las demas funciones Ensure-* se mantienen igual)
+#endregion
+
+# MEJORADO: El corazon del modulo. Ahora es mas especifico y robusto.
+function Invoke-SoftwareAction {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Search', 'Install', 'Upgrade', 'ListOutdated')]
+        [string]$Action,
+        [Parameter(Mandatory = $true)]
+        [string]$Engine,
+        [string]$PackageName,
+        [string[]]$PackageIdsToUpdate
     )
-    
-    $results = @()
-    switch ($Engine) {
-        'Winget' {
-            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "Winget no esta instalado." }
-            switch ($Action) {
-                'Search' {
-                    $output = winget search $PackageName --accept-source-agreements 2>&1
-                    if ($LASTEXITCODE -ne 0) { break }
-                    $lines = $output -split "\r?\n"
-                    $startProcessing = $false
-                    $regex = '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s*'
-                    foreach ($line in $lines) {
-                        if ($startProcessing -and $line -match $regex) {
-                            $results += [PSCustomObject]@{ Name = $matches.Name.Trim(); Id = $matches.Id.Trim() }
+
+    function Test-CommandExists($command) {
+        return (Get-Command $command -ErrorAction SilentlyContinue)
+    }
+
+    $results = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    try {
+        switch ($Engine) {
+            'Winget' {
+                if (-not (Test-CommandExists 'winget')) { throw "El motor 'Winget' es esencial y no se encuentra." }
+                switch ($Action) {
+                    'Search' {
+                        $output = winget search $PackageName --accept-source-agreements
+                        
+                        # CORRECCIoN: Se reemplaza el método de analisis anterior por uno mas robusto.
+                        # MEJORA: Se omiten las 2 primeras líneas (cabecera y separador) para evitar falsos positivos.
+                        ($output -split "\r?\n" | Select-Object -Skip 2) | ForEach-Object {
+                            # Se usa el operador -match. Si es verdadero, la variable automatica $Matches se puebla.
+                            if ($_ -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)') {
+                                $results.Add([PSCustomObject]@{
+                                    Name   = $Matches['Name'].Trim()
+                                    Id     = $Matches['Id'].Trim()
+                                    Engine = 'Winget'
+                                })
+                            }
                         }
-                        if ($line -like '----*') { $startProcessing = $true }
                     }
-                }
-                'Install' {
-                    winget install --id $PackageName --exact --silent --accept-package-agreements
-                }
-                'Upgrade' {
-                    $output = winget upgrade --include-unknown --accept-source-agreements 2>&1
-                    if (($LASTEXITCODE -ne 0) -and ($output -notmatch "No applicable update found|No se encontró ninguna actualización aplicable")) { throw "Fallo al ejecutar winget upgrade." }
-                    if ($output -match "No applicable update found|No se encontró ninguna actualización aplicable") { break }
-                    $lines = $output -split "\r?\n"
-                    $startProcessing = $false
-                    $regex = '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)\s*'
-                    foreach ($line in $lines) {
-                        if ($startProcessing -and $line -match $regex) {
-                            $results += [PSCustomObject]@{ Name = $matches.Name.Trim(); Id = $matches.Id.Trim(); Version = $matches.Version.Trim(); Available = $matches.Available.Trim(); Engine = 'Winget' }
+                    'Install' {
+                        if ($PSCmdlet.ShouldProcess($PackageName, "Instalar (Winget)")) {
+                            winget install --id $PackageName --exact --silent --accept-package-agreements --accept-source-agreements
                         }
-                        if ($line -like '----*') { $startProcessing = $true }
                     }
-                }
-            }
-        }
-        'Chocolatey' {
-            if (-not (Ensure-ChocolateyIsInstalled)) { throw "Chocolatey no esta disponible." }
-            switch ($Action) {
-                'Search' {
-                    # CORRECCIÓN: Se eliminó --exact para permitir una búsqueda más amplia.
-                    $output = choco search $PackageName --limit-output 2>&1
-                    if ($output -match "0 packages found.") { break }
-                    $lines = $output -split "\r?\n"
-                    foreach ($line in $lines) {
-                        # CORRECCIÓN: Se añade más robustez al análisis de la línea.
-                        if (-not [string]::IsNullOrWhiteSpace($line) -and $line -match '\|') {
-                            $parts = $line.Split('|')
-                            if ($parts.Count -ge 1) { # Asegurarse de que la línea tiene al menos un nombre
-                                $results += [PSCustomObject]@{ Name = $parts[0].Trim(); Id = $parts[0].Trim() }
+                    'ListOutdated' {
+                        $output = winget upgrade --include-unknown --accept-source-agreements
+                        if ($output -match "No applicable update found") { break }
+                        
+                        ($output -split "\r?\n" | Select-Object -Skip 2) | ForEach-Object {
+                             if ($_ -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)') {
+                                $results.Add([PSCustomObject]@{
+                                    Name      = $Matches['Name'].Trim()
+                                    Id        = $Matches['Id'].Trim()
+                                    Version   = $Matches['Version'].Trim()
+                                    Available = $Matches['Available'].Trim()
+                                    Engine    = 'Winget'
+                                })
+                            }
+                        }
+                    }
+                    'Upgrade' {
+                        foreach ($id in $PackageIdsToUpdate) {
+                            if ($PSCmdlet.ShouldProcess($id, "Actualizar (Winget)")) {
+                                winget upgrade --id $id --silent --accept-package-agreements --accept-source-agreements
                             }
                         }
                     }
                 }
-                'Install' {
-                    choco install $PackageName --yes --no-progress
-                }
-                'Upgrade' {
-                    $output = choco outdated --limit-output 2>&1
-                    if ($output -match "Chocolatey has determined 0 packages are outdated") { break }
-                    $lines = $output -split "\r?\n"
-                    foreach ($line in $lines) {
-                        if ($line -match '\|') {
-                            $parts = $line.Split('|')
-                            if ($parts.Count -ge 3) { # Asegurarse de que la línea tiene todos los campos
-                               $results += [PSCustomObject]@{ Name = $parts[0].Trim(); Id = $parts[0].Trim(); Version = $parts[1].Trim(); Available = $parts[2].Trim(); Engine = 'Chocolatey' }
-                           }
-                        }
-                    }
+            }
+            'Chocolatey' {
+                if (-not (Ensure-ChocolateyIsInstalled)) { throw "Chocolatey no esta disponible." }
+                switch ($Action) {
+                    'Search' { choco search $PackageName -r | ? { $_ -match '\|' } | % { $p = $_.Split('|'); $results.Add([PSCustomObject]@{ Name = $p[0]; Id = $p[0]; Engine = 'Chocolatey' }) } }
+                    'Install' { if ($PSCmdlet.ShouldProcess($PackageName, "Instalar (Choco)")) { choco install $PackageName -y } }
+                    'ListOutdated' { choco outdated -r | ? { $_ -match '\|' } | % { $p = $_.Split('|'); $results.Add([PSCustomObject]@{ Name = $p[0]; Id = $p[0]; Version = $p[1]; Available = $p[2]; Engine = 'Chocolatey' }) } }
+                    'Upgrade' { if ($PSCmdlet.ShouldProcess("Paquetes Seleccionados", "Actualizar (Choco)")) { choco upgrade -y $($PackageIdsToUpdate -join ' ') } }
                 }
             }
+            # Se pueden añadir logicas similares para Scoop, etc.
         }
+    }
+    catch {
+        throw "Error ejecutando accion '$Action' con el motor '$Engine': $_"
     }
     return $results
 }
 
-
-function Show-SoftwareMenu {
-    $softwareChoice = ''
-    do {
-        Clear-Host
-        Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan
-        Write-Host "Motor actual: " -NoNewline; Write-Host $script:SoftwareEngine -ForegroundColor Yellow
-        Write-Host "-------------------------------------------------------"
-        Write-Host "   [E] Cambiar motor (Winget/Chocolatey)"
-        Write-Host ""
-        Write-Host "   [1] Buscar y aplicar actualizaciones de software (Interactivo)"
-        Write-Host ""
-        Write-Host "   [2] Instalar software en masa desde un archivo de texto"
-        Write-Host ""
-        Write-Host "   [3] Buscar e Instalar un software especifico"
-        Write-Host ""
-        Write-Host "   [V] Volver..." -ForegroundColor Red
-        Write-Host ""
-        $softwareChoice = Read-Host "Selecciona una opcion"
-
-        switch ($softwareChoice.ToUpper()) {
-            'E' {
-                if ($script:SoftwareEngine -eq 'Winget') { $script:SoftwareEngine = 'Chocolatey' }
-                else { $script:SoftwareEngine = 'Winget' }
-            }
-            '1' { Manage-SoftwareUpdates }
-            '2' { Install-SoftwareFromList }
-            '3' { Search-And-Install-Software }
-            'V' { continue }
-            default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host }
-        }
-    } while ($softwareChoice.ToUpper() -ne 'V')
-}
-
-function Manage-SoftwareUpdates {
-    Write-Host "`n[+] Buscando actualizaciones con el motor '$($script:SoftwareEngine)'..." -ForegroundColor Yellow
-    try {
-        $apps = Invoke-SoftwareAction -Action 'Upgrade' -Engine $script:SoftwareEngine
-    } catch {
-        Write-Error "No se pudieron obtener las actualizaciones. Error: $($_.Exception.Message)"
-        Read-Host "`nPresiona Enter para volver..."; return
-    }
-
-    if ($apps.Count -eq 0) {
-        Write-Host "`n[OK] ¡Todo tu software esta actualizado segun el motor '$($script:SoftwareEngine)'!" -ForegroundColor Green
-        Read-Host "`nPresiona Enter para continuar..."; return
-    }
-    
-    $apps | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
-
+# NUEVA: Funcion genérica para mostrar un menu de seleccion interactivo.
+function Show-InteractiveSelectionMenu {
+    param(
+        [Parameter(Mandatory=$true)] [array]$Items,
+        [Parameter(Mandatory=$true)] [string]$Title,
+        [Parameter(Mandatory=$true)] [string]$Noun # Ej: "actualizacion", "aplicacion"
+    )
+    $Items.ForEach({ $_ | Add-Member -NotePropertyName Selected -NotePropertyValue $false })
     $choice = ''
-    while ($choice -ne 'I' -and $choice -ne 'V') {
-        Clear-Host
-        Write-Host "Actualizacion Selectiva de Software (Motor: $($script:SoftwareEngine))" -ForegroundColor Cyan
-        Write-Host "Se encontraron $($apps.Count) actualizaciones. Escribe el numero para marcar/desmarcar."
-        for ($i = 0; $i -lt $apps.Count; $i++) {
-            $status = if ($apps[$i].Selected) { "[X]" } else { "[ ]" }
-            Write-Host ("   [{0,2}] {1} {2} ({3} -> {4})" -f ($i+1), $status, $apps[$i].Name, $apps[$i].Version, $apps[$i].Available)
+    while ($choice.ToUpper() -ne 'A' -and $choice.ToUpper() -ne 'V') {
+        Clear-Host; Write-Host $Title -ForegroundColor Cyan
+        Write-Host "Escribe el numero para marcar/desmarcar una $noun."
+        for ($i = 0; $i -lt $Items.Count; $i++) {
+            $status = if ($Items[$i].Selected) { "[X]" } else { "[ ]" }
+            $line = "   [{0,2}] {1} {2}" -f ($i + 1), $status, $Items[$i].Name
+            if ($Items[$i].PSObject.Properties.Name -contains 'Version') {
+                $line += " (v$($Items[$i].Version) -> v$($items[$i].Available))"
+            }
+            $line += " - [$($Items[$i].Engine)]"
+            Write-Host $line
         }
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
-        Write-Host "   [I] Instalar Seleccionadas"
-        Write-Host "   [T] Seleccionar Todas       [N] No seleccionar ninguna"
+        Write-Host "   [A] Aplicar a seleccionados   [T] Seleccionar Todos   [N] No seleccionar ninguno"
         Write-Host "   [V] Volver..." -ForegroundColor Red
-        $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
-        
-        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $apps.Count) {
-            $index = [int]$choice - 1; $apps[$index].Selected = -not $apps[$index].Selected
-        } elseif ($choice -eq 'T') { $apps.ForEach({$_.Selected = $true}) } 
-          elseif ($choice -eq 'N') { $apps.ForEach({$_.Selected = $false}) }
+        $choice = Read-Host "`nSelecciona una opcion"
+        if ($choice -match '^\d+$' -and [int]$choice -in 1..$Items.Count) { $Items[[int]$choice - 1].Selected = -not $Items[[int]$choice - 1].Selected }
+        elseif ($choice.ToUpper() -eq 'T') { $Items.ForEach({$_.Selected = $true}) }
+        elseif ($choice.ToUpper() -eq 'N') { $Items.ForEach({$_.Selected = $false}) }
     }
+    if ($choice.ToUpper() -eq 'A') { return $Items | Where-Object { $_.Selected } }
+    else { return @() }
+}
 
-    if ($choice -eq 'I') {
-        $appsToUpgrade = $apps | Where-Object { $_.Selected }
-        if ($appsToUpgrade.Count -eq 0) { Write-Host "`nNo se selecciono ningun programa para actualizar." -ForegroundColor Yellow } 
-        else {
-            Write-Host "`n[+] Actualizando software seleccionado..." -ForegroundColor Yellow
-            foreach ($app in $appsToUpgrade) {
-                Write-Host " - Actualizando $($app.Name)..."
-                try {
-                    Invoke-SoftwareAction -Action 'Install' -Engine $app.Engine -PackageName $app.Id
-                } catch { Write-Warning "No se pudo actualizar '$($app.Name)'. Error: $($_.Exception.Message)" }
-            }
-            Write-Host "`n[OK] Proceso de actualizacion completado." -ForegroundColor Green
+# MEJORADO: Usa la nueva logica de Invoke-SoftwareAction
+function Search-And-Install-Software {
+    $searchTerm = Read-Host "Introduce el nombre del software a buscar con '$($script:SoftwareEngine)'"
+    if ([string]::IsNullOrWhiteSpace($searchTerm)) { return }
+
+    Write-Host "`nBuscando '$searchTerm'..."
+    try {
+        $apps = Invoke-SoftwareAction -Action 'Search' -Engine $script:SoftwareEngine -PackageName $searchTerm
+        if ($apps.Count -eq 0) { Write-Warning "No se encontraron resultados."; Read-Host; return }
+        
+        $appToInstall = Show-InteractiveSelectionMenu -Items $apps -Title "Resultados de la Busqueda" -Noun "aplicacion"
+        if ($appToInstall.Count -gt 0) {
+            # Asumimos que el usuario solo quiere instalar la primera seleccion del menu
+            Invoke-SoftwareAction -Action 'Install' -Engine $appToInstall[0].Engine -PackageName $appToInstall[0].Id
         }
-    }
+    } catch { Write-Error $_ }
     Read-Host "`nPresiona Enter para volver..."
 }
 
+# MEJORADO: Implementa SupportsShouldProcess
 function Install-SoftwareFromList {
-    $filePath = Read-Host "Introduce la ruta completa al archivo .txt con los IDs de los paquetes"
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+    $filePath = Read-Host "Introduce la ruta al archivo .txt con los IDs de los paquetes"
     if (-not (Test-Path $filePath)) { Write-Error "Archivo no encontrado."; Read-Host; return }
     
     $programs = Get-Content $filePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     if ($programs.Count -eq 0) { Write-Warning "El archivo esta vacio."; Read-Host; return }
 
-    Write-Host "`n[+] Instalando $($programs.Count) programas con el motor '$($script:SoftwareEngine)'..." -ForegroundColor Yellow
+    Write-Host "`n[+] Se instalaran $($programs.Count) programas con el motor '$($script:SoftwareEngine)'..." -ForegroundColor Yellow
     foreach ($programId in $programs) {
-        Write-Host "`n - Instalando '$programId'..."
-        try {
-            Invoke-SoftwareAction -Action 'Install' -Engine $script:SoftwareEngine -PackageName $programId
-            Write-Host "   [OK] '$programId' instalado correctamente." -ForegroundColor Green
-        } catch { Write-Warning "No se pudo instalar '$programId'. Error: $($_.Exception.Message)" }
+        Invoke-SoftwareAction -Action 'Install' -Engine $script:SoftwareEngine -PackageName $programId
     }
     Write-Host "`n[OK] Proceso completado." -ForegroundColor Green
     Read-Host "`nPresiona Enter para volver..."
 }
 
-function Search-And-Install-Software {
-    $searchTerm = Read-Host "Introduce el nombre del software a buscar con '$($script:SoftwareEngine)'"
-    if ([string]::IsNullOrWhiteSpace($searchTerm)) { Write-Warning "Termino de busqueda vacio."; Read-Host; return }
+# NUEVA: La funcion central para la gestion de actualizaciones.
+function Manage-SoftwareUpdates {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
     
-    Write-Host "`nBuscando '$searchTerm'..." -ForegroundColor Gray
-    try {
-        $apps = Invoke-SoftwareAction -Action 'Search' -Engine $script:SoftwareEngine -PackageName $searchTerm
-    } catch { Write-Error "Fallo la busqueda. Error: $($_.Exception.Message)"; Read-Host; return }
+    $allOutdated = [System.Collections.Generic.List[pscustomobject]]::new()
+    $supportedEngines = @('Winget', 'Chocolatey') # Añade mas motores aquí
 
-    if ($apps.Count -eq 0) { Write-Host "`n[INFO] No se encontraron resultados." -ForegroundColor Yellow; Read-Host; return }
-    
-    Clear-Host
-    Write-Host "Resultados de la busqueda para '$searchTerm':" -ForegroundColor Yellow
-    for ($i = 0; $i -lt $apps.Count; $i++) { Write-Host ("   [{0,2}] {1} ({2})" -f ($i+1), $apps[$i].Name, $apps[$i].Id) }
-    
-    $installChoice = Read-Host "`nEscribe el numero del programa a instalar, o 'V' para volver"
-    if ($installChoice.ToUpper() -eq 'V') { return }
-
-    if ($installChoice -match '^\d+$' -and [int]$installChoice -ge 1 -and [int]$installChoice -le $apps.Count) {
-        $appToInstall = $apps[[int]$installChoice - 1]
-        Write-Host "`n[+] Instalando $($appToInstall.Name)..." -ForegroundColor Yellow
+    Write-Host "`n[+] Buscando actualizaciones en todos los motores soportados..." -ForegroundColor Yellow
+    foreach ($engine in $supportedEngines) {
+        Write-Host " - Consultando motor: $engine" -ForegroundColor Gray
         try {
-            Invoke-SoftwareAction -Action 'Install' -Engine $script:SoftwareEngine -PackageName $appToInstall.Id
-            Write-Host "`n[OK] Instalacion completada." -ForegroundColor Green
-        } catch { Write-Error "No se pudo instalar. Error: $($_.Exception.Message)" }
-    } else { Write-Warning "Seleccion no valida." }
+            $outdatedInEngine = Invoke-SoftwareAction -Action 'ListOutdated' -Engine $engine
+            
+            # CORRECCIoN: Se ha modificado la forma de agregar los resultados a la lista.
+            # En lugar de usar .AddRange(), que causa un conflicto de tipos, se usa un bucle ForEach-Object.
+            # Esto procesa cada elemento devuelto de forma individual, evitando el error de conversion.
+            if ($null -ne $outdatedInEngine -and $outdatedInEngine.Count -gt 0) {
+                $outdatedInEngine | ForEach-Object { $allOutdated.Add($_) }
+            }
+        } catch { Write-Warning "No se pudo consultar el motor '$engine'. $_" }
+    }
+
+    if ($allOutdated.Count -eq 0) {
+        Write-Host "`n[OK] ¡Tu software esta al día!" -ForegroundColor Green
+        Read-Host "`nPresiona Enter para volver..."; return
+    }
+
+    $updatesToApply = Show-InteractiveSelectionMenu -Items $allOutdated -Title "Actualizaciones de Software Disponibles" -Noun "actualizacion"
+
+    if ($updatesToApply.Count -eq 0) {
+        Write-Warning "No se selecciono ninguna actualizacion."
+        Read-Host "`nPresiona Enter para volver..."
+        return
+    }
+
+    $updatesToApply | Group-Object -Property Engine | ForEach-Object {
+        $engine = $_.Name
+        $packageIds = $_.Group.Id
+        Write-Host "`n[+] Aplicando $($packageIds.Count) actualizaciones con el motor '$engine'..." -ForegroundColor Yellow
+        try {
+            Invoke-SoftwareAction -Action 'Upgrade' -Engine $engine -PackageIdsToUpdate $packageIds -WhatIf:$WhatIfPreference
+        } catch { Write-Error "Fallo la actualizacion con el motor '$engine'. $_" }
+    }
+    Write-Host "`n[OK] Proceso de actualizacion completado." -ForegroundColor Green
     Read-Host "`nPresiona Enter para volver..."
+}
+
+# MEJORADO: El menu principal que une todo.
+function Show-SoftwareMenu {
+    $availableEngines = @('Winget', 'Chocolatey', 'Scoop')
+    $softwareChoice = ''
+    do {
+        Clear-Host
+        Write-Host "Modulo de Gestion de Software" -ForegroundColor Cyan
+        Write-Host "Motor para Busqueda/Instalacion: " -NoNewline; Write-Host $script:SoftwareEngine -ForegroundColor Yellow
+        Write-Host "-------------------------------------------------------"
+        Write-Host "   [1] Buscar y APLICAR ACTUALIZACIONES (Recomendado)"
+        Write-Host "   [2] Buscar e INSTALAR un software especifico"
+        Write-Host "   [3] Instalar software en MASA desde un archivo de texto"
+        Write-Host ""
+        Write-Host "   [E] Cambiar motor de busqueda/instalacion"
+        Write-Host ""
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host ""
+        $softwareChoice = Read-Host "`nSelecciona una opcion"
+
+        switch ($softwareChoice.ToUpper()) {
+            '1' { Manage-SoftwareUpdates }
+            '2' { Search-And-Install-Software }
+            '3' { Install-SoftwareFromList }
+            'E' {
+                # Logica para cambiar el motor (sin cambios, ya era correcta)
+                for ($i = 0; $i -lt $availableEngines.Count; $i++) { Write-Host "   [$($i+1)] $($availableEngines[$i])" }
+                $engineChoice = Read-Host "`nElige un numero"
+                if ($engineChoice -match '^\d+$' -and [int]$engineChoice -in 1..$availableEngines.Count) {
+                    $script:SoftwareEngine = $availableEngines[[int]$engineChoice - 1]
+                }
+            }
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." }
+        }
+    } while ($softwareChoice.ToUpper() -ne 'V')
 }
 
 # --- NUEVO GESTOR DE AJUSTES DEL SISTEMA (BASADO EN CATALOGO) ---
@@ -1130,12 +1585,14 @@ function Show-TweakManagerMenu {
             Write-Host "Gestor de Ajustes del Sistema" -ForegroundColor Cyan
             Write-Host "--------------------------------"
             Write-Host "Selecciona una categoria para ver y modificar los ajustes."
+			Write-Host ""
             $categories = $script:SystemTweaks | Select-Object -ExpandProperty Category -Unique | Sort-Object
             for ($i = 0; $i -lt $categories.Count; $i++) {
                 Write-Host ("   [{0}] {1}" -f ($i + 1), $categories[$i])
             }
             Write-Host ""
             Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+			Write-Host ""
             $choice = Read-Host "Selecciona una categoria"
             if ($choice.ToUpper() -eq 'V') { return }
             if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $categories.Count) {
@@ -1161,7 +1618,7 @@ function Show-TweakManagerMenu {
                 Write-Host ""
             }
             Write-Host "   [V] Volver a la seleccion de categoria" -ForegroundColor Red
-            
+			Write-Host ""            
             $choice = Read-Host "Elige un ajuste para [Activar/Desactivar] o selecciona 'V' para volver"
 
             if ($choice.ToUpper() -eq 'V') { $Category = $null; continue }
@@ -1212,8 +1669,8 @@ function Show-OptimizationMenu {
 	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
 	Write-Host ""
 	$optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
-        '1' { Manage-SystemServices } # Llamada a la nueva función
-        '2' { Show-CleaningMenu }     # Nota: el índice de las siguientes opciones puede necesitar ajuste si cambias el texto del menú
+        '1' { Manage-SystemServices } # Llamada a la nueva funcion
+        '2' { Show-CleaningMenu }     # Nota: el indice de las siguientes opciones puede necesitar ajuste si cambias el texto del menu
         '3' { Show-BloatwareMenu }
         '4' { Manage-StartupApps }
 		'V' { continue };
@@ -1267,7 +1724,7 @@ function Show-AdvancedMenu {
         Write-Host "                 Herramientas Avanzadas                " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host ""
-        # MODIFICADO: Se reemplazaron múltiples entradas por una sola llamada al nuevo gestor.
+        # MODIFICADO: Se reemplazaron multiples entradas por una sola llamada al nuevo gestor.
         Write-Host "   [A] Gestor de Ajustes del Sistema (Tweaks, Seguridad, UI, Privacidad)"
         Write-Host "       (Activa y desactiva individualmente ajustes para optimizar tu sistema)" -ForegroundColor Gray
         Write-Host ""
@@ -1287,7 +1744,7 @@ function Show-AdvancedMenu {
         
         $advChoice = Read-Host "Selecciona una opcion"
         
-        # MODIFICADO: El switch ahora apunta a la nueva función Show-TweakManagerMenu.
+        # MODIFICADO: El switch ahora apunta a la nueva funcion Show-TweakManagerMenu.
         switch ($advChoice.ToUpper()) {
             'A' { Show-TweakManagerMenu }
             'I' { Show-InventoryMenu }
@@ -1341,3 +1798,4 @@ do {
     }
 
 } while ($mainChoice.ToUpper() -ne 'S')
+
