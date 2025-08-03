@@ -1,37 +1,37 @@
-# Aegis Phoenix Suite v3.0 by SOFTMAXTER
+# Aegis Phoenix Suite v3.5 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
 </p>
 
-**Aegis Phoenix Suite** es un completo script de PowerShell disenado para simplificar la administracion, optimizacion y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de `DISM`, directivas de registro, `PowerShell` y gestores de paquetes en una interfaz de menus modular, interactiva y facil de usar.
+**Aegis Phoenix Suite** es un completo script de PowerShell diseñado para simplificar la administración, optimización y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de `DISM`, directivas de registro, `PowerShell` y gestores de paquetes en una interfaz de menus modular, interactiva y fácil de usar.
 
-Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente, controlada y reversible.
+Fue creado para administradores de TI, técnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente, controlada y reversible.
 
 ## Caracteristicas Principales
 
-* **Interfaz Modular Guiada por Menus**: Todas las funciones estan organizadas en categorias y submenus claros para una navegacion intuitiva.
-* **Autoelevacion de Privilegios**: El lanzador (`Run.bat`) comprueba si se esta ejecutando como Administrador y, de no ser asi, intenta reiniciarse con los permisos necesarios.
-* **Gestor de Ajustes Dinamico**: Un catalogo centralizado de ajustes permite que los menus se generen dinamicamente, mostrando el estado **[Activado]** o **[Desactivado]** de cada opcion en tiempo real.
-* **Reversibilidad Individual**: Cada ajuste del sistema puede ser activado o desactivado de forma individual, eliminando la necesidad de una restauracion global.
+* **Interfaz Modular Guiada por Menús**: Todas las funciones están organizadas en categorías y submenús claros para una navegación intuitiva.
+* **Autoelevación de Privilegios**: El lanzador (`Run.bat`) comprueba si se está ejecutando como Administrador y, de no ser así, intenta reiniciarse con los permisos necesarios.
+* **Gestor de Ajustes Dinámico**: Un catálogo centralizado de ajustes de Rendimiento, Seguridad, Privacidad y UI permite que los menús se generen dinámicamente, mostrando el estado **[Activado]** o **[Desactivado]** de cada opción en tiempo real.
+* **Reversibilidad Individual**: Cada ajuste del sistema puede ser activado o desactivado de forma individual, eliminando la necesidad de una restauración global.
 * **Gestor de Software Multi-Motor**: Integra `Winget` y `Chocolatey`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
-* **Instalacion Automatica de Dependencias**: Si se elige Chocolatey y no esta instalado, el script ofrece instalarlo automaticamente.
-* **Deteccion Dinamica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft y de terceros, presentando listas seguras y personalizadas para su eliminacion.
+* **Instalación Automática de Dependencias**: Si se elige Chocolatey y no está instalado, el script ofrece instalarlo automáticamente.
+* **Detección Dinámica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft y de terceros, presentando listas seguras y personalizadas para su eliminación.
 
 ---
 
 ## Requisitos
 
-* Sistema Operativo Windows 10 (v1909+) o Windows 11.
+* Sistema Operativo Windows 10 o Windows 11.
 * Privilegios de Administrador para ejecutar el script.
-* Conexion a Internet para la gestion de software y la instalacion de Chocolatey.
+* Conexión a Internet para la gestión de software y la instalación de Chocolatey.
 
 ---
 
 ## Modo de Uso
 
-1.  Descarga el repositorio como un archivo `.zip` y extraelo.
-2.  Asegurate de que la estructura de carpetas sea la siguiente:
+1.  Descarga el repositorio como un archivo `.zip` y extráelo.
+2.  Asegúrate de que la estructura de carpetas sea la siguiente:
     ```
     TuCarpetaPrincipal/
     │
@@ -41,61 +41,71 @@ Fue creado para administradores de TI, tecnicos de soporte y entusiastas de Wind
         │
         └── AegisPhoenixSuite.ps1
     ```
-3.  Haz doble clic en **`Run.bat`**. El script validara los permisos y se iniciara.
-4.  Sigue las instrucciones en pantalla, seleccionando las opciones de los menus.
+3.  Haz doble clic en **`Run.bat`**. El script validará los permisos y se iniciará.
+4.  Sigue las instrucciones en pantalla, seleccionando las opciones de los menús.
 
 ---
 
-## Explicacion Detallada de los Menus
+## Explicación Detallada de los Módulos
 
-### Menu Principal
+### Menú Principal
 
-Al iniciar, se presentan las categorias principales de la suite.
+Al iniciar, se presentan las categorías principales de la suite.
 
-* **1. Crear Punto de Restauracion**: Utiliza el cmdlet `Checkpoint-Computer` para crear un punto de restauracion del sistema.
-* **2. Modulo de Optimizacion y Limpieza**: Accede al submenú con herramientas para mejorar el rendimiento y liberar espacio en disco.
-* **3. Modulo de Mantenimiento y Reparacion**: Contiene utilidades para diagnosticar y reparar problemas del sistema operativo.
-* **4. Herramientas Avanzadas**: Abre un menu que agrupa todos los modulos de nivel experto.
+* **1. Crear Punto de Restauración**: Utiliza el cmdlet `Checkpoint-Computer` para crear un punto de restauración del sistema.
+* **2. Módulo de Optimización y Limpieza**: Accede al submenú con herramientas para mejorar el rendimiento y liberar espacio en disco.
+* **3. Módulo de Mantenimiento y Reparación**: Contiene utilidades para diagnosticar y reparar problemas del sistema operativo.
+* **4. Herramientas Avanzadas**: Abre un menú que agrupa todos los módulos de nivel experto.
 
-### 2. Modulo de Optimizacion y Limpieza
+### 2. Módulo de Optimización y Limpieza
 
-* `1. Desactivar Servicios Innecesarios (Estandar)`: Deshabilita una lista curada de servicios no criticos.
-* `2. Desactivar Servicios Opcionales (Avanzado)`: Permite desactivar servicios especificos como el de Escritorio Remoto.
-* `3. Modulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza (Estandar, Profunda y Avanzada).
-* `4. Eliminar Apps Preinstaladas (Dinamico)`: Abre un submenú para elegir entre eliminar bloatware de Microsoft o de terceros (fabricantes de PC). Escanea, filtra y presenta un menu interactivo para una eliminacion segura.
+* `1. Gestor Interactivo de Servicios del Sistema`: En lugar de una lista fija, abre un gestor interactivo. Muestra el estado de servicios importantes (Estándar y Avanzados), permitiendo activarlos, desactivarlos o restaurarlos a su configuración por defecto de forma individual.
+* `2. Módulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza (Estándar, Profunda y Avanzada de Caches) para eliminar archivos temporales, papelera, miniaturas, etc.
+* `3. Eliminar Apps Preinstaladas (Dinamico)`: Abre un submenú para elegir entre eliminar bloatware de Microsoft o de terceros. Escanea, filtra y presenta un menú interactivo para una eliminación segura.
+* `4. Gestionar Programas de Inicio (Interactivo)`: Abre una interfaz interactiva y completa que detecta programas en el registro, carpetas de inicio y tareas programadas, permitiendo habilitar o deshabilitar lo que arranca con Windows.
 
-### 3. Modulo de Mantenimiento y Reparacion
+### 3. Módulo de Mantenimiento y Reparación
 
-* `1. Verificar y Reparar Archivos del Sistema`: Ejecuta `sfc /scannow` y `DISM` de forma condicional para reparar la integridad del sistema.
-* `2. Gestionar Programas de Inicio`: Abre una interfaz interactiva para habilitar o deshabilitar aplicaciones que arrancan con Windows.
-* `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C`.
-* `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML.
+* `1. Verificar y Reparar Archivos del Sistema`: Ejecuta la secuencia `DISM /ScanHealth`, `DISM /RestoreHealth` (condicionalmente) y `sfc /scannow` para reparar la integridad del sistema.
+* `2. Limpiar Caches de Sistema`: Ejecuta comandos para limpiar la cache de DNS (`ipconfig /flushdns`) y de la Tienda de Windows (`wsreset.exe`).
+* `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C` para realizar desfragmentación (HDD) o TRIM (SSD).
+* `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML que diagnostica problemas de consumo de energía y batería.
 
 ### 4. Herramientas Avanzadas
 
-Este menu da acceso a todos los modulos de nivel experto.
+Este menú da acceso a todos los módulos de nivel experto.
 
 #### → A. Gestor de Ajustes del Sistema
-* Este es el nuevo centro de control para todas las modificaciones del sistema (Rendimiento, Seguridad, Privacidad y UI).
-* **Menus Dinamicos**: Elige una categoria y el script mostrara una lista de ajustes con su estado actual (`[Activado]` o `[Desactivado]`).
-* **Reversibilidad Individual**: Selecciona cualquier ajuste para activarlo o desactivarlo al instante. Ya no hay un "Modulo de Restauracion" porque cada cambio es reversible individualmente.
-* **Descripciones Integradas**: Cada ajuste muestra una descripcion clara de su funcion directamente en el menu.
+* Este es el centro de control para todas las modificaciones del sistema (Rendimiento, Seguridad, Privacidad y UI).
+* **Menús Dinámicos**: Elige una categoría y el script mostrará una lista de ajustes con su estado actual (`[Activado]` o `[Desactivado]`).
+* **Reversibilidad Individual**: Selecciona cualquier ajuste para activarlo o desactivarlo al instante. Ya no hay un "Módulo de Restauración" porque cada cambio es reversible individualmente.
+* **Descripciones Integradas**: Cada ajuste muestra una descripción clara de su función directamente en el menú.
 
-#### → W. Gestion de Software (Multi-Motor)
+#### → I. Inventario y Reportes del Sistema
+* Genera un reporte de inventario detallado en un archivo `.txt` dentro de una carpeta `Reportes`.
+* El informe incluye información clave de Hardware (CPU, RAM, GPU), Software (programas instalados con versión y fecha) y Red (adaptadores, MAC, velocidad).
+
+#### → D. Gestión de Drivers
+* Abre un módulo interactivo para la administración de drivers de Windows.
+* **Copia de Seguridad**: Permite exportar todos los drivers del sistema a una carpeta especificada, ideal para reinstalaciones.
+* **Listar Drivers de Terceros**: Muestra una tabla con los drivers instalados que no son de Microsoft, para una fácil identificación.
+* **Restaurar Drivers**: Instala masivamente drivers desde una copia de seguridad, utilizando `pnputil.exe` para agregar y instalar cada paquete `.inf` encontrado.
+
+#### → W. Gestión de Software (Multi-Motor)
 * **Selector de Motor**: Permite cambiar entre `Winget` y `Chocolatey` como el gestor de paquetes a utilizar.
-* `1. Buscar y aplicar actualizaciones (Interactivo)`: Ejecuta el comando de actualizacion del motor seleccionado, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
-* `2. Instalar software en masa`: Lee un archivo de texto y ejecuta el comando de instalacion del motor seleccionado para cada programa.
-* `3. Buscar e Instalar un software especifico`: Permite buscar un programa en el catalogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
+* `1. Buscar y aplicar actualizaciones (Interactivo)`: Ejecuta el comando de actualización del motor seleccionado, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
+* `2. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
+* `3. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
 
 ---
 
-## Como Contribuir
+## Cómo Contribuir
 
-¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar Aegis Phoenix Suite, quieres anadir una nueva funcionalidad o corregir un error, por favor sigue estos pasos:
+¡Las contribuciones son bienvenidas! Si tienes ideas para mejorar Aegis Phoenix Suite, quieres añadir una nueva funcionalidad o corregir un error, por favor sigue estos pasos:
 
 1.  Haz un **Fork** de este repositorio.
 2.  Crea una nueva rama para tu funcionalidad (`git checkout -b feature/NuevaFuncionalidadAsombrosa`).
-3.  Realiza tus cambios y haz **Commit** (`git commit -m 'Anade una nueva funcionalidad asombrosa'`).
+3.  Realiza tus cambios y haz **Commit** (`git commit -m 'Añade una nueva funcionalidad asombrosa'`).
 4.  Haz **Push** a tu rama (`git push origin feature/NuevaFuncionalidadAsombrosa`).
 5.  Abre un **Pull Request**.
 
@@ -103,6 +113,6 @@ Este menu da acceso a todos los modulos de nivel experto.
 
 ## Descargo de Responsabilidad
 
-Este script realiza operaciones avanzadas que modifican el sistema. El autor, **SOFTMAXTER**, no se hace responsable de la perdida de datos o danos que puedan ocurrir en tu sistema.
+Este script realiza operaciones avanzadas que modifican el sistema. El autor, **SOFTMAXTER**, no se hace responsable de la pérdida de datos o daños que puedan ocurrir en tu sistema.
 
-**Se recomienda encarecidamente crear una copia de seguridad y utilizar la funcion "Crear Punto de Restauracion" antes de aplicar cambios importantes.**
+**Se recomienda encarecidamente crear una copia de seguridad y utilizar la función "Crear Punto de Restauración" antes de aplicar cambios importantes.**
