@@ -473,143 +473,6 @@ function Show-BloatwareMenu {
     } while ($bloatwareChoice.ToUpper() -ne 'V')
 }
 
-# --- MODULO DE BLOATWARE REFACTORIZADO ---
-
-function Get-RemovableApps {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Microsoft', 'ThirdParty')]
-        [string]$Type
-    )
-
-    Write-Host "`n[+] Escaneando aplicaciones de tipo '$Type'..." -ForegroundColor Yellow
-    $apps = @()
-
-    if ($Type -eq 'Microsoft') {
-        # Lista de aplicaciones de Microsoft consideradas esenciales y que no se deben mostrar para eliminar.
-        $essentialAppsBlocklist = @(
-            "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", 
-            "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs",
-            "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension",
-            "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal",
-            "Microsoft.Paint", "Microsoft.WindowsNotepad"
-        )
-        
-        $allApps = Get-AppxPackage -AllUsers | Where-Object { 
-            $_.Publisher -like "*Microsoft*" -and $_.IsFramework -eq $false -and $_.NonRemovable -eq $false 
-        }
-
-        foreach ($app in $allApps) {
-            $isEssential = $false
-            foreach ($essential in $essentialAppsBlocklist) {
-                if ($app.Name -like "*$essential*") {
-                    $isEssential = $true
-                    break
-                }
-            }
-            if (-not $isEssential) {
-                $apps += [PSCustomObject]@{
-                    Name        = $app.Name
-                    PackageName = $app.PackageFullName
-                }
-            }
-        }
-    } else { # ThirdParty
-        $apps = Get-AppxPackage -AllUsers | Where-Object { 
-            $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false 
-        } | ForEach-Object { 
-            [PSCustomObject]@{
-                Name        = $_.Name
-                PackageName = $_.PackageFullName
-            }
-        }
-    }
-    
-    Write-Host "[OK] Se encontraron $($apps.Count) aplicaciones." -ForegroundColor Green
-    return $apps | Sort-Object Name
-}
-
-function Show-AppSelectionMenu {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$true)]
-        [array]$AppList
-    )
-
-    # Añadir una propiedad 'Selected' a cada objeto para el menu
-    $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
-
-    $choice = ''
-    while ($choice.ToUpper() -ne 'E' -and $choice.ToUpper() -ne 'V') {
-        Clear-Host
-        Write-Host "Eliminacion Selectiva de Bloatware" -ForegroundColor Cyan
-        Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."
-        
-        for ($i = 0; $i -lt $AppList.Count; $i++) {
-            $status = if ($AppList[$i].Selected) { "[X]" } else { "[ ]" }
-            Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $AppList[$i].Name)
-        }
-
-        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
-        Write-Host "   [E] Eliminar seleccionados"
-        Write-Host "   [T] Seleccionar Todos"
-        Write-Host "   [N] No seleccionar ninguno"
-        Write-Host "   [V] Volver..." -ForegroundColor Red
-        
-        $choice = Read-Host "`nSelecciona una opcion"
-
-        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $AppList.Count) {
-            $index = [int]$choice - 1
-            $AppList[$index].Selected = -not $AppList[$index].Selected
-        } elseif ($choice.ToUpper() -eq 'T') {
-            $AppList.ForEach({$_.Selected = $true})
-        } elseif ($choice.ToUpper() -eq 'N') {
-            $AppList.ForEach({$_.Selected = $false})
-        }
-    }
-
-    if ($choice.ToUpper() -eq 'E') {
-        # Devolver solo las aplicaciones que el usuario ha seleccionado
-        return $AppList | Where-Object { $_.Selected }
-    } else {
-        # Si el usuario elige volver, devolver un array vacio
-        return @()
-    }
-}
-
-function Start-AppUninstallation {
-    [CmdletBinding(SupportsShouldProcess = $true)]
-    param(
-        [Parameter(Mandatory=$true)]
-        [array]$AppsToUninstall
-    )
-
-    Write-Host "`n[+] Eliminando $($AppsToUninstall.Count) aplicaciones seleccionadas..." -ForegroundColor Yellow
-    
-    foreach ($app in $AppsToUninstall) {
-        if ($PSCmdlet.ShouldProcess($app.Name, "Desinstalar")) {
-            try {
-                # Eliminar el paquete para el usuario actual y todos los usuarios
-                Write-Host " - Eliminando '$($app.Name)'..." -ForegroundColor Gray
-                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
-
-                # Buscar y eliminar el paquete "provisionado" para que no se reinstale para nuevos usuarios
-                $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
-                if ($provisionedPackage) {
-                    foreach ($pkg in $provisionedPackage) {
-                        Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor DarkGray
-                        Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop
-                    }
-                }
-            } catch {
-                Write-Warning "No se pudo desinstalar por completo '$($app.Name)'. Error: $($_.Exception.Message)"
-            }
-        }
-    }
-    Write-Host "`n[OK] Proceso de desinstalacion completado." -ForegroundColor Green
-}
-
 # --- NUEVA FUNCION ORQUESTADORA ---
 function Get-RemovableApps {
     [CmdletBinding()]
@@ -692,7 +555,7 @@ function Show-AppSelectionMenu {
         Write-Host "   [T] Seleccionar Todos"
         Write-Host "   [N] No seleccionar ninguno"
         Write-Host "   [V] Volver..." -ForegroundColor Red
-        
+        Write-Host ""
         $choice = Read-Host "`nSelecciona una opcion"
 
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $AppList.Count) {
@@ -947,7 +810,7 @@ function Manage-StartupApps {
         Write-Host "   [D] Deshabilitar Seleccionados    [H] Habilitar Seleccionados"
         Write-Host "   [T] Seleccionar Todos             [N] Deseleccionar Todos"
         Write-Host "   [R] Refrescar Lista               [V] Volver..." -ForegroundColor Red
-        
+        Write-Host ""
         $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
 
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $startupItems.Count) {
@@ -1190,6 +1053,7 @@ function Show-AdminMenu {
     Write-Host "   [2] Gestionar Tareas Programadas de Terceros";
     Write-Host "";
     Write-Host "   [V] Volver..." -ForegroundColor Red;
+	Write-Host ""
     $adminChoice = Read-Host "Selecciona una opcion"; switch ($adminChoice) {
     '1' { if ((Read-Host "ADVERTENCIA: Esto eliminara los registros de eventos. Estas seguro? (S/N)").ToUpper() -eq
     'S') { $logs = @("Application", "Security", "System", "Setup");
@@ -1724,7 +1588,6 @@ function Show-AdvancedMenu {
         Write-Host "                 Herramientas Avanzadas                " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host ""
-        # MODIFICADO: Se reemplazaron multiples entradas por una sola llamada al nuevo gestor.
         Write-Host "   [A] Gestor de Ajustes del Sistema (Tweaks, Seguridad, UI, Privacidad)"
         Write-Host "       (Activa y desactiva individualmente ajustes para optimizar tu sistema)" -ForegroundColor Gray
         Write-Host ""
@@ -1761,7 +1624,7 @@ $mainChoice = ''
 do {
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "        Aegis Phoenix Suite v2.0 by SOFTMAXTER        " -ForegroundColor Cyan
+    Write-Host "        Aegis Phoenix Suite v3.5 by SOFTMAXTER        " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
@@ -1798,4 +1661,3 @@ do {
     }
 
 } while ($mainChoice.ToUpper() -ne 'S')
-
