@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v3.5 by SOFTMAXTER
+# Aegis Phoenix Suite v3.6 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -17,6 +17,7 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 * **Gestor de Software Multi-Motor**: Integra `Winget` y `Chocolatey`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
 * **Instalación Automática de Dependencias**: Si se elige Chocolatey y no está instalado, el script ofrece instalarlo automáticamente.
 * **Detección Dinámica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft y de terceros, presentando listas seguras y personalizadas para su eliminación.
+* **Gestión de Inicio Nativa**: Administra los programas de inicio utilizando el mismo mecanismo que el Administrador de Tareas de Windows para una compatibilidad total.
 
 ---
 
@@ -37,7 +38,7 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
     │
     ├── Run.bat
     │
-    └── SCRIPT/
+    └── Script/
         │
         └── AegisPhoenixSuite.ps1
     ```
@@ -62,7 +63,7 @@ Al iniciar, se presentan las categorías principales de la suite.
 * `1. Gestor Interactivo de Servicios del Sistema`: En lugar de una lista fija, abre un gestor interactivo. Muestra el estado de servicios importantes (Estándar y Avanzados), permitiendo activarlos, desactivarlos o restaurarlos a su configuración por defecto de forma individual.
 * `2. Módulo de Limpieza Profunda`: Abre un submenú con tres niveles de limpieza (Estándar, Profunda y Avanzada de Caches) para eliminar archivos temporales, papelera, miniaturas, etc.
 * `3. Eliminar Apps Preinstaladas (Dinamico)`: Abre un submenú para elegir entre eliminar bloatware de Microsoft o de terceros. Escanea, filtra y presenta un menú interactivo para una eliminación segura.
-* `4. Gestionar Programas de Inicio (Interactivo)`: Abre una interfaz interactiva y completa que detecta programas en el registro, carpetas de inicio y tareas programadas, permitiendo habilitar o deshabilitar lo que arranca con Windows.
+* `4. Gestionar Programas de Inicio (Modo Nativo)`: Abre una interfaz interactiva que detecta programas en el registro y en las carpetas de inicio. Es **100% compatible con el Administrador de Tareas de Windows**, leyendo y escribiendo los mismos valores del sistema para habilitar o deshabilitar lo que arranca con Windows.
 
 ### 3. Módulo de Mantenimiento y Reparación
 
@@ -96,6 +97,11 @@ Este menú da acceso a todos los módulos de nivel experto.
 * `1. Buscar y aplicar actualizaciones (Interactivo)`: Ejecuta el comando de actualización del motor seleccionado, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
 * `2. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
 * `3. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
+
+#### → S. Administración de Sistema
+* Abre un submenú con herramientas administrativas.
+* **Limpiar Registros de Eventos de Windows**: Permite borrar los registros de eventos principales (Aplicación, Seguridad, Sistema).
+* **Gestionar Tareas Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar todas las tareas programadas que no son de Microsoft, independientemente de su disparador.
 
 ---
 
