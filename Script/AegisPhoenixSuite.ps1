@@ -2,14 +2,14 @@
 .SYNOPSIS
     Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
 .DESCRIPTION
-    Aegis Phoenix Suite v3.5 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
+    Aegis Phoenix Suite v3.6 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    3.5
+    3.6
 #>
 
 # --- Verificacion de Privilegios de Administrador ---
@@ -229,7 +229,7 @@ $script:SystemTweaks = @(
 	
 # Objeto a añadir para el icono de Spotlight
     [PSCustomObject]@{
-        Name           = "Ocultar Icono 'Más Información' de Spotlight"
+        Name           = "Ocultar Icono 'Más Informacion' de Spotlight"
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Elimina el ícono superpuesto en el escritorio cuando se usa Windows Spotlight como fondo."
         Method         = "Registry"
@@ -302,7 +302,7 @@ $script:ServiceCatalog = @(
 function Create-RestorePoint {
     Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.5_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.6_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
     } catch { Write-Error "No se pudo crear el punto de restauracion. Error: $_" }
     Read-Host "`nPresiona Enter para volver..."
@@ -644,57 +644,76 @@ function Manage-StartupApps {
 
     #region Funciones Auxiliares
     
+    # --- AÑADIDO: Valores binarios exactos que usa el Administrador de Tareas ---
+    $script:EnabledValue  = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
+    $script:DisabledValue = [byte[]](0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
+
+    # --- NUEVA FUNCIoN: Escribe el estado (Habilitado/Deshabilitado) de la misma forma que el Administrador de Tareas ---
+    function Set-StartupApprovedStatus {
+        param(
+            [string]$ItemName,
+            [string]$BaseKeyPath,
+            [string]$ItemType, # 'Run' o 'StartupFolder'
+            [ValidateSet('Enable', 'Disable')][string]$Action
+        )
+        try {
+            $approvedKeyPath = Join-Path -Path $BaseKeyPath -ChildPath "Explorer\StartupApproved\$ItemType"
+            if (-not (Test-Path $approvedKeyPath)) {
+                New-Item -Path $approvedKeyPath -Force | Out-Null
+            }
+            
+            $valueToSet = if ($Action -eq 'Enable') { $script:EnabledValue } else { $script:DisabledValue }
+            
+            Set-ItemProperty -Path $approvedKeyPath -Name $ItemName -Value $valueToSet -Type Binary -Force
+            return $true
+        } catch {
+            Write-Warning "No se pudo establecer el estado para '$ItemName'. Error: $($_.Exception.Message)"
+            return $false
+        }
+    }
+
+    # Detecta el estado real de un programa de inicio. Esta funcion es de la version anterior y es correcta.
     function Get-StartupApprovedStatus {
         param(
             [string]$ItemName,
-            [string]$BaseKeyPath, # e.g., "HKCU:\Software\Microsoft\Windows\CurrentVersion"
-            [string]$ItemType     # 'Run' o 'StartupFolder'
+            [string]$BaseKeyPath,
+            [string]$ItemType
         )
-
-        $approvedKeyPath = "$BaseKeyPath\Explorer\StartupApproved\$ItemType"
-        
-        if (-not (Test-Path $approvedKeyPath)) {
-            return 'Enabled' # Si la clave no existe, todo esta habilitado por defecto
-        }
-
+        $approvedKeyPath = Join-Path -Path $BaseKeyPath -ChildPath "Explorer\StartupApproved\$ItemType"
+        if (-not (Test-Path $approvedKeyPath)) { return 'Enabled' }
         $property = Get-ItemProperty -Path $approvedKeyPath -Name $ItemName -ErrorAction SilentlyContinue
-        
-        if ($null -eq $property) {
-            return 'Enabled' # Si la propiedad no existe para este item, esta habilitado
-        }
-
+        if ($null -eq $property) { return 'Enabled' }
         $binaryData = $property.$ItemName
         if ($null -ne $binaryData -and $binaryData.Length -gt 0) {
-            # El estado esta en el primer byte. Impar = Deshabilitado, Par = Habilitado.
-            if ($binaryData[0] % 2 -ne 0) {
-                return 'Disabled'
-            }
+            if ($binaryData[0] % 2 -ne 0) { return 'Disabled' }
         }
         return 'Enabled'
     }
 
+    # MODIFICADO: Se asegura de que el objeto devuelto contenga BaseKey y ItemType para las acciones.
     function Get-AllStartupItems {
         $allItems = [System.Collections.Generic.List[psobject]]::new()
-        $shell = New-Object -ComObject WScript.Shell
-
+        
         # 1. Elementos de Registro
         $regLocations = @(
-            @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; Type = "Run" },
-            @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; Type = "Run" },
-            @{ Path = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion"; Type = "Run" }
+            @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; ItemType = "Run" },
+            @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; ItemType = "Run" },
+            @{ Path = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion"; ItemType = "Run" }
         )
         foreach ($location in $regLocations) {
             if (Test-Path $location.Path) {
-                Get-Item -Path $location.Path | Get-ItemProperty | ForEach-Object {
-                    $propertyNames = $_.PSObject.Properties.Name | Where-Object { $_ -ne 'PSPath' -and $_ -ne 'PSParentPath' -and $_ -ne 'PSChildName' -and $_ -ne 'PSDrive' -and $_ -ne 'PSProvider' }
-                    foreach ($name in $propertyNames) {
+                Get-ItemProperty $location.Path | ForEach-Object {
+                    $itemProperties = $_
+                    $itemProperties.PSObject.Properties | Where-Object { $_.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider', '(Default)') } | ForEach-Object {
                         $allItems.Add([PSCustomObject]@{
-                            Name     = $name
-                            Type     = 'Registry'
-                            Status   = Get-StartupApprovedStatus -ItemName $name -BaseKeyPath $location.BaseKey -ItemType $location.Type
-                            Command  = $_.$name
-                            Path     = $location.Path
-                            Selected = $false
+                            Name      = $_.Name
+                            Type      = 'Registry'
+                            Status    = Get-StartupApprovedStatus -ItemName $_.Name -BaseKeyPath $location.BaseKey -ItemType $location.ItemType
+                            Command   = $_.Value
+                            Path      = $location.Path
+                            BaseKey   = $location.BaseKey # Necesario para la accion
+                            ItemType  = $location.ItemType  # Necesario para la accion
+                            Selected  = $false
                         })
                     }
                 }
@@ -703,72 +722,28 @@ function Manage-StartupApps {
 
         # 2. Elementos de Carpetas de Inicio
         $folderLocations = @(
-            @{ Path = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; Type = "StartupFolder" },
-            @{ Path = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; Type = "StartupFolder" }
+            @{ Path = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; ItemType = "StartupFolder" },
+            @{ Path = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; ItemType = "StartupFolder" }
         )
         foreach ($location in $folderLocations) {
             if (Test-Path $location.Path) {
-                Get-ChildItem -Path $location.Path -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-                    $targetPath = ""
-                    try { $targetPath = $shell.CreateShortcut($_.FullName).TargetPath } catch { $targetPath = "Acceso directo roto" }
+                Get-ChildItem -Path $location.Path -File -ErrorAction SilentlyContinue | ForEach-Object {
                     $allItems.Add([PSCustomObject]@{
-                        Name     = $_.Name
-                        Type     = 'Folder'
-                        Status   = Get-StartupApprovedStatus -ItemName $_.Name -BaseKeyPath $location.BaseKey -ItemType $location.Type
-                        Command  = $targetPath
-                        Path     = $_.FullName
-                        Selected = $false
+                        Name      = $_.Name
+                        Type      = 'Folder'
+                        Status    = Get-StartupApprovedStatus -ItemName $_.Name -BaseKeyPath $location.BaseKey -ItemType $location.ItemType
+                        Command   = $_.FullName
+                        Path      = $_.FullName
+                        BaseKey   = $location.BaseKey # Necesario para la accion
+                        ItemType  = $location.ItemType  # Necesario para la accion
+                        Selected  = $false
                     })
                 }
             }
         }
-
-        # 3. Elementos Deshabilitados por este script (método propio)
-        $disabledRegKeys = @(
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run-Disabled",
-            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run-Disabled",
-            "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run-Disabled"
-        )
-        foreach ($keyPath in $disabledRegKeys) {
-            if (Test-Path $keyPath) {
-                 Get-Item -Path $keyPath | Get-ItemProperty | ForEach-Object {
-                    $propertyNames = $_.PSObject.Properties.Name | Where-Object { $_ -ne 'PSPath' -and $_ -ne 'PSParentPath' -and $_ -ne 'PSChildName' -and $_ -ne 'PSDrive' -and $_ -ne 'PSProvider' }
-                    foreach ($name in $propertyNames) {
-                        $allItems.Add([PSCustomObject]@{
-                            Name     = $name
-                            Type     = 'Registry'
-                            Status   = 'Disabled'
-                            Command  = $_.$name
-                            Path     = $keyPath
-                            Selected = $false
-                        })
-                    }
-                }
-            }
-        }
-        $disabledFolderPaths = @(
-            (Join-Path -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup" -ChildPath "disabled"),
-            (Join-Path -Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" -ChildPath "disabled")
-        )
-        foreach ($folderPath in $disabledFolderPaths) {
-            if (Test-Path $folderPath) {
-                Get-ChildItem -Path $folderPath -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-                    $targetPath = ""
-                    try { $targetPath = $shell.CreateShortcut($_.FullName).TargetPath } catch { $targetPath = "Acceso directo roto" }
-                    $allItems.Add([PSCustomObject]@{
-                        Name     = $_.Name
-                        Type     = 'Folder'
-                        Status   = 'Disabled'
-                        Command  = $targetPath
-                        Path     = $_.FullName
-                        Selected = $false
-                    })
-                }
-            }
-        }
-
-        # 4. Tareas Programadas
-        Get-ScheduledTask | Where-Object { $_.Triggers.TriggerType -contains 'Logon' } | ForEach-Object {
+        
+        # 3. Tareas Programadas
+        Get-ScheduledTask | Where-Object { ($_.Triggers.TriggerType -contains 'Logon') -and ($_.TaskPath -notlike "\Microsoft\*") } | ForEach-Object {
             $action = ($_.Actions | Select-Object -First 1).Execute
             $arguments = ($_.Actions | Select-Object -First 1).Arguments
             $allItems.Add([PSCustomObject]@{
@@ -777,14 +752,14 @@ function Manage-StartupApps {
                 Status   = if ($_.State -eq 'Disabled') { 'Disabled' } else { 'Enabled' }
                 Command  = "$action $arguments"
                 Path     = $_.TaskPath
+                BaseKey  = '' # No aplica
+                ItemType = '' # No aplica
                 Selected = $false
             })
         }
         
-        # Ordenar por Estado (Habilitados primero) y luego por Nombre
         return $allItems | Sort-Object @{Expression={if ($_.Status -eq 'Enabled') {0} else {1}}}, Name
     }
-
     #endregion
 
     # --- Bucle Principal de la Interfaz ---
@@ -793,8 +768,11 @@ function Manage-StartupApps {
 
     while ($choice -ne 'V') {
         Clear-Host
-        Write-Host "Gestion de Programas de Inicio" -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "     Gestion de Programas de Inicio (Modo Nativo)      " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "Escribe el numero para marcar/desmarcar un programa."
+        Write-Host ""
         
         for ($i = 0; $i -lt $startupItems.Count; $i++) {
             $item = $startupItems[$i]
@@ -802,8 +780,8 @@ function Manage-StartupApps {
             $statusColor = if ($item.Status -eq 'Enabled') { 'Green' } else { 'Red' }
 
             Write-Host ("   [{0,2}] {1} " -f ($i + 1), $statusMarker) -NoNewline
-            Write-Host ("{0,-60}" -f $item.Name) -NoNewline
-            Write-Host ("[{0}]" -f $item.Status) -ForegroundColor $statusColor
+            Write-Host ("{0,-50}" -f $item.Name) -NoNewline
+            Write-Host ("[{0,-8}]" -f $item.Status) -ForegroundColor $statusColor
         }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
@@ -829,49 +807,28 @@ function Manage-StartupApps {
             }
 
             foreach ($item in $selectedItems) {
-                $actionDescription = if ($choice -eq 'D') { "Deshabilitar" } else { "Habilitar" }
-                if (-not($PSCmdlet.ShouldProcess($item.Name, $actionDescription))) {
+                $action = if ($choice -eq 'D') { "Disable" } else { "Enable" }
+                if (-not($PSCmdlet.ShouldProcess($item.Name, $action))) {
                     continue
                 }
                 
-                try {
-                    switch ($item.Type) {
-                        'Registry' {
-                            if ($choice -eq 'D' -and $item.Status -eq 'Enabled') {
-                                $disabledPath = $item.Path.Replace("\Run","\Run-Disabled")
-                                if (-not(Test-Path $disabledPath)) { New-Item -Path $disabledPath -Force | Out-Null }
-                                New-ItemProperty -Path $disabledPath -Name $item.Name -Value $item.Command -PropertyType String -Force -ErrorAction Stop
-                                Remove-ItemProperty -Path $item.Path -Name $item.Name -Force -ErrorAction Stop
-                            } elseif ($choice -eq 'H' -and $item.Status -eq 'Disabled') {
-                                $enabledPath = $item.Path -replace "-Disabled", ""
-                                New-ItemProperty -Path $enabledPath -Name $item.Name -Value $item.Command -PropertyType String -Force -ErrorAction Stop
-                                Remove-ItemProperty -Path $item.Path -Name $item.Name -Force -ErrorAction Stop
-                            }
-                        }
-                        'Folder' {
-                             if ($choice -eq 'D' -and $item.Status -eq 'Enabled') {
-                                $dir = Split-Path -Parent $item.Path
-                                $disabledDir = Join-Path -Path $dir -ChildPath "disabled"
-                                if (-not(Test-Path $disabledDir)) { New-Item -Path $disabledDir -ItemType Directory | Out-Null }
-                                Move-Item -Path $item.Path -Destination $disabledDir -Force
-                            } elseif ($choice -eq 'H' -and $item.Status -eq 'Disabled') {
-                                $destinationDir = (Get-Item $item.Path).Directory.Parent.FullName
-                                Move-Item -Path $item.Path -Destination $destinationDir -Force
-                            }
-                        }
-                        'Task' {
-                             if ($choice -eq 'D' -and $item.Status -ne 'Disabled') {
-                                Disable-ScheduledTask -TaskPath $item.Path -TaskName $item.Name -ErrorAction Stop
-                            } elseif ($choice -eq 'H' -and $item.Status -eq 'Disabled') {
-                                Enable-ScheduledTask -TaskPath $item.Path -TaskName $item.Name -ErrorAction Stop
-                            }
+                # --- LoGICA DE ACCIoN 100% NATIVA ---
+                switch ($item.Type) {
+                    'Registry' {
+                        Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action
+                    }
+                    'Folder' {
+                        Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action
+                    }
+                    'Task' {
+                         if ($action -eq 'Disable') {
+                            Disable-ScheduledTask -TaskPath $item.Path -TaskName $item.Name -ErrorAction SilentlyContinue
+                        } else {
+                            Enable-ScheduledTask -TaskPath $item.Path -TaskName $item.Name -ErrorAction SilentlyContinue
                         }
                     }
-                } catch {
-                    Write-Warning "No se pudo modificar la entrada '$($item.Name)'. Error: $($_.Exception.Message)"
                 }
             }
-            # Desmarcar todo y refrescar la lista para ver los cambios
             $startupItems.ForEach({$_.Selected = $false})
             Write-Host "`n[OK] Accion completada. Refrescando lista..." -ForegroundColor Green
             Start-Sleep -Seconds 1
@@ -952,9 +909,24 @@ function Repair-SystemFiles {
     Read-Host "`nPresiona Enter para volver..."
 }
 
-function Clear-SystemCaches { Write-Host "`nLimpiando caches..."; ipconfig /flushdns; wsreset.exe -q; Write-Host "[OK] Caches de DNS y Tienda limpiadas."; Read-Host "`nPresiona Enter para volver..." }
-function Optimize-Drives { Write-Host "`nOptimizando unidades..."; Optimize-Volume -DriveLetter C -Verbose; Read-Host "`nPresiona Enter para volver..." }
-function Generate-SystemReport { $parentDir = Split-Path -Parent $PSScriptRoot; $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"; if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null }; $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"; Write-Host "`n[+] Generando reporte de energia..."; powercfg /energy /output $reportPath /duration 30; if (Test-Path $reportPath) { Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green; Start-Process $reportPath } else { Write-Error "No se pudo generar el reporte." }; Read-Host "`nPresiona Enter para volver..." }
+function Clear-SystemCaches {
+	Write-Host "`nLimpiando caches..."; ipconfig /flushdns; wsreset.exe -q;
+	Write-Host "[OK] Caches de DNS y Tienda limpiadas.";
+	Read-Host "`nPresiona Enter para volver..." }
+function Optimize-Drives {
+	Write-Host "`nOptimizando unidades...";
+	Optimize-Volume -DriveLetter C -Verbose;
+	Read-Host "`nPresiona Enter para volver..." }
+function Generate-SystemReport { $parentDir = Split-Path -Parent $PSScriptRoot;
+$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos";
+if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null };
+$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
+Write-Host "`n[+] Generando reporte de energia...";
+powercfg /energy /output $reportPath /duration 30;
+if (Test-Path $reportPath) {
+	Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green;
+	Start-Process $reportPath } else { Write-Error "No se pudo generar el reporte." };
+	Read-Host "`nPresiona Enter para volver..." }
 
 
 function Show-InventoryMenu {
@@ -1050,6 +1022,7 @@ function Show-AdminMenu {
     Write-Host "Modulo de Administracion de Sistema" -ForegroundColor Cyan;
     Write-Host "";
     Write-Host "   [1] Limpiar Registros de Eventos de Windows";
+	Write-Host ""
     Write-Host "   [2] Gestionar Tareas Programadas de Terceros";
     Write-Host "";
     Write-Host "   [V] Volver..." -ForegroundColor Red;
@@ -1068,19 +1041,35 @@ function Show-AdminMenu {
 }
 
 function Manage-ScheduledTasks {
-    $script:tasks = Get-ScheduledTask | Where-Object { $_.Principal.GroupId -ne 'S-1-5-18' } | ForEach-Object { [PSCustomObject]@{Name=$_.TaskName; Path=$_.TaskPath; State=$_.State; Selected=$false} }
+    # MODIFICADO: Se aplica un orden personalizado para priorizar estados.
+    $script:tasks = Get-ScheduledTask | Where-Object { $_.Principal.GroupId -ne 'S-1-5-18' } | ForEach-Object { [PSCustomObject]@{Name=$_.TaskName; Path=$_.TaskPath; State=$_.State; Selected=$false} } | Sort-Object @{Expression = {
+        switch ($_.State) {
+            'Ready'   { 0 } # Prioridad más alta
+            'Running' { 0 } # Misma prioridad que 'Ready'
+            'Disabled'{ 1 } # Siguiente prioridad
+            default   { 2 } # El resto de estados al final
+        }
+    }}
     $choice = ''
     while ($choice -ne 'V') {
         Clear-Host
         Write-Host "Gestion de Tareas Programadas de Terceros" -ForegroundColor Cyan
+		Write-Host ""
         Write-Host "Escribe el numero para marcar/desmarcar una tarea."
+		Write-Host ""
         for ($i = 0; $i -lt $script:tasks.Count; $i++) {
             $status = if ($script:tasks[$i].Selected) { "[X]" } else { "[ ]" }
             $stateColor = if ($script:tasks[$i].State -eq 'Ready' -or $script:tasks[$i].State -eq 'Running') { "Green" } else { "Red" }
             Write-Host ("   [{0,2}] {1} {2,-40}" -f ($i+1), $status, $script:tasks[$i].Name) -NoNewline
             Write-Host ("[{0}]" -f $script:tasks[$i].State) -ForegroundColor $stateColor
         }
-        Write-Host ""; Write-Host "--- Acciones ---" -ForegroundColor Yellow; Write-Host "   [D] Deshabilitar Seleccionadas"; Write-Host "   [H] Habilitar Seleccionadas"; Write-Host "   [T] Seleccionar Todas"; Write-Host "   [N] No seleccionar ninguna"; Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "";
+		Write-Host "--- Acciones ---" -ForegroundColor Yellow;
+		Write-Host "   [D] Deshabilitar Seleccionadas";
+		Write-Host "   [H] Habilitar Seleccionadas";
+		Write-Host "   [T] Seleccionar Todas";
+		Write-Host "   [N] No seleccionar ninguna";
+		Write-Host "   [V] Volver..." -ForegroundColor Red
         $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $script:tasks.Count) { $index = [int]$choice - 1; $script:tasks[$index].Selected = -not $script:tasks[$index].Selected }
         elseif ($choice -eq 'T') { $script:tasks.ForEach({$_.Selected = $true}) }
@@ -1226,7 +1215,45 @@ function Invoke-SoftwareAction {
                     'Upgrade' { if ($PSCmdlet.ShouldProcess("Paquetes Seleccionados", "Actualizar (Choco)")) { choco upgrade -y $($PackageIdsToUpdate -join ' ') } }
                 }
             }
-            # Se pueden añadir logicas similares para Scoop, etc.
+            # --- AÑADIDO: Logica para Scoop ---
+            'Scoop' {
+                if (-not (Ensure-ScoopIsInstalled)) { throw "Scoop no esta disponible." }
+                switch ($Action) {
+                    'Search' {
+                        # El comando 'scoop search' devuelve nombres de paquetes, uno por linea, a veces con info adicional.
+                        scoop search $PackageName | ForEach-Object {
+                            if ($_ -and $_ -notlike 'Results from*') {
+                                $appName = ($_.Trim() -split ' ')[0]
+                                if ($appName) {
+                                    $results.Add([PSCustomObject]@{ Name = $appName; Id = $appName; Engine = 'Scoop' })
+                                }
+                            }
+                        }
+                    }
+                    'Install' {
+                        if ($PSCmdlet.ShouldProcess($PackageName, "Instalar (Scoop)")) { scoop install $PackageName }
+                    }
+                    'ListOutdated' {
+                        # El comando 'scoop status' tiene una salida muy especifica que podemos parsear.
+                        scoop status | ForEach-Object {
+                            if ($_ -match "'(?<Name>\S+)' is outdated: '(?<Version>\S+)' -> '(?<Available>\S+)'") {
+                                $results.Add([PSCustomObject]@{
+                                    Name      = $Matches['Name']
+                                    Id        = $Matches['Name']
+                                    Version   = $Matches['Version']
+                                    Available = $Matches['Available']
+                                    Engine    = 'Scoop'
+                                })
+                            }
+                        }
+                    }
+                    'Upgrade' {
+                        if ($PSCmdlet.ShouldProcess("Paquetes Seleccionados", "Actualizar (Scoop)")) {
+                            scoop update $($PackageIdsToUpdate -join ' ')
+                        }
+                    }
+                }
+            }
         }
     }
     catch {
@@ -1600,6 +1627,9 @@ function Show-AdvancedMenu {
         Write-Host "   [W] Gestion de Software (Multi-Motor)"
         Write-Host "       (Actualiza e instala todas tus aplicaciones con Winget o Chocolatey)" -ForegroundColor Gray
         Write-Host ""
+        Write-Host "   [S] Administracion de Sistema"
+        Write-Host "       (Limpia registros de eventos y gestiona tareas programadas)" -ForegroundColor Gray
+        Write-Host ""
         Write-Host "-------------------------------------------------------"
         Write-Host ""
         Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
@@ -1613,6 +1643,7 @@ function Show-AdvancedMenu {
             'I' { Show-InventoryMenu }
             'D' { Show-DriverMenu }
             'W' { Show-SoftwareMenu }
+            'S' { Show-AdminMenu } # <-- AÑADIDO
             'V' { continue }
             default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host }
         }
@@ -1624,7 +1655,7 @@ $mainChoice = ''
 do {
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "        Aegis Phoenix Suite v3.5 by SOFTMAXTER        " -ForegroundColor Cyan
+    Write-Host "        Aegis Phoenix Suite v3.6 by SOFTMAXTER        " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
