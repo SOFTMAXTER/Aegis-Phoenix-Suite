@@ -175,7 +175,57 @@ $script:SystemTweaks = @(
     }
         RestartNeeded  = "Session"
 	},
-
+	[PSCustomObject]@{
+        Name           = "Activar Plan de Energia de Maximo Rendimiento Definitivo"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Activa el plan de energia de maximo rendimiento, ideal para juegos y estaciones de trabajo. Aumenta el consumo."
+        Method         = "Command"
+        EnableCommand  = {
+        # El GUID del plan 'Maximo rendimiento definitivo'
+        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+        # Importa y activa el plan. -duplicatescheme lo revela si esta oculto.
+        powercfg -duplicatescheme $ultimatePlanGuid | Out-Null
+        powercfg /setactive $ultimatePlanGuid
+    }
+        DisableCommand = {
+        # El GUID del plan 'Equilibrado' (por defecto)
+        $balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e"
+        powercfg /setactive $balancedPlanGuid
+    }
+        CheckCommand   = {
+        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+        $activeScheme = powercfg /getactivescheme
+        return ($activeScheme -match $ultimatePlanGuid)
+    }
+        RestartNeeded  = "None"
+	},
+	[PSCustomObject]@{
+        Name           = "Optimizar Uso de Memoria del Sistema de Archivos"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Aumenta la memoria para la cache de archivos (NTFS), acelerando operaciones de disco. Recomendado para 16GB+ de RAM."
+        Method         = "Registry"
+        RegistryPath   = "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem"
+        RegistryKey    = "NtfsMemoryUsage"
+        EnabledValue   = 2 # 2 = Aumentado
+        DefaultValue   = 0 # 0 = El sistema decide (por defecto)
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+	},
+	[PSCustomObject]@{
+        Name           = "Reducir Tiempo de Espera del Menu de Arranque"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Reduce el tiempo de espera del menu de arranque (si aparece) de 30 a 10 segundos, acelerando el inicio."
+        Method         = "Command"
+        EnableCommand  = { bcdedit /timeout 10 }
+        DisableCommand = { bcdedit /timeout 30 }
+        CheckCommand   = {
+        $output = bcdedit /enum '{bootmgr}'
+        # Extrae solo el numero de la linea de timeout
+        $timeoutValue = ($output | Select-String 'timeout').Line -replace '\D',''
+        return $timeoutValue -eq '3'
+    }
+        RestartNeeded  = "Reboot"
+	},
     # Categoria: Seguridad
     [PSCustomObject]@{
         Name           = "Activar Proteccion contra Ransomware"
@@ -366,9 +416,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
-        Name           = "Añadir 'Tomar Posesion' al Menu Contextual"
+        Name           = "Agrega 'Tomar Posesion' al Menu Contextual"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Añade una opcion para tomar posesion de archivos y carpetas. util para problemas de permisos."
+        Description    = "Agrega una opcion para tomar posesion de archivos y carpetas. util para problemas de permisos."
         Method         = "Command"
         EnableCommand  = {
         $key = "HKCR\*\shell\runas"
@@ -388,9 +438,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Explorer"
 	},
 	[PSCustomObject]@{
-        Name           = "Añadir 'Bloquear en Firewall' al Menu Contextual"
+        Name           = "Agrega 'Bloquear en Firewall' al Menu Contextual"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Añade una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
+        Description    = "Agrega una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
         Method         = "Command"
         EnableCommand  = {
             $keyPath = "HKCR\exefile\shell\blockinfirewall"
@@ -424,57 +474,39 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
     },
-	[PSCustomObject]@{
-        Name           = "Activar Plan de Energia de Maximo Rendimiento Definitivo"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Activa el plan de energia de maximo rendimiento, ideal para juegos y estaciones de trabajo. Aumenta el consumo."
-        Method         = "Command"
-        EnableCommand  = {
-        # El GUID del plan 'Maximo rendimiento definitivo'
-        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-        # Importa y activa el plan. -duplicatescheme lo revela si esta oculto.
-        powercfg -duplicatescheme $ultimatePlanGuid | Out-Null
-        powercfg /setactive $ultimatePlanGuid
-    }
+ [PSCustomObject]@{
+     Name           = "Agrega 'Copiar Ruta' al Menú Contextual"
+     Category       = "Comportamiento del Sistema y UI"
+     Description    = "Agrega una opcion Util al menu contextual para copiar la ruta completa de cualquier archivo o carpeta al portapapeles."
+     Method         = "Command"
+     EnableCommand  = {
+        $keyPath = "HKCR\AllFilesystemObjects\shell\CopyPath"
+        if (-not (Test-Path $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
+        
+        # Establece el texto que se mostrará en el menú contextual
+        Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Copiar Ruta de Acceso"
+        
+        # Añade un icono profesional (el icono de 'copiar')
+        Set-ItemProperty -Path $keyPath -Name "Icon" -Value "imageres.dll,-5302"
+        
+        # Define el comando que se ejecutará
+        $commandPath = Join-Path -Path $keyPath -ChildPath "command"
+        if (-not (Test-Path $commandPath)) { New-Item -Path $commandPath -Force | Out-Null }
+        
+        # El comando usa cmd para tomar la ruta del archivo (%1) y enviarla al portapapeles (clip.exe)
+        $command = 'cmd.exe /c echo "%1" | clip'
+        Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
+        }
         DisableCommand = {
-        # El GUID del plan 'Equilibrado' (por defecto)
-        $balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e"
-        powercfg /setactive $balancedPlanGuid
-    }
+        # Para revertir, simplemente eliminamos la clave que creamos
+        Remove-Item -Path "HKCR\AllFilesystemObjects\shell\CopyPath" -Recurse -Force -ErrorAction SilentlyContinue
+        }
         CheckCommand   = {
-        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-        $activeScheme = powercfg /getactivescheme
-        return ($activeScheme -match $ultimatePlanGuid)
+        # Verificamos si la clave del comando existe para saber si el ajuste está activado
+        Test-Path "HKCR\AllFilesystemObjects\shell\CopyPath\command"
+        }
+        RestartNeeded  = "Explorer"
     }
-        RestartNeeded  = "None"
-	},
-	[PSCustomObject]@{
-        Name           = "Optimizar Uso de Memoria del Sistema de Archivos"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Aumenta la memoria para la cache de archivos (NTFS), acelerando operaciones de disco. Recomendado para 16GB+ de RAM."
-        Method         = "Registry"
-        RegistryPath   = "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem"
-        RegistryKey    = "NtfsMemoryUsage"
-        EnabledValue   = 2 # 2 = Aumentado
-        DefaultValue   = 0 # 0 = El sistema decide (por defecto)
-        RegistryType   = "DWord"
-        RestartNeeded  = "Reboot"
-	}
-	[PSCustomObject]@{
-        Name           = "Reducir Tiempo de Espera del Menu de Arranque"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Reduce el tiempo de espera del menu de arranque (si aparece) de 30 a 10 segundos, acelerando el inicio."
-        Method         = "Command"
-        EnableCommand  = { bcdedit /timeout 10 }
-        DisableCommand = { bcdedit /timeout 30 }
-        CheckCommand   = {
-        $output = bcdedit /enum '{bootmgr}'
-        # Extrae solo el numero de la linea de timeout
-        $timeoutValue = ($output | Select-String 'timeout').Line -replace '\D',''
-        return $timeoutValue -eq '3'
-    }
-        RestartNeeded  = "Reboot"
-	}
 )
 # --- CATALOGO CENTRAL DE SERVICIOS ---
 # Define todos los servicios gestionables, su proposito, categoria y estado por defecto.
