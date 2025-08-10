@@ -48,6 +48,38 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Session"
     },
+	[PSCustomObject]@{
+    Name           = "Aplicar Configuración Visual Personalizada (Rendimiento/Calidad)"
+    Category       = "Rendimiento UI"
+    Description    = "Desactiva la mayoría de animaciones pero mantiene efectos clave como Aero Peek y el suavizado de fuentes."
+    Method         = "Command"
+    EnableCommand  = {
+        # --- Desactiva la mayoría de las animaciones ---
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x12,0x07,0x80,0x10,0x00,0x00,0x00)) -Type Binary -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord -Force # Mantenemos AeroPeek
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord -Force # Mantenemos las vistas previas
+    }
+    DisableCommand = {
+        # --- Restaura la configuración "Dejar que Windows elija" ---
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00)) -Type Binary -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord -Force
+    }
+    CheckCommand   = {
+        # Verificamos un valor clave para determinar si el ajuste está aplicado.
+        # UserPreferencesMask es la clave principal que controla la mayoría de los efectos.
+        $mask = Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -ErrorAction SilentlyContinue
+        if ($null -ne $mask) {
+            # Comparamos el primer byte del valor binario. 0x90 indica "rendimiento", 0x9E indica "elegir por mí".
+            return $mask.UserPreferencesMask[0] -eq 0x90
+        }
+        return $false
+    }
+    RestartNeeded  = "Session"
+    },
 
     # Categoria: Rendimiento del Sistema
     [PSCustomObject]@{
