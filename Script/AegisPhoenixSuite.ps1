@@ -51,7 +51,7 @@ $script:SystemTweaks = @(
 	[PSCustomObject]@{
         Name           = "Aplicar Configuración Visual Personalizada (Rendimiento/Calidad)"
         Category       = "Rendimiento UI"
-        Description    = "El equilibrio perfecto: disfruta de la agilidad de un sistema de alto rendimiento sin sacrificar la estética moderna. Este perfil deshabilita el 'lag' visual de las animaciones,"
+        Description    = "Máxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
         Method         = "Command"
         EnableCommand  = {
         Write-Host " -> Aplicando configuración visual granular..." -ForegroundColor Gray
