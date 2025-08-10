@@ -923,86 +923,120 @@ function Show-CleaningMenu {
 }
 
 function Show-BloatwareMenu {
-    $bloatwareChoice = '';
-	do { Clear-Host;
-	Write-Host "Modulo de Eliminacion de Bloatware" -ForegroundColor Cyan;
-	Write-Host "Selecciona el tipo de bloatware que deseas eliminar.";
-	Write-Host "";
-	Write-Host "   [1] Eliminar Bloatware de Microsoft (Recomendado)";
-	Write-Host "       (Busca y permite eliminar apps preinstaladas por Microsoft)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "   [2] Eliminar Bloatware de Terceros (Avanzado)";
-	Write-Host "       (Busca apps preinstaladas por el fabricante del PC como HP, Dell, etc.)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "   [V] Volver..." -ForegroundColor Red;
-    Write-Host ""
-	$bloatwareChoice = Read-Host "Selecciona una opcion"; switch ($bloatwareChoice.ToUpper()) {
-		'1' { Manage-Bloatware -Type 'Microsoft' }
-		'2' { Manage-Bloatware -Type 'ThirdParty' }
-		'V' { continue };
-		default {
-			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
-			Read-Host }
-		}
+    $bloatwareChoice = ''
+    do {
+        Clear-Host
+        Write-Host "Modulo de Eliminacion de Bloatware y Apps" -ForegroundColor Cyan
+        Write-Host "Selecciona el tipo de aplicacion que deseas eliminar."
+        Write-Host ""
+        Write-Host "   [1] Eliminar Bloatware de Microsoft (Preinstalado por Windows)"
+        Write-Host "       (Busca y permite eliminar apps preinstaladas por Microsoft)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Eliminar Bloatware de Terceros (Preinstalado por Fabricante)"
+        Write-Host "       (Busca apps preinstaladas por HP, Dell, etc., para TODOS los usuarios)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Desinstalar Mis Apps (Instaladas desde la Tienda)" -ForegroundColor Yellow
+        Write-Host "       (Busca apps que Tu has instalado desde la Microsoft Store)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host ""
+        $bloatwareChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($bloatwareChoice.ToUpper()) {
+            '1' { Manage-Bloatware -Type 'Microsoft' }
+            '2' { Manage-Bloatware -Type 'ThirdParty_AllUsers' }
+            '3' { Manage-Bloatware -Type 'ThirdParty_CurrentUser' }
+            'V' { continue }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+                Read-Host 
+            }
+        }
     } while ($bloatwareChoice.ToUpper() -ne 'V')
 }
 
-# --- NUEVA FUNCION ORQUESTADORA ---
+# --- FUNCIoN 2: El Orquestador ---
+# Llama a las funciones de obtencion de datos, seleccion y desinstalacion en el orden correcto.
+function Manage-Bloatware {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Microsoft', 'ThirdParty_AllUsers', 'ThirdParty_CurrentUser')]
+        [string]$Type
+    )
+    
+    $removableApps = Get-RemovableApps -Type $Type
+    if ($removableApps.Count -eq 0) {
+        Read-Host "`nNo se encontraron aplicaciones para esta categoria. Presiona Enter para volver..."
+        return
+    }
+
+    $appsToUninstall = Show-AppSelectionMenu -AppList $removableApps
+    if ($appsToUninstall.Count -eq 0) {
+        Write-Host "`n[INFO] No se selecciono ninguna aplicacion o se cancelo la operacion." -ForegroundColor Yellow
+        Read-Host "`nPresiona Enter para volver..."
+        return
+    }
+
+    Start-AppUninstallation -AppsToUninstall $appsToUninstall
+    Read-Host "`nPresiona Enter para volver..."
+}
+
+# --- FUNCIoN 3: El Recolector de Datos ---
+# Obtiene la lista de aplicaciones segun el tipo solicitado, incluyendo la informacion necesaria para la limpieza profunda.
 function Get-RemovableApps {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('Microsoft', 'ThirdParty')]
+        [ValidateSet('Microsoft', 'ThirdParty_AllUsers', 'ThirdParty_CurrentUser')]
         [string]$Type
     )
 
     Write-Host "`n[+] Escaneando aplicaciones de tipo '$Type'..." -ForegroundColor Yellow
     $apps = @()
+    $baseFilter = { $_.IsFramework -eq $false -and $_.IsResourcePackage -eq $false }
+
+    $objectBuilder = {
+        param($app)
+        [PSCustomObject]@{
+            Name              = $app.Name
+            PackageName       = $app.PackageFullName
+            PackageFamilyName = $app.PackageFamilyName
+        }
+    }
 
     if ($Type -eq 'Microsoft') {
-        # Lista de aplicaciones de Microsoft consideradas esenciales y que no se deben mostrar para eliminar.
-        $essentialAppsBlocklist = @(
-            "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", 
-            "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs",
-            "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension",
-            "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal",
-            "Microsoft.Paint", "Microsoft.WindowsNotepad"
-        )
-        
-        $allApps = Get-AppxPackage -AllUsers | Where-Object { 
-            $_.Publisher -like "*Microsoft*" -and $_.IsFramework -eq $false -and $_.NonRemovable -eq $false 
-        }
-
+        # Esta logica no cambia, ya que el bloqueo de apps esenciales es mas importante aqui.
+        $essentialAppsBlocklist = @( "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs", "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension", "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal", "Microsoft.Paint", "Microsoft.WindowsNotepad" )
+        $allApps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.NonRemovable -eq $false -and (& $baseFilter) }
         foreach ($app in $allApps) {
             $isEssential = $false
-            foreach ($essential in $essentialAppsBlocklist) {
-                if ($app.Name -like "*$essential*") {
-                    $isEssential = $true
-                    break
-                }
-            }
-            if (-not $isEssential) {
-                $apps += [PSCustomObject]@{
-                    Name        = $app.Name
-                    PackageName = $app.PackageFullName
-                }
-            }
+            foreach ($essential in $essentialAppsBlocklist) { if ($app.Name -like "*$essential*") { $isEssential = $true; break } }
+            if (-not $isEssential) { $apps += (& $objectBuilder $app) }
         }
-    } else { # ThirdParty
+    } 
+    elseif ($Type -eq 'ThirdParty_AllUsers') {
+        # --- LoGICA MEJORADA PARA BLOATWARE DE TERCEROS ---
+        # Ahora solo busca apps no-Microsoft que esten firmadas como parte del SISTEMA (tipico del bloatware de fabricante).
         $apps = Get-AppxPackage -AllUsers | Where-Object { 
-            $_.Publisher -notlike "*Microsoft*" -and $_.IsFramework -eq $false 
-        } | ForEach-Object { 
-            [PSCustomObject]@{
-                Name        = $_.Name
-                PackageName = $_.PackageFullName
-            }
-        }
+            $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -eq 'System' -and (& $baseFilter) 
+        } | ForEach-Object { & $objectBuilder $_ }
+    }
+    elseif ($Type -eq 'ThirdParty_CurrentUser') {
+        # --- LoGICA MEJORADA PARA APPS DEL USUARIO ---
+        # Ahora solo busca apps no-Microsoft que el usuario instalo desde la TIENDA o de forma manual (Developer).
+        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $apps = Get-AppxPackage -User $currentUser | Where-Object { 
+            $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -in ('Store', 'Developer') -and (& $baseFilter) 
+        } | ForEach-Object { & $objectBuilder $_ }
     }
     
     Write-Host "[OK] Se encontraron $($apps.Count) aplicaciones." -ForegroundColor Green
     return $apps | Sort-Object Name
 }
 
+# --- FUNCIoN 4: La Interfaz de Seleccion (Reutilizable) ---
+# Muestra un menu interactivo para que el usuario marque las aplicaciones que desea desinstalar.
 function Show-AppSelectionMenu {
     [CmdletBinding()]
     param(
@@ -1010,13 +1044,12 @@ function Show-AppSelectionMenu {
         [array]$AppList
     )
 
-    # Añadir una propiedad 'Selected' a cada objeto para el menu
     $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
 
     $choice = ''
     while ($choice.ToUpper() -ne 'E' -and $choice.ToUpper() -ne 'V') {
         Clear-Host
-        Write-Host "Eliminacion Selectiva de Bloatware" -ForegroundColor Cyan
+        Write-Host "Eliminacion Selectiva de Aplicaciones" -ForegroundColor Cyan
         Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."
         
         for ($i = 0; $i -lt $AppList.Count; $i++) {
@@ -1043,14 +1076,14 @@ function Show-AppSelectionMenu {
     }
 
     if ($choice.ToUpper() -eq 'E') {
-        # Devolver solo las aplicaciones que el usuario ha seleccionado
         return $AppList | Where-Object { $_.Selected }
     } else {
-        # Si el usuario elige volver, devolver un array vacio
         return @()
     }
 }
 
+# --- FUNCIoN 5: El Motor de Ejecucion ---
+# Realiza la desinstalacion y, posteriormente, ofrece la limpieza profunda de los datos de usuario.
 function Start-AppUninstallation {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -1058,58 +1091,96 @@ function Start-AppUninstallation {
         [array]$AppsToUninstall
     )
 
-    Write-Host "`n[+] Eliminando $($AppsToUninstall.Count) aplicaciones seleccionadas..." -ForegroundColor Yellow
-    
-    foreach ($app in $AppsToUninstall) {
-        if ($PSCmdlet.ShouldProcess($app.Name, "Desinstalar")) {
-            try {
-                # Eliminar el paquete para el usuario actual y todos los usuarios
-                Write-Host " - Eliminando '$($app.Name)'..." -ForegroundColor Gray
-                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
+    # --- FASE 1: Desinstalacion Estandar ---
+    $totalApps = $AppsToUninstall.Count
+    Write-Host "`n[+] Desinstalando $totalApps aplicaciones seleccionadas..." -ForegroundColor Yellow
 
-                # Buscar y eliminar el paquete "provisionado" para que no se reinstale para nuevos usuarios
+    for ($i = 0; $i -lt $totalApps; $i++) {
+        $app = $AppsToUninstall[$i]
+        $currentAppNum = $i + 1
+        Write-Progress -Activity "Desinstalando Aplicaciones" -Status "($currentAppNum/$totalApps) Eliminando: $($app.Name)" -PercentComplete ($i / $totalApps * 100)
+
+        if ($PSCmdlet.ShouldProcess($app.Name, "Desinstalar (Estandar)")) {
+            try {
+                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
                 $provisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
                 if ($provisionedPackage) {
-                    foreach ($pkg in $provisionedPackage) {
-                        Write-Host "   - Eliminando paquete provisionado: $($pkg.PackageName)" -ForegroundColor DarkGray
-                        Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop
-                    }
+                    foreach ($pkg in $provisionedPackage) { Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction Stop }
                 }
-            } catch {
-                Write-Warning "No se pudo desinstalar por completo '$($app.Name)'. Error: $($_.Exception.Message)"
-            }
+            } catch { Write-Warning "No se pudo desinstalar por completo '$($app.Name)'. Error: $($_.Exception.Message)" }
         }
     }
-    Write-Host "`n[OK] Proceso de desinstalacion completado." -ForegroundColor Green
-}
+    Write-Progress -Activity "Desinstalando Aplicaciones" -Completed
+    Write-Host "`n[OK] Proceso de desinstalacion estandar completado." -ForegroundColor Green
+    Write-Host "-------------------------------------------------------"
 
-# --- NUEVA FUNCION ORQUESTADORA ---
-function Manage-Bloatware {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Microsoft', 'ThirdParty')]
-        [string]$Type
-    )
-    
-    # 1. Obtener la lista de aplicaciones
-    $removableApps = Get-RemovableApps -Type $Type
-    if ($removableApps.Count -eq 0) {
-        Read-Host "`nPresiona Enter para volver..."
-        return
+    # --- FASE 2 y 3: Modulo de Limpieza Profunda (Opcional) ---
+    Write-Host "`n[+] Escaneando en busca de datos de usuario sobrantes..." -ForegroundColor Yellow
+    $leftoverFolders = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($app in $AppsToUninstall) {
+        $packagePath = Join-Path -Path $env:LOCALAPPDATA -ChildPath "Packages\$($app.PackageFamilyName)"
+        if (Test-Path $packagePath) {
+            $folderSize = (Get-ChildItem $packagePath -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            $leftoverFolders.Add([PSCustomObject]@{
+                Path     = $packagePath
+                Size     = $folderSize
+                Selected = $false
+            })
+        }
     }
 
-    # 2. Mostrar el menu de seleccion y obtener las elegidas por el usuario
-    $appsToUninstall = Show-AppSelectionMenu -AppList $removableApps
-    if ($appsToUninstall.Count -eq 0) {
-        Write-Host "`n[INFO] No se selecciono ninguna aplicacion o se cancelo la operacion." -ForegroundColor Yellow
-        Read-Host "`nPresiona Enter para volver..."
-        return
-    }
+    if ($leftoverFolders.Count -gt 0) {
+        Write-Host "[INFO] Se encontraron $($leftoverFolders.Count) carpetas de datos de usuario (configuracion, cache, etc.)." -ForegroundColor Cyan
+        
+        $choice = ''
+        while ($choice.ToUpper() -ne 'S' -and $choice.ToUpper() -ne 'E') {
+            Clear-Host
+            Write-Host "Modulo de Limpieza Profunda Post-Desinstalacion" -ForegroundColor Yellow
+            Write-Host "Las siguientes carpetas de datos de usuario han quedado atras. Puedes eliminarlas para una limpieza completa."
+            Write-Warning "¡La eliminacion de estas carpetas es PERMANENTE y borrara configuraciones, partidas guardadas, etc.!"
+            
+            for ($i = 0; $i -lt $leftoverFolders.Count; $i++) {
+                $folder = $leftoverFolders[$i]
+                $status = if ($folder.Selected) { "[X]" } else { "[ ]" }
+                $sizeInMB = if ($folder.Size) { [math]::Round($folder.Size / 1MB, 2) } else { 0 }
+                Write-Host ("   [{0,2}] {1} ({2} MB) - {3}" -f ($i + 1), $status, $sizeInMB, $folder.Path)
+            }
 
-    # 3. Iniciar la desinstalacion
-    Start-AppUninstallation -AppsToUninstall $appsToUninstall
-    Read-Host "`nPresiona Enter para volver..."
+            Write-Host "`n--- Acciones ---"
+            Write-Host "   [Numero] - Marcar/Desmarcar para eliminar"
+            Write-Host "   [T] - Marcar Todos   [N] - Desmarcar Todos"
+            Write-Host "   [S] - Omitir y Salir   [E] - Eliminar Seleccionados" -ForegroundColor Red
+            
+            $rawChoice = Read-Host "`nSelecciona una opcion"
+            if ($rawChoice -match '^\d+$' -and [int]$rawChoice -ge 1 -and [int]$rawChoice -le $leftoverFolders.Count) {
+                $index = [int]$rawChoice - 1
+                $leftoverFolders[$index].Selected = -not $leftoverFolders[$index].Selected
+            }
+            elseif ($rawChoice.ToUpper() -eq 'T') { $leftoverFolders.ForEach({$_.Selected = $true}) }
+            elseif ($rawChoice.ToUpper() -eq 'N') { $leftoverFolders.ForEach({$_.Selected = $false}) }
+            elseif ($rawChoice.ToUpper() -eq 'E') {
+                $foldersToDelete = $leftoverFolders | Where-Object { $_.Selected }
+                if ($foldersToDelete.Count -gt 0) {
+                    foreach ($folder in $foldersToDelete) {
+                        if ($PSCmdlet.ShouldProcess($folder.Path, "Eliminar Carpeta de Datos Permanentemente")) {
+                            try {
+                                Remove-Item -Path $folder.Path -Recurse -Force -ErrorAction Stop
+                                Write-Host "[OK] Eliminado: $($folder.Path)" -ForegroundColor Green
+                            } catch {
+                                Write-Error "No se pudo eliminar '$($folder.Path)'. Error: $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                }
+                # Salir del bucle despues de eliminar
+                break 
+            }
+            elseif ($rawChoice.ToUpper() -eq 'S') { break }
+        }
+    } else {
+        Write-Host "[OK] No se encontraron datos de usuario sobrantes." -ForegroundColor Green
+    }
 }
 
 function Manage-StartupApps {
