@@ -293,6 +293,18 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "None"
 	},
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Windows Recall (Snapshots de IA)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Evita que el sistema guarde 'snapshots' de tu actividad para la función de IA Recall, protegiendo tu privacidad."
+        Method         = "Registry"
+        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
+        RegistryKey    = "DisableAIDataAnalysis"
+        EnabledValue   = 1    # Un valor de '1' DESHABILITA la recolección de datos de Recall.
+        DefaultValue   = 0    # Un valor de '0' la HABILITA (comportamiento por defecto).
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
      # Categoria: Comportamiento del Sistema y UI
     [PSCustomObject]@{
