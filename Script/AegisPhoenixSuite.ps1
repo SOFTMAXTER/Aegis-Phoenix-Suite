@@ -255,17 +255,29 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "None"
     },
-    [PSCustomObject]@{
-        Name           = "Limitar Envio de Datos de Escritura"
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Windows Recall (Snapshots de IA)"
         Category       = "Privacidad y Telemetria"
-        Description    = "Desactiva la personalizacion de entrada de texto para limitar el envio de datos a Microsoft."
+        Description    = "Evita que el sistema guarde 'snapshots' de tu actividad para la función de IA Recall, protegiendo tu privacidad. (Directiva Oficial)"
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Microsoft\Input\Settings"
-        RegistryKey    = "IsInputPersonalizationEnabled"
-        EnabledValue   = 0
-        DefaultValue   = 1
+        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
+        RegistryKey    = "DisableAIDataAnalysis"
+        EnabledValue   = 1    # Valor '1' deshabilita la función
+        DefaultValue   = 0    # Valor '0' es el predeterminado
         RegistryType   = "DWord"
-        RestartNeeded  = "None"
+        RestartNeeded  = "Reboot"
+    }, 
+	[PSCustomObject]@{
+         Name           = "Deshabilitar Personalización de Entrada"
+         Category       = "Privacidad y Telemetria"
+         Description    = "Impide que Windows use el historial de escritura para personalizar la experiencia, mejorando la privacidad. (Directiva Oficial)"
+         Method         = "Registry"
+         RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
+         RegistryKey    = "AllowInputPersonalization"
+         EnabledValue   = 0    # Valor '0' desactiva la personalización
+         DefaultValue   = 1    # Valor '1' es el predeterminado
+         RegistryType   = "DWord"
+         RestartNeeded  = "None"
     },
 
 # Objeto a añadir para Cortana
@@ -346,10 +358,10 @@ $script:SystemTweaks = @(
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Desactiva el asistente Copilot de IA a nivel de directiva de sistema."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot"
+        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
         RegistryKey    = "TurnOffWindowsCopilot"
-        EnabledValue   = 1
-        DefaultValue   = 0
+        EnabledValue   = 1    # Valor '1' deshabilita Copilot
+        DefaultValue   = 0    # Valor '0' es el predeterminado
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
@@ -360,43 +372,43 @@ $script:SystemTweaks = @(
         Method         = "Command"
         EnableCommand  = {
         $key = "HKCR\*\shell\runas"
-        if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
-        Set-ItemProperty -Path $key -Name "(Default)" -Value "Tomar Posesion"
-        Set-ItemProperty -Path $key -Name "NoWorkingDirectory" -Value ""
-        New-Item -Path "$key\command" -Force | Out-Null
-        Set-ItemProperty -Path "$key\command" -Name "(Default)" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
-        Set-ItemProperty -Path "$key\command" -Name "IsolatedCommand" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
-    }
+		    if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
+                Set-ItemProperty -Path $key -Name "(Default)" -Value "Tomar Posesion"
+                Set-ItemProperty -Path $key -Name "NoWorkingDirectory" -Value ""
+                New-Item -Path "$key\command" -Force | Out-Null
+                Set-ItemProperty -Path "$key\command" -Name "(Default)" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
+                Set-ItemProperty -Path "$key\command" -Name "IsolatedCommand" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
+        }
         DisableCommand = {
         Remove-Item -Path "HKCR\*\shell\runas" -Recurse -Force -ErrorAction SilentlyContinue
-    }
+        }
         CheckCommand   = {
         Test-Path "HKCR\*\shell\runas\command"
-    }
+        }
         RestartNeeded  = "Explorer"
 	},
 	[PSCustomObject]@{
-    Name           = "Añadir 'Bloquear en Firewall' al Menu Contextual"
-    Category       = "Comportamiento del Sistema y UI"
-    Description    = "Añade una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
-    Method         = "Command"
-    EnableCommand  = {
-        $keyPath = "HKCR\exefile\shell\blockinfirewall"
-        New-Item -Path $keyPath -Force | Out-Null
-        Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Bloquear en Firewall"
-        Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"
-        $commandPath = "$keyPath\command"
-        New-Item -Path $commandPath -Force | Out-Null
-        $command = "powershell -WindowStyle Hidden -Command `"New-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -Direction Outbound -Program `"%1`" -Action Block`""
-        Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
-    }
-    DisableCommand = {
-        Remove-Item -Path "HKCR\exefile\shell\blockinfirewall" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    CheckCommand   = {
+        Name           = "Añadir 'Bloquear en Firewall' al Menu Contextual"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Añade una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
+        Method         = "Command"
+        EnableCommand  = {
+            $keyPath = "HKCR\exefile\shell\blockinfirewall"
+            New-Item -Path $keyPath -Force | Out-Null
+            Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Bloquear en Firewall"
+            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"
+            $commandPath = "$keyPath\command"
+            New-Item -Path $commandPath -Force | Out-Null
+            $command = "powershell -WindowStyle Hidden -Command `"New-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -Direction Outbound -Program `"%1`" -Action Block`""
+            Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
+        }
+        DisableCommand = {
+            Remove-Item -Path "HKCR\exefile\shell\blockinfirewall" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
         Test-Path "HKCR\exefile\shell\blockinfirewall"
-    }
-    RestartNeeded  = "Explorer"
+        }
+        RestartNeeded  = "Explorer"
 	},
 	
 # Objeto a añadir para el icono de Spotlight
