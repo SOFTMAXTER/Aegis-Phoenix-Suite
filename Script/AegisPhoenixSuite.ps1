@@ -49,36 +49,59 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Session"
     },
 	[PSCustomObject]@{
-    Name           = "Aplicar Configuración Visual Personalizada (Rendimiento/Calidad)"
-    Category       = "Rendimiento UI"
-    Description    = "Desactiva la mayoría de animaciones pero mantiene efectos clave como Aero Peek y el suavizado de fuentes."
-    Method         = "Command"
-    EnableCommand  = {
-        # --- Desactiva la mayoría de las animaciones ---
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x12,0x07,0x80,0x10,0x00,0x00,0x00)) -Type Binary -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord -Force # Mantenemos AeroPeek
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord -Force # Mantenemos las vistas previas
+        Name           = "Aplicar Configuración Visual Personalizada (Rendimiento/Calidad)"
+        Category       = "Rendimiento UI"
+        Description    = "El equilibrio perfecto: disfruta de la agilidad de un sistema de alto rendimiento sin sacrificar la estética moderna. Este perfil deshabilita el 'lag' visual de las animaciones,"
+        Method         = "Command"
+        EnableCommand  = {
+        Write-Host " -> Aplicando configuración visual granular..." -ForegroundColor Gray
+        # Desactivados
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -Value "0" -Type String # AnimateMinMax
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord # TaskbarAnimations
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuAnimation" -Value "0" -Type String # MenuAnimation
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TooltipAnimation" -Value "0" -Type String # TooltipAnimation
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SelectionFade" -Value "0" -Type String # SelectionFade
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 0 -Type DWord # DWMSaveThumbnailEnabled (Invertido, 0 lo desactiva)
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "0" -Type String # ComboBoxAnimation
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "0" -Type String # ListBoxSmoothScrolling
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DropShadow" -Value "0" -Type String # DropShadow
+        # Activados
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord # DWMAeroPeekEnabled
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String # CursorShadow
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x32,0x07,0x80,0x12,0x00,0x00,0x00)) # ListviewShadow, ThumbnailsOrIcon (este valor los mantiene activados)
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord # ListviewAlphaSelect
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String # DragFullWindows
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String # FontSmoothing (2 = ClearType)
+        # ControlAnimations es controlado por el UserPreferencesMask
     }
-    DisableCommand = {
-        # --- Restaura la configuración "Dejar que Windows elija" ---
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00)) -Type Binary -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord -Force
+        DisableCommand = {
+        Write-Host " -> Restaurando configuración visual por defecto de Windows..." -ForegroundColor Gray
+        # Restaura los valores por defecto de Windows
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuAnimation" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TooltipAnimation" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SelectionFade" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DropShadow" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00))
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String
+        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String
     }
-    CheckCommand   = {
-        # Verificamos un valor clave para determinar si el ajuste está aplicado.
-        # UserPreferencesMask es la clave principal que controla la mayoría de los efectos.
-        $mask = Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -ErrorAction SilentlyContinue
-        if ($null -ne $mask) {
-            # Comparamos el primer byte del valor binario. 0x90 indica "rendimiento", 0x9E indica "elegir por mí".
-            return $mask.UserPreferencesMask[0] -eq 0x90
-        }
-        return $false
+        CheckCommand   = {
+        # Verificamos 3 valores clave para determinar si el ajuste está aplicado (uno desactivado, uno activado y uno complejo)
+        $minAnimate = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate
+        $aeroPeek = (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -ErrorAction SilentlyContinue).EnableAeroPeek
+        $fontSmoothing = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -ErrorAction SilentlyContinue).FontSmoothing
+
+        return ($minAnimate -eq "0" -and $aeroPeek -eq 1 -and $fontSmoothing -eq "2")
     }
-    RestartNeeded  = "Session"
+        RestartNeeded  = "Session"
     },
 
     # Categoria: Rendimiento del Sistema
