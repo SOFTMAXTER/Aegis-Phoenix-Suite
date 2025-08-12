@@ -51,47 +51,55 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Aplicar Configuracion Visual Personalizada (Rendimiento/Calidad)"
         Category       = "Rendimiento UI"
-        Description    = "Maxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
+        Description    = "Maxima fluidez, cero distracciones. Establece los valores visuales por defecto del sistema (HKLM) segun una configuracion personalizada."
         Method         = "Command"
         EnableCommand  = {
-            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MenuAnimation" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "TooltipAnimation" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "SelectionFade" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 0 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DropShadow" -Value "0" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x32,0x07,0x80,0x12,0x00,0x00,0x00));
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String;
+            # --- VALORES VERIFICADOS POR EL USUARIO APLICADOS A HKLM ---
+            $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+            Set-ItemProperty -Path "$basePath\ControlAnimations" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\AnimateMinMax" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\TaskbarAnimations" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DWMAeroPeekEnabled" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\MenuAnimation" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\TooltipAnimation" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\SelectionFade" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DWMSaveThumbnailEnabled" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\CursorShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListviewShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ThumbnailsOrIcon" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListviewAlphaSelect" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DragFullWindows" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ComboBoxAnimation" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListBoxSmoothScrolling" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DropShadow" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
         }
         DisableCommand = {
-            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MenuAnimation" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "TooltipAnimation" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "SelectionFade" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DropShadow" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00));
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String;
+            # Restaura los valores por defecto de Windows para estas claves
+            $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+            Set-ItemProperty -Path "$basePath\ControlAnimations" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\AnimateMinMax" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\TaskbarAnimations" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DWMAeroPeekEnabled" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\MenuAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\TooltipAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\SelectionFade" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DWMSaveThumbnailEnabled" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\CursorShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListviewShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ThumbnailsOrIcon" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListviewAlphaSelect" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DragFullWindows" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ComboBoxAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 2 -Type 'DWord' -Force; # Default es 2 (ClearType)
+            Set-ItemProperty -Path "$basePath\ListBoxSmoothScrolling" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DropShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
         }
         CheckCommand   = {
-            $minAnimate = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate;
-			$aeroPeek = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -ErrorAction SilentlyContinue).EnableAeroPeek;
-			$fontSmoothing = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -ErrorAction SilentlyContinue).FontSmoothing;
-			return ($minAnimate -eq "0" -and $aeroPeek -eq 1 -and $fontSmoothing -eq "2")
+            $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+            $animate = (Get-ItemProperty -Path "$basePath\AnimateMinMax" -Name 'DefaultValue' -ErrorAction SilentlyContinue).DefaultValue
+            $peek = (Get-ItemProperty -Path "$basePath\DWMAeroPeekEnabled" -Name 'DefaultValue' -ErrorAction SilentlyContinue).DefaultValue
+            return ($animate -eq 0 -and $peek -eq 1)
         }
         RestartNeeded  = "Session"
     },
