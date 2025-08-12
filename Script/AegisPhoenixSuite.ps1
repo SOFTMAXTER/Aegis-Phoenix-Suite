@@ -24,17 +24,17 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 # Esta es la "fuente de la verdad" para todos los tweaks, ajustes de seguridad, privacidad y UI.
 # Cada objeto define un ajuste, permitiendo que los menus y las acciones se generen dinamicamente.
 $script:SystemTweaks = @(
-    # Categoria: Rendimiento UI
+    # --- Categoria: Rendimiento UI ---
     [PSCustomObject]@{
         Name           = "Acelerar la Aparicion de Menus"
         Category       = "Rendimiento UI"
         Description    = "Reduce el retraso (en ms) al mostrar los menus contextuales del Explorador."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Control Panel\Desktop"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Control Panel\Desktop"
         RegistryKey    = "MenuShowDelay"
         EnabledValue   = "0"
         DefaultValue   = "400"
-		RegistryType   = "String"
+        RegistryType   = "String"
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
@@ -42,75 +42,67 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento UI"
         Description    = "Elimina una demora artificial que Windows aplica a los programas que inician con el sistema."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize"
         RegistryKey    = "StartupDelayInMSec"
         EnabledValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "Session"
-    },
-	[PSCustomObject]@{
-        Name           = "Aplicar Configuración Visual Personalizada (Rendimiento/Calidad)"
+	},
+    [PSCustomObject]@{
+        Name           = "Aplicar Configuracion Visual Personalizada (Rendimiento/Calidad)"
         Category       = "Rendimiento UI"
-        Description    = "Máxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
+        Description    = "Maxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
         Method         = "Command"
         EnableCommand  = {
-        Write-Host " -> Aplicando configuración visual granular..." -ForegroundColor Gray
-        # Desactivados
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -Value "0" -Type String # AnimateMinMax
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord # TaskbarAnimations
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuAnimation" -Value "0" -Type String # MenuAnimation
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TooltipAnimation" -Value "0" -Type String # TooltipAnimation
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SelectionFade" -Value "0" -Type String # SelectionFade
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 0 -Type DWord # DWMSaveThumbnailEnabled (Invertido, 0 lo desactiva)
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "0" -Type String # ComboBoxAnimation
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "0" -Type String # ListBoxSmoothScrolling
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DropShadow" -Value "0" -Type String # DropShadow
-        # Activados
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord # DWMAeroPeekEnabled
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String # CursorShadow
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x32,0x07,0x80,0x12,0x00,0x00,0x00)) # ListviewShadow, ThumbnailsOrIcon (este valor los mantiene activados)
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord # ListviewAlphaSelect
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String # DragFullWindows
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String # FontSmoothing (2 = ClearType)
-        # ControlAnimations es controlado por el UserPreferencesMask
-    }
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 0 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MenuAnimation" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "TooltipAnimation" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "SelectionFade" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 0 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DropShadow" -Value "0" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x32,0x07,0x80,0x12,0x00,0x00,0x00));
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String;
+        }
         DisableCommand = {
-        Write-Host " -> Restaurando configuración visual por defecto de Windows..." -ForegroundColor Gray
-        # Restaura los valores por defecto de Windows
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuAnimation" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TooltipAnimation" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SelectionFade" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DropShadow" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00))
-        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String
-        Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String
-    }
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAnimations" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MenuAnimation" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "TooltipAnimation" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "SelectionFade" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "AlwaysShowThumbnails" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ComboBoxAnimation" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "ListBoxSmoothScrolling" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DropShadow" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "CursorShadow" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "UserPreferencesMask" -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00));
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ListviewAlphaSelect" -Value 1 -Type DWord;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "DragFullWindows" -Value "1" -Type String;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -Value "2" -Type String;
+        }
         CheckCommand   = {
-        # Verificamos 3 valores clave para determinar si el ajuste está aplicado (uno desactivado, uno activado y uno complejo)
-        $minAnimate = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate
-        $aeroPeek = (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -ErrorAction SilentlyContinue).EnableAeroPeek
-        $fontSmoothing = (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -ErrorAction SilentlyContinue).FontSmoothing
-
-        return ($minAnimate -eq "0" -and $aeroPeek -eq 1 -and $fontSmoothing -eq "2")
-    }
+            $minAnimate = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate;
+			$aeroPeek = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM" -Name "EnableAeroPeek" -ErrorAction SilentlyContinue).EnableAeroPeek;
+			$fontSmoothing = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Control Panel\Desktop" -Name "FontSmoothing" -ErrorAction SilentlyContinue).FontSmoothing;
+			return ($minAnimate -eq "0" -and $aeroPeek -eq 1 -and $fontSmoothing -eq "2")
+        }
         RestartNeeded  = "Session"
     },
 
-    # Categoria: Rendimiento del Sistema
+    # --- Categoria: Rendimiento del Sistema ---
     [PSCustomObject]@{
         Name           = "Aumentar Prioridad de CPU para Ventana Activa"
         Category       = "Rendimiento del Sistema"
         Description    = "Asigna mas ciclos de CPU a la aplicacion en primer plano, mejorando su respuesta."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\PriorityControl"
         RegistryKey    = "Win32PrioritySeparation"
         EnabledValue   = 26
         DefaultValue   = 2
@@ -122,23 +114,31 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Desactiva la limitacion de red del Programador de Clases Multimedia (MMCSS) para maximizar el rendimiento de todo el trafico de red."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
         RegistryKey    = "NetworkThrottlingIndex"
-        EnabledValue   = '4294967295'
+        EnabledValue   = '4294967295' # 4294967295 en DWord
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
-	},
+    },
     [PSCustomObject]@{
         Name           = "Desactivar Aceleracion del Raton"
         Category       = "Rendimiento del Sistema"
         Description    = "Configura el raton para una precision 1:1, eliminando la aceleracion de Windows."
         Method         = "Command"
-        EnableCommand  = { Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseSpeed' -Value "0"; Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "0"; Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "0" }
-        DisableCommand = { Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseSpeed' -Value "1"; Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "6"; Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "10" }
-        CheckCommand = { 
-        $props = Get-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -ErrorAction SilentlyContinue
-        return ($props.MouseSpeed -eq "0" -and $props.MouseThreshold1 -eq "0" -and $props.MouseThreshold2 -eq "0") 
-        }
+        EnableCommand  = {
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "0";
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "0";
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "0"
+			}
+        DisableCommand = {
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "1";
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "6"; 
+			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "10"
+			}
+        CheckCommand   = {
+			$props = Get-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -ErrorAction SilentlyContinue;
+			return ($props.MouseSpeed -eq "0" -and $props.MouseThreshold1 -eq "0" -and $props.MouseThreshold2 -eq "0")
+			}
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
@@ -148,70 +148,63 @@ $script:SystemTweaks = @(
         Method         = "Command"
         EnableCommand  = { bcdedit /set hypervisorlaunchtype off }
         DisableCommand = { bcdedit /set hypervisorlaunchtype Auto }
-        CheckCommand = {
-        $output = bcdedit /enum "{current}"
-        if ($LASTEXITCODE -ne 0) { return 'NotApplicable' }
-        return ($output -like "*hypervisorlaunchtype*Off*")
-        }
+        CheckCommand   = {
+			$output = bcdedit /enum "{current}";
+			if ($LASTEXITCODE -ne 0) { return 'NotApplicable' };
+		return ($output -like "*hypervisorlaunchtype*Off*")
+		}
         RestartNeeded  = "Reboot"
     },
-	[PSCustomObject]@{
+    [PSCustomObject]@{
         Name           = "Deshabilitar la Barra de Juegos (Game Bar)"
         Category       = "Rendimiento del Sistema"
         Description    = "Desactiva la Game Bar y la funcionalidad de grabacion DVR, lo que puede mejorar el rendimiento en juegos."
         Method         = "Command"
         EnableCommand  = {
-        Set-ItemProperty -Path "HKCU\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-    }
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+			}
         DisableCommand = {
-        Set-ItemProperty -Path "HKCU\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-    }
-        CheckCommand   = {
-        $val1 = (Get-ItemProperty -Path "HKCU\System\GameConfigStore" -Name "GameDVR_Enabled" -ErrorAction SilentlyContinue).GameDVR_Enabled
-        $val2 = (Get-ItemProperty -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -ErrorAction SilentlyContinue).AppCaptureEnabled
-        return ($val1 -eq 0 -and $val2 -eq 0)
-    }
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue;
+			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+			}
+        CheckCommand   = { $val1 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -ErrorAction SilentlyContinue).GameDVR_Enabled; $val2 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -ErrorAction SilentlyContinue).AppCaptureEnabled; return ($val1 -eq 0 -and $val2 -eq 0) }
         RestartNeeded  = "Session"
-	},
-	[PSCustomObject]@{
+    },
+    [PSCustomObject]@{
         Name           = "Activar Plan de Energia de Maximo Rendimiento Definitivo"
         Category       = "Rendimiento del Sistema"
         Description    = "Activa el plan de energia de maximo rendimiento, ideal para juegos y estaciones de trabajo. Aumenta el consumo."
         Method         = "Command"
         EnableCommand  = {
-        # El GUID del plan 'Maximo rendimiento definitivo'
-        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-        # Importa y activa el plan. -duplicatescheme lo revela si esta oculto.
-        powercfg -duplicatescheme $ultimatePlanGuid | Out-Null
-        powercfg /setactive $ultimatePlanGuid
-    }
+			$ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+			powercfg -duplicatescheme $ultimatePlanGuid | Out-Null;
+			powercfg /setactive $ultimatePlanGuid
+			}
         DisableCommand = {
-        # El GUID del plan 'Equilibrado' (por defecto)
-        $balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e"
-        powercfg /setactive $balancedPlanGuid
-    }
+			$balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e";
+			powercfg /setactive $balancedPlanGuid
+			}
         CheckCommand   = {
-        $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-        $activeScheme = powercfg /getactivescheme
-        return ($activeScheme -match $ultimatePlanGuid)
-    }
+			$ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+			$activeScheme = powercfg /getactivescheme;
+			return ($activeScheme -match $ultimatePlanGuid)
+			}
         RestartNeeded  = "None"
-	},
-	[PSCustomObject]@{
+    },
+    [PSCustomObject]@{
         Name           = "Optimizar Uso de Memoria del Sistema de Archivos"
         Category       = "Rendimiento del Sistema"
         Description    = "Aumenta la memoria para la cache de archivos (NTFS), acelerando operaciones de disco. Recomendado para 16GB+ de RAM."
         Method         = "Registry"
-        RegistryPath   = "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem"
         RegistryKey    = "NtfsMemoryUsage"
-        EnabledValue   = 2 # 2 = Aumentado
-        DefaultValue   = 0 # 0 = El sistema decide (por defecto)
+        EnabledValue   = 2
+        DefaultValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
-	},
-	[PSCustomObject]@{
+		},
+    [PSCustomObject]@{
         Name           = "Reducir Tiempo de Espera del Menu de Arranque"
         Category       = "Rendimiento del Sistema"
         Description    = "Reduce el tiempo de espera del menu de arranque (si aparece) de 30 a 10 segundos, acelerando el inicio."
@@ -219,30 +212,33 @@ $script:SystemTweaks = @(
         EnableCommand  = { bcdedit /timeout 10 }
         DisableCommand = { bcdedit /timeout 30 }
         CheckCommand   = {
-        $output = bcdedit /enum '{bootmgr}'
-        # Extrae solo el numero de la linea de timeout
-        $timeoutValue = ($output | Select-String 'timeout').Line -replace '\D',''
-        return $timeoutValue -eq '3'
-    }
-        RestartNeeded  = "Reboot"
-	},
-    # Categoria: Seguridad
+			$output = bcdedit /enum '{bootmgr}';
+			$timeoutValue = ($output | Select-String 'timeout').Line -replace '\D','';
+			return $timeoutValue -eq '10'
+			}
+        RestartNeeded  = "Reboot" 
+    },
+
+    # --- Categoria: Seguridad ---
     [PSCustomObject]@{
         Name           = "Activar Proteccion contra Ransomware"
         Category       = "Seguridad"
         Description    = "Habilita la proteccion de carpetas controladas de Windows Defender."
         Method         = "Command"
-        EnableCommand  = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no esta activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Enabled }
-        DisableCommand = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running') { Write-Warning "Windows Defender no esta activo. No se puede cambiar este ajuste."; return }; Set-MpPreference -EnableControlledFolderAccess Disabled }
-        CheckCommand = {
-        try {
-            $defender = Get-Service -Name "WinDefend" -ErrorAction Stop
-            if ($defender.Status -ne 'Running') { return 'NotApplicable' }
-                return (Get-MpPreference -ErrorAction Stop).EnableControlledFolderAccess -eq 1
-            } catch { 
-            return 'NotApplicable' 
-            }
-        }
+        EnableCommand  = {
+			if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running')
+			{ Write-Warning "Windows Defender no esta activo.";
+			return };
+			Set-MpPreference -EnableControlledFolderAccess Enabled }
+        DisableCommand = { if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running')
+		{ Write-Warning "Windows Defender no esta activo.";
+		return };
+		Set-MpPreference -EnableControlledFolderAccess Disabled }
+        CheckCommand   = {
+			try {
+				if ((Get-Service -Name "WinDefend" -ErrorAction Stop).Status -ne 'Running') { return 'NotApplicable' };
+				return (Get-MpPreference -ErrorAction Stop).EnableControlledFolderAccess -eq 1 } catch { return 'NotApplicable' }
+				}
         RestartNeeded  = "None"
     },
     [PSCustomObject]@{
@@ -252,14 +248,13 @@ $script:SystemTweaks = @(
         Method         = "Command"
         EnableCommand  = { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart }
         DisableCommand = { Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart }
-        CheckCommand = {
-        try {
-            $feature = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop
-                return ($feature.State -eq 'Disabled')
-           } catch {
-                return 'NotApplicable'
-            }
-        }
+        CheckCommand   = {
+			try {
+				$feature = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop;
+				return ($feature.State -eq 'Disabled')
+				} catch {
+					return 'NotApplicable' }
+					}
         RestartNeeded  = "Reboot"
     },
     [PSCustomObject]@{
@@ -267,26 +262,32 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "Desactiva el antiguo motor de PowerShell v2.0 para reducir la superficie de ataque."
         Method         = "Command"
-        EnableCommand  = { Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart; Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart }
-        DisableCommand = { Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart; Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart }
-        CheckCommand = {
-        try {
-            $feature = Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -ErrorAction Stop
-                return ($feature.State -eq 'Disabled')
-            } catch {
-                return 'NotApplicable'
-            }
-        }
+        EnableCommand  = {
+			Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart;
+			Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart
+			}
+        DisableCommand = {
+			Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart;
+			Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart
+			}
+        CheckCommand   = {
+			try {
+				$feature = Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -ErrorAction Stop;
+				return ($feature.State -eq 'Disabled')
+				} catch {
+					return 'NotApplicable'
+					}
+				}
         RestartNeeded  = "Reboot"
     },
 
-    # Categoria: Privacidad y Telemetria
+    # --- Categoria: Privacidad y Telemetria ---
     [PSCustomObject]@{
         Name           = "Desactivar ID de Publicidad para Apps"
         Category       = "Privacidad y Telemetria"
         Description    = "Evita que las aplicaciones usen tu ID de publicidad para mostrar anuncios personalizados."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo"
         RegistryKey    = "Enabled"
         EnabledValue   = 0
         DefaultValue   = 1
@@ -294,90 +295,70 @@ $script:SystemTweaks = @(
         RestartNeeded  = "None"
     },
     [PSCustomObject]@{
-        Name           = "Desactivar Seguimiento de Ubicacion"
+        Name           = "Desactivar Seguimiento de Ubicacion (Directiva)"
         Category       = "Privacidad y Telemetria"
         Description    = "Deshabilita el servicio de localizacion a nivel de sistema."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"
         RegistryKey    = "DisableLocation"
         EnabledValue   = 1
-        DefaultValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "None"
     },
-	[PSCustomObject]@{
+    [PSCustomObject]@{
         Name           = "Deshabilitar Windows Recall (Snapshots de IA)"
         Category       = "Privacidad y Telemetria"
-        Description    = "Evita que el sistema guarde 'snapshots' de tu actividad para la función de IA Recall, protegiendo tu privacidad. (Directiva Oficial)"
+        Description    = "Evita que el sistema guarde 'snapshots' de tu actividad para la funcion de IA Recall, protegiendo tu privacidad. (Directiva Oficial)"
         Method         = "Registry"
-        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
         RegistryKey    = "DisableAIDataAnalysis"
-        EnabledValue   = 1    # Valor '1' deshabilita la función
-        DefaultValue   = 0    # Valor '0' es el predeterminado
+        EnabledValue   = 1
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
-    }, 
-	[PSCustomObject]@{
-         Name           = "Deshabilitar Personalización de Entrada"
-         Category       = "Privacidad y Telemetria"
-         Description    = "Impide que Windows use el historial de escritura para personalizar la experiencia, mejorando la privacidad. (Directiva Oficial)"
-         Method         = "Registry"
-         RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
-         RegistryKey    = "AllowInputPersonalization"
-         EnabledValue   = 0    # Valor '0' desactiva la personalización
-         DefaultValue   = 1    # Valor '1' es el predeterminado
-         RegistryType   = "DWord"
-         RestartNeeded  = "None"
     },
-
-# Objeto a añadir para Cortana
     [PSCustomObject]@{
-        Name           = "Deshabilitar Cortana por Completo"
+        Name           = "Deshabilitar Personalizacion de Entrada (Directiva)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que Windows use el historial de escritura para personalizar la experiencia, mejorando la privacidad. (Directiva Oficial)"
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
+        RegistryKey    = "AllowInputPersonalization"
+        EnabledValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Cortana por Completo (Directiva)"
         Category       = "Privacidad y Telemetria"
         Description    = "Desactiva Cortana a nivel de sistema para que no se pueda ejecutar ni consuma recursos."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
         RegistryKey    = "AllowCortana"
-        EnabledValue   = 0 # Un valor de '0' deshabilita Cortana.
-        DefaultValue   = 1 # Un valor de '1' la permite (estado por defecto).
+        EnabledValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
-	[PSCustomObject]@{
-        Name           = "Deshabilitar Telemetria de CEIP (SQM)"
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Telemetria de CEIP (SQM) (Directiva)"
         Category       = "Privacidad y Telemetria"
         Description    = "Desactiva el Programa para la mejora de la experiencia del cliente a nivel de directiva."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SOFTWARE\Policies\Microsoft\SQMClient\Windows"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\SQMClient\Windows"
         RegistryKey    = "CEIPEnable"
-        EnabledValue   = 0 # Un valor de 0 deshabilita CEIP
-        DefaultValue   = 1 # Un valor de 1 lo habilita
+        EnabledValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "None"
-	},
-    [PSCustomObject]@{
-        Name           = "Deshabilitar Windows Recall (Snapshots de IA)"
-        Category       = "Privacidad y Telemetria"
-        Description    = "Evita que el sistema guarde 'snapshots' de tu actividad para la función de IA Recall, protegiendo tu privacidad."
-        Method         = "Registry"
-        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
-        RegistryKey    = "DisableAIDataAnalysis"
-        EnabledValue   = 1    # Un valor de '1' DESHABILITA la recolección de datos de Recall.
-        DefaultValue   = 0    # Un valor de '0' la HABILITA (comportamiento por defecto).
-        RegistryType   = "DWord"
-        RestartNeeded  = "Reboot"
     },
 
-     # Categoria: Comportamiento del Sistema y UI
+    # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
-        Name           = "Deshabilitar la Pantalla de Bloqueo"
+        Name           = "Deshabilitar la Pantalla de Bloqueo (Directiva)"
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Va directamente a la pantalla de inicio de sesion, omitiendo la pantalla de bloqueo."
         Method         = "Registry"
-        RegistryPath   = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization"
         RegistryKey    = "NoLockScreen"
         EnabledValue   = 1
-        DefaultValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "None"
     },
@@ -386,125 +367,80 @@ $script:SystemTweaks = @(
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Reemplaza el menu contextual de Windows 11 por el clasico mas completo."
         Method         = "Command"
-        EnableCommand  = { $regPath = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'; New-Item -Path $regPath -Force | Out-Null; Set-ItemProperty -Path $regPath -Name '(Default)' -Value '' }
-        DisableCommand = { Remove-Item -Path 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}' -Recurse -Force }
-        CheckCommand   = { Test-Path 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32' }
+        EnableCommand  = {
+			$regPath = 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32';
+		    New-Item -Path $regPath -Force -ErrorAction SilentlyContinue | Out-Null;
+		    Set-ItemProperty -Path $regPath -Name '(Default)' -Value '' }
+        DisableCommand = { Remove-Item -Path 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}' -Recurse -Force -ErrorAction SilentlyContinue }
+        CheckCommand   = { Test-Path 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32' }
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Busqueda con Bing en el Menu Inicio"
+        Name           = "Deshabilitar Busqueda con Bing en el Menu Inicio (Directiva)"
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Evita que las busquedas en el menu de inicio muestren resultados web de Bing."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Policies\Microsoft\Windows\Explorer"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer"
         RegistryKey    = "DisableSearchBoxSuggestions"
         EnabledValue   = 1
-        DefaultValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Copilot"
+        Name           = "Anadir 'Bloquear en Firewall' al Menu Contextual"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Desactiva el asistente Copilot de IA a nivel de directiva de sistema."
-        Method         = "Registry"
-        RegistryPath   = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" # Ruta correcta según la documentación
-        RegistryKey    = "TurnOffWindowsCopilot"
-        EnabledValue   = 1    # Valor '1' deshabilita Copilot
-        DefaultValue   = 0    # Valor '0' es el predeterminado
-        RegistryType   = "DWord"
-        RestartNeeded  = "Reboot"
+        Description    = "Anade una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
+        Method         = "Command"
+        EnableCommand  = {
+	            	$keyPath = "Registry::HKEY_CLASSES_ROOT\exefile\shell\blockinfirewall";
+		            New-Item -Path $keyPath -Force | Out-Null;
+		            Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Bloquear en Firewall";
+		            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"; $commandPath = "$keyPath\command";
+		            New-Item -Path $commandPath -Force | Out-Null;
+	            	$command = "powershell -WindowStyle Hidden -Command `"New-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -Direction Outbound -Program `"%1`" -Action Block`"";
+		            Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
+	            	}
+        DisableCommand = {
+		            Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\exefile\shell\blockinfirewall" -Recurse -Force -ErrorAction SilentlyContinue
+		            }
+        CheckCommand   = {
+	           	   Test-Path "Registry::HKEY_CLASSES_ROOT\exefile\shell\blockinfirewall"
+		           }
+        RestartNeeded  = "Explorer"
     },
 	[PSCustomObject]@{
-        Name           = "Agrega 'Tomar Posesion' al Menu Contextual"
-        Category       = "Comportamiento del Sistema y UI"
-        Description    = "Agrega una opcion para tomar posesion de archivos y carpetas. util para problemas de permisos."
-        Method         = "Command"
-        EnableCommand  = {
-        $key = "HKCR\*\shell\runas"
-		    if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
-                Set-ItemProperty -Path $key -Name "(Default)" -Value "Tomar Posesion"
-                Set-ItemProperty -Path $key -Name "NoWorkingDirectory" -Value ""
-                New-Item -Path "$key\command" -Force | Out-Null
-                Set-ItemProperty -Path "$key\command" -Name "(Default)" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
-                Set-ItemProperty -Path "$key\command" -Name "IsolatedCommand" -Value 'cmd.exe /c "takeown /f \"%1\" && icacls \"%1\" /grant administrators:F"'
-        }
-        DisableCommand = {
-        Remove-Item -Path "HKCR\*\shell\runas" -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-        Test-Path "HKCR\*\shell\runas\command"
-        }
-        RestartNeeded  = "Explorer"
-	},
-	[PSCustomObject]@{
-        Name           = "Agrega 'Bloquear en Firewall' al Menu Contextual"
-        Category       = "Comportamiento del Sistema y UI"
-        Description    = "Agrega una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
-        Method         = "Command"
-        EnableCommand  = {
-            $keyPath = "HKCR\exefile\shell\blockinfirewall"
-            New-Item -Path $keyPath -Force | Out-Null
-            Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Bloquear en Firewall"
-            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"
-            $commandPath = "$keyPath\command"
-            New-Item -Path $commandPath -Force | Out-Null
-            $command = "powershell -WindowStyle Hidden -Command `"New-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -Direction Outbound -Program `"%1`" -Action Block`""
-            Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
-        }
-        DisableCommand = {
-            Remove-Item -Path "HKCR\exefile\shell\blockinfirewall" -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-        Test-Path "HKCR\exefile\shell\blockinfirewall"
-        }
-        RestartNeeded  = "Explorer"
-	},
-	
-# Objeto a añadir para el icono de Spotlight
-    [PSCustomObject]@{
         Name           = "Ocultar Icono 'Mas Informacion' de Spotlight"
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Elimina el icono superpuesto en el escritorio cuando se usa Windows Spotlight como fondo."
         Method         = "Registry"
-        RegistryPath   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Feeds"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Feeds"
         RegistryKey    = "ShellFeedsTaskbarViewMode"
-        EnabledValue   = 2 # Un valor de '2' desactiva el icono.
-        DefaultValue   = 0 # Un valor de '0' lo activa (estado por defecto).
-        RegistryType   = "DWord"
+        EnabledValue   = 2
+        DefaultValue   = 0
+        RegistryType   = "DWord" 
         RestartNeeded  = "Explorer"
     },
- [PSCustomObject]@{
-     Name           = "Agrega 'Copiar Ruta' al Menú Contextual"
-     Category       = "Comportamiento del Sistema y UI"
-     Description    = "Agrega una opcion Util al menu contextual para copiar la ruta completa de cualquier archivo o carpeta al portapapeles."
-     Method         = "Command"
-     EnableCommand  = {
-        $keyPath = "HKCR\AllFilesystemObjects\shell\CopyPath"
-        if (-not (Test-Path $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
-        
-        # Establece el texto que se mostrará en el menú contextual
-        Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Copiar Ruta de Acceso"
-        
-        # Añade un icono profesional (el icono de 'copiar')
-        Set-ItemProperty -Path $keyPath -Name "Icon" -Value "imageres.dll,-5302"
-        
-        # Define el comando que se ejecutará
-        $commandPath = Join-Path -Path $keyPath -ChildPath "command"
-        if (-not (Test-Path $commandPath)) { New-Item -Path $commandPath -Force | Out-Null }
-        
-        # El comando usa cmd para tomar la ruta del archivo (%1) y enviarla al portapapeles (clip.exe)
-        $command = 'cmd.exe /c echo "%1" | clip'
-        Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
-        }
+    [PSCustomObject]@{
+        Name           = "Anadir 'Copiar Ruta' al Menu Contextual"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Anade una opcion util al menu contextual para copiar la ruta completa de cualquier archivo o carpeta al portapapeles."
+        Method         = "Command"
+        EnableCommand  = {
+			$keyPath = "Registry::HKEY_CLASSES_ROOT\AllFilesystemObjects\shell\CopyPath";
+			if (-not (Test-Path $keyPath)) {
+				New-Item -Path $keyPath -Force | Out-Null };
+				Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Copiar Ruta de Acceso";
+				Set-ItemProperty -Path $keyPath -Name "Icon" -Value "imageres.dll,-5302"; $commandPath = Join-Path -Path $keyPath -ChildPath "command";
+				if (-not (Test-Path $commandPath)) { New-Item -Path $commandPath -Force | Out-Null };
+				$command = 'cmd.exe /c echo "%1" | clip'; Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
+				}
         DisableCommand = {
-        # Para revertir, simplemente eliminamos la clave que creamos
-        Remove-Item -Path "HKCR\AllFilesystemObjects\shell\CopyPath" -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-        # Verificamos si la clave del comando existe para saber si el ajuste está activado
-        Test-Path "HKCR\AllFilesystemObjects\shell\CopyPath\command"
-        }
+			$keyPath = "Registry::HKEY_CLASSES_ROOT\AllFilesystemObjects\shell\CopyPath";
+			if (Test-Path $keyPath)
+			{
+				Remove-Item -Path $keyPath -Recurse -Force -ErrorAction SilentlyContinue }
+			}
+        CheckCommand   = { Test-Path "Registry::HKEY_CLASSES_ROOT\AllFilesystemObjects\shell\CopyPath\command" }
         RestartNeeded  = "Explorer"
     }
 )
@@ -2025,6 +1961,13 @@ function Show-SoftwareMenu {
     } while ($softwareChoice.ToUpper() -ne 'V')
 }
 
+# ===================================================================
+# FUNCIONES DEL GESTOR DE AJUSTES (TWEAK MANAGER)
+# CORREGIDAS Y OPTIMIZADAS POR UN EXPERTO
+# ===================================================================
+
+# --- FUNCIoN 1: El Diagnosta ---
+# Verifica el estado REAL de un ajuste consultando el registro o ejecutando un comando de verificacion.
 function Get-TweakState {
     param(
         [Parameter(Mandatory=$true)]
@@ -2034,10 +1977,14 @@ function Get-TweakState {
     try {
         # --- Logica para ajustes basados en el Registro de Windows ---
         if ($Tweak.Method -eq 'Registry') {
+            # Si la ruta base del registro no existe, el ajuste no puede estar habilitado.
             if (-not (Test-Path $Tweak.RegistryPath)) {
                 return 'Disabled'
             }
             $currentValue = (Get-ItemProperty -Path $Tweak.RegistryPath -Name $Tweak.RegistryKey -ErrorAction SilentlyContinue).($Tweak.RegistryKey)
+            
+            # Compara el valor actual con el valor que define el estado "Habilitado".
+            # Se convierte a [string] para asegurar una comparacion consistente.
             if ([string]$currentValue -eq [string]$Tweak.EnabledValue) {
                 return 'Enabled'
             } else {
@@ -2046,21 +1993,22 @@ function Get-TweakState {
         }
         # --- Logica para ajustes basados en Comandos ---
         elseif ($Tweak.Method -eq 'Command') {
+            # Si un ajuste de comando no tiene un CheckCommand, no podemos saber su estado.
             if (-not $Tweak.CheckCommand) {
                 Write-Warning "El ajuste '$($Tweak.Name)' es de tipo Comando pero no tiene un 'CheckCommand'."
-                return 'Disabled'
+                return 'Disabled' # Se asume deshabilitado si no se puede verificar.
             }
 
-            # Usamos el operador '&' (practica correcta) para ejecutar el bloque de script.
+            # Ejecuta el bloque de script de verificacion.
             $checkResult = & $Tweak.CheckCommand
 
+            # Maneja el caso especial donde la verificacion no es aplicable en el sistema actual.
             if ($checkResult -is [string] -and $checkResult -eq 'NotApplicable') {
                 return 'NotApplicable'
             }
 
-            # --- CORRECCIoN DE SINTAXIS ---
-            # La sentencia 'if/else' se usa para controlar que valor se retorna.
-            # No se puede poner 'return' directamente delante de 'if'.
+            # CORRECCIÓN CLAVE: Se utiliza un bloque if/else estandar de PowerShell para retornar el estado.
+            # La sintaxis anterior era el punto de fallo.
             if ($checkResult) {
                 return 'Enabled'
             } else {
@@ -2068,14 +2016,16 @@ function Get-TweakState {
             }
         }
     } catch {
-        # El bloque catch captura errores, incluyendo los de sintaxis dentro de la funcion.
+        # Captura cualquier error inesperado durante la verificacion.
         Write-Warning "Error al verificar el estado de '$($Tweak.Name)': $_"
         return 'Disabled'
     }
 
-    return 'Disabled'
+    return 'Disabled' # Estado por defecto si ninguna logica anterior aplica.
 }
 
+# --- FUNCIoN 2: El Ejecutor ---
+# Aplica el estado 'Enable' o 'Disable' a un ajuste. No requiere cambios, ya era robusta.
 function Set-TweakState {
     param(
         [Parameter(Mandatory=$true)]
@@ -2094,7 +2044,6 @@ function Set-TweakState {
                 Set-ItemProperty -Path $Tweak.RegistryPath -Name $Tweak.RegistryKey -Value $Tweak.EnabledValue -Type ($Tweak.PSObject.Properties['RegistryType'].Value) -Force
             }
             elseif ($Tweak.Method -eq 'Command') {
-                # CORRECCIoN: Se usa '&' para una ejecucion local consistente.
                 & $Tweak.EnableCommand
             }
         }
@@ -2112,7 +2061,6 @@ function Set-TweakState {
                 }
             }
             elseif ($Tweak.Method -eq 'Command') {
-                # CORRECCIoN: Se usa '&' tambien aqui.
                 & $Tweak.DisableCommand
             }
         }
@@ -2122,14 +2070,19 @@ function Set-TweakState {
     }
 }
 
+# --- FUNCIoN 3: La Interfaz de Usuario ---
+# Orquesta la presentacion del menu y la interaccion con el usuario.
+# --- FUNCIoN 3: La Interfaz de Usuario (Corregida para mostrar siempre el menu de acciones) ---
+# Orquesta la presentacion del menu y la interaccion con el usuario.
 function Show-TweakManagerMenu {
     $Category = $null
     while ($true) {
         Clear-Host
         if ($null -eq $Category) {
             # --- Menu de seleccion de categoria ---
-            Write-Host "Gestor de Ajustes del Sistema" -ForegroundColor Cyan
-            Write-Host "--------------------------------"
+            Write-Host "=======================================================" -ForegroundColor Cyan
+            Write-Host "           Gestor de Ajustes del Sistema (Tweaks)      " -ForegroundColor Cyan
+            Write-Host "=======================================================" -ForegroundColor Cyan
             Write-Host "Selecciona una categoria para ver y modificar los ajustes."
             Write-Host ""
             $categories = $script:SystemTweaks | Select-Object -ExpandProperty Category -Unique | Sort-Object
@@ -2152,11 +2105,13 @@ function Show-TweakManagerMenu {
             Write-Host "------------------------------------------------"
             $tweaksInCategory = $script:SystemTweaks | Where-Object { $_.Category -eq $Category }
 
-            for ($i = 0; $i -lt $tweaksInCategory.Count; $i++) {
-                $tweak = $tweaksInCategory[$i]
-                $state = Get-TweakState -Tweak $tweak # Usamos nuestra funcion de diagnostico
+            # --- Bucle foreach estable ---
+            $itemNumber = 0
+            foreach ($tweak in $tweaksInCategory) {
+                $itemNumber++
+                
+                $state = Get-TweakState -Tweak $tweak
 
-                # Asignamos texto y color segun el estado devuelto
                 $statusText = if ($state -eq 'Enabled') { "[Activado]" }
                               elseif ($state -eq 'Disabled') { "[Desactivado]" }
                               else { "[No Aplicable]" }
@@ -2164,17 +2119,20 @@ function Show-TweakManagerMenu {
                                elseif ($state -eq 'Disabled') { "Red" }
                                else { "Gray" }
 
-                # Mostramos la linea formateada al usuario
-                Write-Host ("   [{0,2}] " -f ($i + 1)) -NoNewline
-                Write-Host ("{0,-14}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+                Write-Host ("   [{0,2}] " -f $itemNumber) -NoNewline
+                Write-Host ("{0,-15}" -f $statusText) -ForegroundColor $statusColor -NoNewline
                 Write-Host $tweak.Name -ForegroundColor White
                 Write-Host ("        " + $tweak.Description) -ForegroundColor Gray
                 Write-Host ""
             }
 
-            Write-Host "   [V] Volver a la seleccion de categoria" -ForegroundColor Red
+            # --- Menú de acciones ---
+            Write-Host "--- Acciones ---" -ForegroundColor Yellow
+            Write-Host "   [Numero] - Activar/Desactivar un ajuste"
             Write-Host ""
-            $choice = Read-Host "Elige un ajuste para [Activar/Desactivar] o selecciona 'V' para volver"
+			Write-Host "   [V]      - Volver a la seleccion de categoria" -ForegroundColor Red
+            Write-Host ""
+            $choice = Read-Host "Elige una opcion"
 
             if ($choice.ToUpper() -eq 'V') {
                 $Category = $null
@@ -2185,21 +2143,16 @@ function Show-TweakManagerMenu {
                 $tweakToToggle = $tweaksInCategory[[int]$choice - 1]
                 $currentState = Get-TweakState -Tweak $tweakToToggle
 
-                # Manejo especial para ajustes no aplicables
                 if ($currentState -eq 'NotApplicable') {
                     Write-Host "`n[AVISO] Este ajuste no es aplicable en tu sistema." -ForegroundColor Yellow
-                    Write-Host "(Ej: Windows Defender desactivado por otro antivirus)" -ForegroundColor DarkYellow
                     Read-Host "Presiona Enter para continuar..."
                     continue
                 }
 
-                # Determinamos la accion contraria al estado actual
                 $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
                 
-                # Ejecutamos la accion con nuestra funcion
                 Set-TweakState -Tweak $tweakToToggle -Action $action
 
-                # Informamos al usuario si se necesita un reinicio
                 if ($tweakToToggle.RestartNeeded -and $tweakToToggle.RestartNeeded -ne 'None') {
                     Write-Host "`n[AVISO] Este cambio requiere reiniciar '$($tweakToToggle.RestartNeeded)' para tener efecto completo." -ForegroundColor Yellow
                 }
