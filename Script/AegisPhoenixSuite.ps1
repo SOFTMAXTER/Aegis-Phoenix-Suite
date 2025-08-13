@@ -2,14 +2,14 @@
 .SYNOPSIS
     Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
 .DESCRIPTION
-    Aegis Phoenix Suite v3.8 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
+    Aegis Phoenix Suite v3.9 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    3.8
+    3.9
 #>
 
 # --- Verificacion de Privilegios de Administrador ---
@@ -91,7 +91,7 @@ $script:SystemTweaks = @(
             Set-ItemProperty -Path "$basePath\ListviewAlphaSelect" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\DragFullWindows" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ComboBoxAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
-            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 2 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ListBoxSmoothScrolling" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\DropShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
         }
@@ -357,6 +357,33 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "None"
     },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Telemetria de Microsoft Edge (Directiva)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que Microsoft Edge envie datos de diagnostico y uso a Microsoft. Requiere reiniciar Edge."
+        Method         = "Command"
+        EnableCommand  = {
+            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (-not (Test-Path $edgePolicyPath)) { New-Item -Path $edgePolicyPath -Force | Out-Null }
+            # 0 = Desactiva el envio de datos de diagnostico obligatorios y opcionales
+            Set-ItemProperty -Path $edgePolicyPath -Name "DiagnosticData" -Value 0 -Type DWord -Force
+            # 0 = Desactiva el envio de metricas de uso
+            Set-ItemProperty -Path $edgePolicyPath -Name "MetricsReportingEnabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (Test-Path $edgePolicyPath) {
+                Remove-ItemProperty -Path $edgePolicyPath -Name "DiagnosticData" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $edgePolicyPath -Name "MetricsReportingEnabled" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            $diagValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "DiagnosticData" -ErrorAction SilentlyContinue
+            $metricsValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "MetricsReportingEnabled" -ErrorAction SilentlyContinue
+            return ($null -ne $diagValue -and $diagValue.DiagnosticData -eq 0 -and $null -ne $metricsValue -and $metricsValue.MetricsReportingEnabled -eq 0)
+        }
+        RestartNeeded  = "None"
+    },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
@@ -555,7 +582,7 @@ $script:ServiceCatalog = @(
 function Create-RestorePoint {
     Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.8_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.9_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
     } catch { Write-Error "No se pudo crear el punto de restauracion. Error: $_" }
     Read-Host "`nPresiona Enter para volver..."
@@ -2291,7 +2318,7 @@ $mainChoice = ''
 do {
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "        Aegis Phoenix Suite v3.8 by SOFTMAXTER        " -ForegroundColor Cyan
+    Write-Host "        Aegis Phoenix Suite v3.9 by SOFTMAXTER        " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
