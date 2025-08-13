@@ -29,7 +29,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Aplicar Configuracion Visual Personalizada (Rendimiento/Calidad)"
         Category       = "Rendimiento UI"
-        Description    = "Maxima fluidez, cero distracciones. Establece los valores visuales por defecto del sistema (HKLM) segun una configuracion personalizada."
+        Description    = "Máxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
         Method         = "Command"
         EnableCommand  = {
             # --- VALORES VERIFICADOS POR EL USUARIO APLICADOS A HKLM ---
