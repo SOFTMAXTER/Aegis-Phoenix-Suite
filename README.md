@@ -41,6 +41,9 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
     └── Script/
         │
         └── AegisPhoenixSuite.ps1
+        └── Catalogos/                 
+            ├── Ajustes.ps1
+            └── Servicios.ps1
     ```
 3.  Haz doble clic en **`Run.bat`**. El script validará los permisos y se iniciará.
 4.  Sigue las instrucciones en pantalla, seleccionando las opciones de los menús.
