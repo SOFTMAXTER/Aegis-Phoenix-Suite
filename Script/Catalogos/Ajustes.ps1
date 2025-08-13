@@ -81,7 +81,19 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Session"
     },
-
+	[PSCustomObject]@{
+        Name           = "Lanzar Explorador en Proceso Separado"
+        Category       = "Rendimiento UI"
+        Description    = "Ejecuta cada ventana del Explorador en su propio proceso. Mejora la estabilidad y la respuesta, evitando que una ventana bloqueada afecte a las demas."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "SeparateProcess"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+	},
+ 
     # --- Categoria: Rendimiento del Sistema ---
     [PSCustomObject]@{
         Name           = "Aumentar Prioridad de CPU para Ventana Activa"
