@@ -84,14 +84,14 @@ $script:SystemTweaks = @(
             Set-ItemProperty -Path "$basePath\MenuAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\TooltipAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\SelectionFade" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
-            Set-ItemProperty -Path "$basePath\DWMSaveThumbnailEnabled" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\DWMSaveThumbnailEnabled" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\CursorShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
-            Set-ItemProperty -Path "$basePath\ListviewShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
+            Set-ItemProperty -Path "$basePath\ListviewShadow" -Name 'DefaultValue' -Value 0 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ThumbnailsOrIcon" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ListviewAlphaSelect" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\DragFullWindows" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ComboBoxAnimation" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
-            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 2 -Type 'DWord' -Force; # Default es 2 (ClearType)
+            Set-ItemProperty -Path "$basePath\FontSmoothing" -Name 'DefaultValue' -Value 2 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\ListBoxSmoothScrolling" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\DropShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
         }
