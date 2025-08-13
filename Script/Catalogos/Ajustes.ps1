@@ -216,6 +216,17 @@ $script:SystemTweaks = @(
 			}
         RestartNeeded  = "Reboot" 
     },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Vistas Previas (Thumbnails) en Carpetas de Red"
+        Category       = "Rendimiento UI"
+        Description    = "Acelera la navegacion en carpetas de red al no generar vistas previas de imagenes y videos. Se mostraran iconos genericos."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer"
+        RegistryKey    = "DisableThumbnailsOnNetworkFolders"
+        EnabledValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+	},
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
@@ -278,6 +289,34 @@ $script:SystemTweaks = @(
 				}
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Busqueda Automatica de Carpetas y F impresoras de Red"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Evita que el Explorador de Archivos busque impresoras y carpetas de red automaticamente, reduciendo los retrasos al abrir 'Este equipo'."
+        Method         = "Command"
+        EnableCommand  = {
+            $keysToRemove = @(
+                "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}", # Impresoras
+                "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{D20BEEC4-5CA8-4905-AE3B-BF251EA09B53}"  # Work Folders
+            )
+            foreach ($key in $keysToRemove) {
+                if (Test-Path $key) {
+                    Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        DisableCommand = {
+            $printersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}"
+            if (-not (Test-Path $printersKey)) { New-Item -Path $printersKey -Force | Out-Null }
+            $workFoldersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{D20BEEC4-5CA8-4905-AE3B-BF251EA09B53}"
+            if (-not (Test-Path $workFoldersKey)) { New-Item -Path $workFoldersKey -Force | Out-Null }
+        }
+        CheckCommand   = {
+            $printersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}"
+            return -not (Test-Path $printersKey)
+        }
+        RestartNeeded  = "Explorer"
+	},
 
     # --- Categoria: Privacidad y Telemetria ---
     [PSCustomObject]@{
