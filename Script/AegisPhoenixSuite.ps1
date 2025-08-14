@@ -177,206 +177,158 @@ function Manage-SystemServices {
     }
 }
 
-# ===================================================================
-# FUNCIONES AUXILIARES PARA EL MoDULO DE LIMPIEZA
-# Cada funcion se especializa en una tarea, con manejo de errores y feedback.
-# ===================================================================
+# =================================================================================
+# --- INICIO DEL MÓDULO DE LIMPIEZA ACTUALIZADO ---
+# Incluye la nueva función para limpieza de componentes del sistema.
+# =================================================================================
 
-function Invoke-AegisTempClean {
-    Write-Host "`n[+] Ejecutando Limpieza Estandar (Archivos Temporales)..." -ForegroundColor Yellow
-    $pathsToClean = @(
-        "$env:TEMP",
-        "$env:windir\Temp",
-        "$env:windir\Prefetch"
-    )
-    $totalDeleted = 0
-    $totalSkipped = 0
+# --- NUEVA FUNCIÓN: Limpieza Avanzada de Componentes del Sistema ---
+function Invoke-AdvancedSystemClean {
+    [CmdletBinding(SupportsShouldProcess=$true)]
+    param()
 
-    foreach ($path in $pathsToClean) {
-        Write-Host " -> Verificando ruta: $path" -ForegroundColor Gray
-        if (Test-Path $path) {
-            $itemsToDelete = Get-ChildItem -Path $path -Recurse -Force
-            if ($itemsToDelete.Count -eq 0) {
-                Write-Host "    [INFO] La carpeta ya estaba vacia." -ForegroundColor Cyan
-                continue # Pasa a la siguiente carpeta en $pathsToClean
-            }
-
-            # Bucle para procesar cada elemento individualmente
-            foreach ($item in $itemsToDelete) {
-                try {
-                    Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
-                    $totalDeleted++
-                } catch {
-                    # Si el Remove-Item falla, este bloque se ejecuta SOLO para ese archivo
-                    Write-Warning "No se pudo eliminar: `"$($item.FullName)`". Probablemente esta en uso. Omitiendo..."
-                    $totalSkipped++
-                }
-            }
-        } else {
-            Write-Host "    [INFO] La ruta no existe, se omite." -ForegroundColor Cyan
-        }
+    Write-Host "`n[+] Iniciando Limpieza Avanzada de Componentes del Sistema..." -ForegroundColor Cyan
+    Write-Warning "Esta operacion eliminara archivos de instalaciones anteriores de Windows (Windows.old) y restos de actualizaciones."
+    Write-Warning "Despues de esta limpieza, NO podras volver a la version anterior de Windows."
+    
+    if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
+        Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
+        return
     }
 
-    # Proporcionar un resumen final mas detallado
-    Write-Host "`n[+] Limpieza de temporales finalizada." -ForegroundColor Green
-    Write-Host "    - Total de elementos eliminados exitosamente: $totalDeleted" -ForegroundColor Green
-    if ($totalSkipped -gt 0) {
-        Write-Host "    - Total de elementos omitidos (en uso): $totalSkipped" -ForegroundColor Yellow
-    }
-}
-
-function Invoke-AegisDeepCleanAdditions {
-    Write-Host "`n[+] Ejecutando adiciones de Limpieza Profunda..." -ForegroundColor Yellow
-
-    # Vaciar Papelera de Reciclaje
-    try {
-        Write-Host " -> Vaciando la Papelera de Reciclaje..." -ForegroundColor Gray
-        Clear-RecycleBin -Force -ErrorAction Stop
-        Write-Host "    [OK] Papelera de Reciclaje vaciada." -ForegroundColor Green
-    } catch {
-        Write-Warning "No se pudo vaciar la Papelera de Reciclaje. Error: $($_.Exception.Message)"
-    }
-
-    # Limpiar Informes de Errores de Windows (WER)
-    $werPath = "$env:ProgramData\Microsoft\Windows\WER\ReportQueue"
-    Write-Host " -> Limpiando Informes de Errores de Windows..." -ForegroundColor Gray
-    if (Test-Path $werPath) {
+    if ($PSCmdlet.ShouldProcess("Componentes del Sistema", "Limpieza Profunda via cleanmgr.exe")) {
         try {
-            $reports = Get-ChildItem -Path $werPath -Recurse -Force -ErrorAction Stop
-            if ($reports.Count -gt 0) {
-                $reports | Remove-Item -Recurse -Force -ErrorAction Stop
-                Write-Host "    [OK] Se eliminaron $($reports.Count) informes de error." -ForegroundColor Green
-            } else {
-                Write-Host "    [INFO] No se encontraron informes de error." -ForegroundColor Cyan
-            }
-        } catch {
-            Write-Warning "No se pudieron eliminar los informes de error. Error: $($_.Exception.Message)"
-        }
-    } else {
-        Write-Host "    [INFO] La carpeta de informes de error no existe." -ForegroundColor Cyan
-    }
-}
-
-function Invoke-AegisThumbnailCacheClean {
-    Write-Host "`n[+] Limpiando la Caché de Miniaturas..." -ForegroundColor Yellow
-    $thumbCachePath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
-    $thumbFilesPattern = "thumbcache_*.db"
-
-    try {
-        $cacheFiles = Get-ChildItem -Path $thumbCachePath -Filter $thumbFilesPattern -Force -ErrorAction Stop
-        if ($cacheFiles.Count -eq 0) {
-            Write-Host "    [INFO] No se encontraron archivos de caché de miniaturas." -ForegroundColor Cyan
-            return
-        }
-
-        Write-Warning "Para limpiar la caché de miniaturas, es necesario reiniciar el Explorador de Windows."
-        Write-Warning "La barra de tareas y las carpetas abiertas desapareceran brevemente. Esto es normal."
-        if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -ne 'S') {
-            Write-Host "[AVISO] Operacion cancelada por el usuario." -ForegroundColor Yellow
-            return
-        }
-
-        Stop-Process -Name explorer -Force
-        Start-Sleep -Seconds 2 # Pequeña pausa para asegurar que los archivos se liberan
-
-        $cacheFiles | Remove-Item -Force -ErrorAction SilentlyContinue # Usamos SilentlyContinue aqui porque el reinicio de explorer es el objetivo principal
-
-        Start-Process explorer
-        Write-Host "    [OK] Caché de miniaturas limpiada y Explorador reiniciado." -ForegroundColor Green
-
-    } catch {
-        Write-Warning "No se pudo limpiar la caché de miniaturas. Es posible que el Explorador no se haya detenido correctamente."
-        # Intentar reiniciar explorer si fallo antes de la eliminacion
-        if (-not (Get-Process -Name "explorer" -ErrorAction SilentlyContinue)) {
-            Start-Process explorer
-        }
-    }
-}
-
-function Invoke-AegisAdvancedCacheClean {
-    Write-Host "`n[+] Ejecutando Limpieza Avanzada de Cachés..." -ForegroundColor Yellow
-    $cachesToClean = @{
-        "Caché de Shaders de DirectX" = "$env:LOCALAPPDATA\D3DSCache"
-        "Optimizacion de Entrega"     = "$env:windir\SoftwareDistribution\DeliveryOptimization"
-    }
-
-    foreach ($cache in $cachesToClean.GetEnumerator()) {
-        Write-Host " -> Limpiando $($cache.Name)..." -ForegroundColor Gray
-        $path = $cache.Value
-        if (Test-Path $path) {
-            try {
-                $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction Stop
-                if ($items.Count -gt 0) {
-                    $items | Remove-Item -Recurse -Force -ErrorAction Stop
-                    Write-Host "    [OK] Se eliminaron $($items.Count) elementos." -ForegroundColor Green
-                } else {
-                    Write-Host "    [INFO] La caché ya estaba vacia." -ForegroundColor Cyan
+            Write-Host "[+] Configurando el Liberador de Espacio en Disco para una limpieza maxima..." -ForegroundColor Yellow
+            # Usamos un numero de sageset alto para no interferir con configuraciones del usuario
+            $sagesetNum = 65535
+            
+            # Habilitamos todos los handlers de limpieza disponibles en el registro para que cleanmgr los use
+            $handlers = Get-ChildItem -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+            foreach ($handler in $handlers) {
+                try {
+                    Set-ItemProperty -Path $handler.PSPath -Name "StateFlags0000" -Value 2 -Type DWord -Force
+                } catch {
+                    # Ignorar errores en claves que no se pueden modificar, no es crítico
                 }
-            } catch {
-                Write-Warning "No se pudieron eliminar todos los elementos de '$($cache.Name)'. Error: $($_.Exception.Message)"
+            }
+
+            Write-Host "[+] Ejecutando el Liberador de Espacio en Disco. Por favor, espera..." -ForegroundColor Yellow
+            Write-Host "    (Esta operacion puede tardar varios minutos y parecera que no avanza, es normal)" -ForegroundColor Gray
+            
+            # Ejecutamos la limpieza. /sagerun es mas seguro y proporciona feedback visual de la herramienta de Windows.
+            Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:$sagesetNum" -Wait -Verb RunAs
+            
+            Write-Host "`n[OK] Limpieza avanzada completada." -ForegroundColor Green
+        } catch {
+            Write-Error "Ocurrio un error durante la limpieza avanzada: $($_.Exception.Message)"
+        }
+    }
+}
+
+# --- FUNCIÓN DE MENÚ ACTUALIZADA ---
+function Show-CleaningMenu {
+    # Función auxiliar para medir y limpiar rutas de forma segura
+    function Invoke-SafeClean {
+        param(
+            [string[]]$Paths,
+            [string]$Description
+        )
+        $totalSize = 0
+        $itemsToDelete = @()
+
+        Write-Host "`n[+] Calculando espacio para: $Description..." -ForegroundColor Yellow
+        foreach ($path in $Paths) {
+            if (Test-Path $path) {
+                $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+                if ($null -ne $items) {
+                    $itemsToDelete += $items
+                    $size = ($items | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                    $totalSize += $size
+                }
+            }
+        }
+
+        if ($totalSize -gt 0) {
+            $sizeInMB = [math]::Round($totalSize / 1MB, 2)
+            Write-Host "[INFO] Se pueden liberar aproximadamente $($sizeInMB) MB." -ForegroundColor Cyan
+            if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -eq 'S') {
+                Write-Host "[+] Limpiando $Description..."
+                foreach ($item in $itemsToDelete) {
+                    try {
+                        Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                    } catch {
+                        Write-Warning "No se pudo eliminar '$($item.FullName)'. Puede que este en uso o requiera permisos especiales."
+                    }
+                }
+                Write-Host "[OK] Limpieza de '$Description' completada." -ForegroundColor Green
             }
         } else {
-            Write-Host "    [INFO] La ruta no existe, se omite." -ForegroundColor Cyan
+            Write-Host "[OK] No se encontraron archivos para limpiar en '$Description'." -ForegroundColor Green
         }
     }
-}
 
-function Show-CleaningMenu {
     $cleanChoice = ''
     do {
         Clear-Host
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "              Modulo de Limpieza Profunda              " -ForegroundColor Cyan
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "Selecciona el nivel de limpieza que deseas ejecutar."
+        Write-Host "Modulo de Limpieza Profunda" -ForegroundColor Cyan
+        Write-Host "Selecciona el tipo de limpieza que deseas ejecutar."
         Write-Host ""
-        Write-Host "   [1] Limpieza Estandar"
-        Write-Host "       (Archivos temporales del sistema, usuario y Prefetch)" -ForegroundColor Gray
+        Write-Host "--- Limpieza Rapida (Archivos de Usuario) ---" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "   [2] Limpieza Profunda"
-        Write-Host "       (Incluye Estandar + Papelera, Miniaturas, Informes de Error)" -ForegroundColor Gray
+		Write-Host "   [1] Limpieza Estandar (Archivos temporales)"
         Write-Host ""
-        Write-Host "   [3] Limpieza de Cachés Avanzadas"
-        Write-Host "       (Caché de Shaders DirectX y Optimizacion de Entrega)" -ForegroundColor Gray
+		Write-Host "   [2] Limpieza de Caches (DirectX, Miniaturas, etc.)"
         Write-Host ""
-        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+		Write-Host "   [3] Vaciar Papelera de Reciclaje"
         Write-Host ""
-        
-        $cleanChoice = Read-Host "Selecciona una opcion"
+        Write-Host "--- Limpieza Profunda (Archivos de Sistema) ---" -ForegroundColor Yellow
+        Write-Host ""
+		Write-Host "   [4] Limpieza de Componentes de Windows (Windows.old, Actualizaciones)" -ForegroundColor Red
+        Write-Host "       (Libera mucho espacio, pero es irreversible)" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "   [T] TODO (Ejecutar todas las limpiezas rapidas [1-3])"
+        Write-Host ""
+        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host ""
+		$cleanChoice = Read-Host "`nSelecciona una opcion"
 
         switch ($cleanChoice.ToUpper()) {
-            '1' {
-                Invoke-AegisTempClean
-            }
+            '1' { Invoke-SafeClean -Paths @("$env:TEMP", "$env:windir\Temp") -Description "Archivos Temporales" }
             '2' {
-                if ((Read-Host "`nADVERTENCIA: Esta opcion vaciara permanentemente tu Papelera de Reciclaje. ¿Estas seguro de continuar? (S/N)").ToUpper() -eq 'S') {
-                    Invoke-AegisTempClean             # Reutilizacion de codigo
-                    Invoke-AegisDeepCleanAdditions    # Limpieza adicional
-                    Invoke-AegisThumbnailCacheClean   # Limpieza de miniaturas (con su propia advertencia)
-                } else {
-                    Write-Host "[AVISO] Operacion cancelada por el usuario." -ForegroundColor Yellow
+                Invoke-SafeClean -Paths @("$env:LOCALAPPDATA\D3DSCache", "$env:windir\SoftwareDistribution\DeliveryOptimization") -Description "Caches de Sistema"
+                Write-Host "[+] Limpiando cache de miniaturas..."
+                Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+                try {
+                    Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction Stop
+                    Write-Host "[OK] Cache de miniaturas limpiada." -ForegroundColor Green
+                } catch {
+                    Write-Warning "No se pudo limpiar la cache de miniaturas."
+                } finally {
+                    Start-Process "explorer"
                 }
             }
             '3' {
-                Write-Warning "Esta opcion es para usuarios avanzados y puede hacer que las descargas de actualizaciones o juegos tarden mas la proxima vez."
-                if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -eq 'S') {
-                    Invoke-AegisAdvancedCacheClean
-                } else {
-                    Write-Host "[AVISO] Operacion cancelada por el usuario." -ForegroundColor Yellow
-                }
+                Write-Host "[+] Vaciando la Papelera de Reciclaje..."
+                Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+                Write-Host "[OK] Papelera vaciada." -ForegroundColor Green
             }
-            'V' {
-                continue
+            '4' {
+                Invoke-AdvancedSystemClean
             }
-            default {
-                Write-Host "[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
+            'T' {
+                Invoke-SafeClean -Paths @("$env:TEMP", "$env:windir\Temp") -Description "Archivos Temporales"
+                Invoke-SafeClean -Paths @("$env:LOCALAPPDATA\D3DSCache", "$env:windir\SoftwareDistribution\DeliveryOptimization") -Description "Caches de Sistema"
+                Write-Host "[+] Limpiando cache de miniaturas..."
+                Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+                try { Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction Stop; Write-Host "[OK] Cache de miniaturas limpiada." -ForegroundColor Green } catch { Write-Warning "No se pudo limpiar la cache de miniaturas." } finally { Start-Process "explorer" }
+                Write-Host "[+] Vaciando la Papelera de Reciclaje..."
+                Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+                Write-Host "[OK] Papelera vaciada." -ForegroundColor Green
             }
-        } # Fin del switch
-
-        if ($cleanChoice.ToUpper() -ne 'V') {
-            Read-Host "`nPresiona Enter para continuar..."
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." }
         }
-
+        if ($cleanChoice.ToUpper() -ne 'V') { Read-Host "`nPresiona Enter para continuar..." }
     } while ($cleanChoice.ToUpper() -ne 'V')
 }
 
