@@ -93,7 +93,18 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
 	},
- 
+    [PSCustomObject]@{
+        Name           = "Revertir a la Busqueda Clasica del Explorador (Rendimiento)"
+        Category       = "Rendimiento UI"
+        Description    = "Desactiva la barra de busqueda moderna (XAML) y restaura la version clasica, mas rapida. Mejora significativamente la respuesta del Explorador."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\IOMgr"
+        RegistryKey    = "Disabled"
+        EnabledValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+
     # --- Categoria: Rendimiento del Sistema ---
     [PSCustomObject]@{
         Name           = "Aumentar Prioridad de CPU para Ventana Activa"
@@ -317,6 +328,35 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Explorer"
 	},
+    [PSCustomObject]@{
+        Name           = "Evitar que Edge se Cargue al Iniciar el Sistema (Directiva)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Impide que Microsoft Edge precargue procesos en segundo plano y al inicio del sistema (Startup Boost), liberando recursos."
+        Method         = "Command"
+        EnableCommand  = {
+            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (-not (Test-Path $edgePolicyPath)) { New-Item -Path $edgePolicyPath -Force | Out-Null }
+        # Un valor de 0 DESHABILITA el Startup Boost
+            Set-ItemProperty -Path $edgePolicyPath -Name "StartupBoostEnabled" -Value 0 -Type DWord -Force
+        # Un valor de 0 DESHABILITA que Edge se ejecute en segundo plano
+            Set-ItemProperty -Path $edgePolicyPath -Name "BackgroundModeEnabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (Test-Path $edgePolicyPath) {
+            # Para revertir, eliminamos las directivas para que Edge use su configuracion por defecto
+                Remove-ItemProperty -Path $edgePolicyPath -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $edgePolicyPath -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            $startupValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "StartupBoostEnabled" -ErrorAction SilentlyContinue
+            $backgroundValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "BackgroundModeEnabled" -ErrorAction SilentlyContinue
+        # El ajuste se considera "Activado" (es decir, Edge está deshabilitado) si ambas claves estan en 0
+            return ($null -ne $startupValue -and $startupValue.StartupBoostEnabled -eq 0 -and $null -ne $backgroundValue -and $backgroundValue.BackgroundModeEnabled -eq 0)
+        }
+        RestartNeeded  = "None"
+    },
 
     # --- Categoria: Privacidad y Telemetria ---
     [PSCustomObject]@{
