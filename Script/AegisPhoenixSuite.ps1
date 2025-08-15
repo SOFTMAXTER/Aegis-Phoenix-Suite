@@ -2,14 +2,14 @@
 .SYNOPSIS
     Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
 .DESCRIPTION
-    Aegis Phoenix Suite v3.9 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
+    Aegis Phoenix Suite v4 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    3.9
+    4.0
 #>
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
@@ -37,7 +37,7 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 function Create-RestorePoint {
     Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v3.9_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "AegisPhoenixSuite_v4.0_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
     } catch { Write-Error "No se pudo crear el punto de restauracion. Error: $_" }
     Read-Host "`nPresiona Enter para volver..."
@@ -1878,7 +1878,7 @@ $mainChoice = ''
 do {
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "        Aegis Phoenix Suite v3.9 by SOFTMAXTER        " -ForegroundColor Cyan
+    Write-Host "         Aegis Phoenix Suite v4 by SOFTMAXTER          " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
