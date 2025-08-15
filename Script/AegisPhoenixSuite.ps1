@@ -51,7 +51,7 @@ function Manage-SystemServices {
     while ($choice.ToUpper() -ne 'V') {
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "             Gestor Interactivo de Servicios           " -ForegroundColor Cyan
+        Write-Host "     Gestion de Servicios No Esenciales de Windows     " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "Selecciona un servicio para cambiar su estado (Activado/Desactivado)."
         Write-Host ""
@@ -99,7 +99,6 @@ function Manage-SystemServices {
         
         Write-Host "--- Acciones ---" -ForegroundColor Cyan
         Write-Host "   [Numero] - Activar/Desactivar servicio"
-        Write-Host ""
 		Write-Host "   [R <Numero>] - Restaurar servicio a su estado por defecto (Ej: R 2)"
         Write-Host ""
 		Write-Host "   [V] - Volver al menu anterior" -ForegroundColor Red
@@ -177,6 +176,156 @@ function Manage-SystemServices {
     }
 }
 
+# =========================================================================================
+# MODULO DE GESTION DE SERVICIOS DE TERCEROS
+# =========================================================================================
+
+function Manage-ThirdPartyServices {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    # Almacenamiento de estados originales para restauración
+    $originalStates = @{}
+
+    # Detectar servicios de terceros (no Microsoft)
+    function Get-ThirdPartyServices {
+        $thirdPartyServices = @()
+        $allServices = Get-CimInstance -ClassName Win32_Service
+        
+        foreach ($service in $allServices) {
+            # Filtrar servicios no-Microsoft
+            if ($service.PathName -and $service.PathName -notmatch '\\Windows\\' -and $service.PathName -notlike '*svchost.exe*') {
+                $thirdPartyServices += $service
+                # Guardar estado original solo en primera ejecución
+                if (-not $originalStates.ContainsKey($service.Name)) {
+                    $originalStates[$service.Name] = @{
+                        StartupType = $service.StartMode
+                    }
+                }
+            }
+        }
+        return $thirdPartyServices
+    }
+
+    $choice = ''
+    while ($choice.ToUpper() -ne 'V') {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "   Gestion Inteligente de Servicios de Aplicaciones    " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "Selecciona un servicio para cambiar su estado (Activado/Desactivado)."
+        Write-Host ""
+        
+        $services = Get-ThirdPartyServices
+        $displayItems = [System.Collections.Generic.List[object]]::new()
+
+        # Mostrar servicios
+        foreach ($service in $services) {
+            $itemIndex = $displayItems.Count + 1
+            
+            # Determinar estado actual
+            $statusText = ""
+            $statusColor = "Gray"
+            $isRunning = $service.State -eq 'Running'
+
+            if ($service.StartMode -eq 'Disabled') {
+                $statusText = "[Desactivado]"
+                $statusColor = "Red"
+            } else {
+                $statusText = "[Activado]"
+                $statusColor = "Green"
+                if ($isRunning) { 
+                    $statusText += " [En Ejecucion]" 
+                }
+            }
+
+            # Mostrar entrada
+            Write-Host ("   [{0,2}] " -f $itemIndex) -NoNewline
+            Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+            Write-Host $service.DisplayName -ForegroundColor White
+            Write-Host ("        " + $service.Description) -ForegroundColor Gray
+            
+            $displayItems.Add($service)
+        }
+
+        # Menú de acciones
+        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
+        Write-Host "   [Numero] - Activar/Desactivar servicio"
+        Write-Host "   [R <Numero>] - Restaurar estado original (Ej: R 2)"
+        Write-Host ""
+		Write-Host "   [V] - Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $rawChoice = Read-Host "Selecciona una opcion"
+        $choice = $rawChoice.Split(' ')[0]
+        $number = if ($rawChoice.Split(' ').Count -gt 1) { $rawChoice.Split(' ')[1] } else { $null }
+
+        try {
+            # Toggle estado
+            if ($choice -match '^\d+$') {
+                $index = [int]$choice - 1
+                if ($index -ge 0 -and $index -lt $displayItems.Count) {
+                    $selectedService = $displayItems[$index]
+                    
+                    if ($selectedService.StartMode -eq 'Disabled') {
+                        # Activar (Manual como valor seguro)
+                        $newStartupType = 'Manual'
+                        $action = "Habilitar"
+                    } else {
+                        # Desactivar
+                        $newStartupType = 'Disabled'
+                        $action = "Deshabilitar"
+                    }
+
+                    if ($PSCmdlet.ShouldProcess($selectedService.DisplayName, $action)) {
+                        # Cambiar tipo de inicio
+                        Set-Service -Name $selectedService.Name -StartupType $newStartupType -ErrorAction Stop
+                        
+                        # Manejar estado de ejecución
+                        if ($newStartupType -eq 'Disabled' -and $isRunning) {
+                            Stop-Service -Name $selectedService.Name -Force -ErrorAction SilentlyContinue
+                        } elseif ($newStartupType -ne 'Disabled' -and -not $isRunning) {
+                            Start-Service -Name $selectedService.Name -ErrorAction SilentlyContinue
+                        }
+                        
+                        Write-Host "[OK] Servicio '$($selectedService.DisplayName)' $action." -ForegroundColor Green
+                    }
+                }
+            } 
+            # Restaurar estado original
+            elseif ($choice.ToUpper() -eq 'R' -and $number -match '^\d+$') {
+                $index = [int]$number - 1
+                if ($index -ge 0 -and $index -lt $displayItems.Count) {
+                    $selectedService = $displayItems[$index]
+                    $originalState = $originalStates[$selectedService.Name]
+                    
+                    if ($PSCmdlet.ShouldProcess($selectedService.DisplayName, "Restaurar estado original ($($originalState.StartupType))")) {
+                        Set-Service -Name $selectedService.Name -StartupType $originalState.StartupType -ErrorAction Stop
+                        
+                        # Ajustar estado de ejecución según tipo de inicio
+                        if ($originalState.StartupType -ne 'Disabled' -and $selectedService.State -ne 'Running') {
+                            Start-Service -Name $selectedService.Name -ErrorAction SilentlyContinue
+                        } elseif ($originalState.StartupType -eq 'Disabled' -and $selectedService.State -eq 'Running') {
+                            Stop-Service -Name $selectedService.Name -Force -ErrorAction SilentlyContinue
+                        }
+                        
+                        Write-Host "[OK] Servicio '$($selectedService.DisplayName)' restaurado." -ForegroundColor Green
+                    }
+                }
+            }
+            # Opción no válida
+            elseif ($choice.ToUpper() -ne 'V') {
+                Write-Warning "Opcion no valida."
+            }
+        } catch {
+            Write-Error "Error: $($_.Exception.Message)"
+        }
+
+        if ($choice.ToUpper() -ne 'V') { 
+            Start-Sleep -Seconds 2 
+        }
+    }
+}
 # =================================================================================
 # --- INICIO DEL MÓDULO DE LIMPIEZA ACTUALIZADO ---
 # Incluye la nueva función para limpieza de componentes del sistema.
@@ -1613,16 +1762,19 @@ function Show-OptimizationMenu {
 	Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan;
 	Write-Host "=======================================================" -ForegroundColor Cyan;
 	Write-Host "";
-    Write-Host "   [1] Gestor Interactivo de Servicios del Sistema";
+    Write-Host "   [1] Gestor de Servicios No Esenciales de Windows";
     Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [2] Modulo de Limpieza Profunda";
+    Write-Host "   [2] Optimizar Servicios de Programas Instalados"
+    Write-Host "       (Activa o desactiva servicios de tus aplicaciones)" -ForegroundColor Gray
+    Write-Host ""
+	Write-Host "   [3] Modulo de Limpieza Profunda";
 	Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [3] Eliminar Apps Preinstaladas (Dinamico)";
+	Write-Host "   [4] Eliminar Apps Preinstaladas (Dinamico)";
 	Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray;
 	Write-Host "";
-	Write-Host "   [4] Gestionar Programas de Inicio (Interactivo)";
+	Write-Host "   [5] Gestionar Programas de Inicio (Interactivo)";
 	Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray;
 	Write-Host "";
 	Write-Host "-------------------------------------------------------";
@@ -1630,10 +1782,11 @@ function Show-OptimizationMenu {
 	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
 	Write-Host ""
 	$optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
-        '1' { Manage-SystemServices } # Llamada a la nueva funcion
-        '2' { Show-CleaningMenu }     # Nota: el indice de las siguientes opciones puede necesitar ajuste si cambias el texto del menu
-        '3' { Show-BloatwareMenu }
-        '4' { Manage-StartupApps }
+        '1' { Manage-SystemServices }
+        '2' { Manage-ThirdPartyServices }
+		'3' { Show-CleaningMenu }
+        '4' { Show-BloatwareMenu }
+        '5' { Manage-StartupApps }
 		'V' { continue };
 		default {
 			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
