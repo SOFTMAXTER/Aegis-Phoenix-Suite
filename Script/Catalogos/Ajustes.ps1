@@ -1,4 +1,4 @@
-# --- CATALOGO CENTRAL DE AJUSTES DEL SISTEMA ---
+# --- CATALOGO CENTRAL DE AJUSTES DEL SISTMA ---
 # Esta es la "fuente de la verdad" para todos los tweaks, ajustes de seguridad, privacidad y UI.
 # Cada objeto define un ajuste, permitiendo que los menus y las acciones se generen dinamicamente.
 $script:SystemTweaks = @(
@@ -29,7 +29,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Aplicar Configuracion Visual Personalizada (Rendimiento/Calidad)"
         Category       = "Rendimiento UI"
-        Description    = "Máxima fluidez, cero distracciones. Elimina las animaciones lentas pero mantiene un escritorio funcional y moderno."
+        Description    = "Maxima fluidez, cero distracciones. Establece los valores visuales por defecto del sistema (HKLM) segun una configuracion personalizada."
         Method         = "Command"
         EnableCommand  = {
             # --- VALORES VERIFICADOS POR EL USUARIO APLICADOS A HKLM ---
@@ -80,29 +80,6 @@ $script:SystemTweaks = @(
             return ($animate -eq 0 -and $peek -eq 1)
         }
         RestartNeeded  = "Session"
-    },
-	[PSCustomObject]@{
-        Name           = "Lanzar Explorador en Proceso Separado"
-        Category       = "Rendimiento UI"
-        Description    = "Ejecuta cada ventana del Explorador en su propio proceso. Mejora la estabilidad y la respuesta, evitando que una ventana bloqueada afecte a las demas."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-        RegistryKey    = "SeparateProcess"
-        EnabledValue   = 1
-        DefaultValue   = 0
-        RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
-	},
-    [PSCustomObject]@{
-        Name           = "Revertir a la Busqueda Clasica del Explorador (Rendimiento)"
-        Category       = "Rendimiento UI"
-        Description    = "Desactiva la barra de busqueda moderna (XAML) y restaura la version clasica, mas rapida. Mejora significativamente la respuesta del Explorador."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\IOMgr"
-        RegistryKey    = "Disabled"
-        EnabledValue   = 1
-        RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
     },
 
     # --- Categoria: Rendimiento del Sistema ---
@@ -227,17 +204,30 @@ $script:SystemTweaks = @(
 			}
         RestartNeeded  = "Reboot" 
     },
-	[PSCustomObject]@{
-        Name           = "Deshabilitar Vistas Previas (Thumbnails) en Carpetas de Red"
-        Category       = "Rendimiento UI"
-        Description    = "Acelera la navegacion en carpetas de red al no generar vistas previas de imagenes y videos. Se mostraran iconos genericos."
+    [PSCustomObject]@{
+        Name           = "Limitar Uso de CPU de Windows Defender al 25% (Directiva)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Establece un limite maximo del 25% de uso de CPU para los analisis de Windows Defender, reduciendo el impacto en el rendimiento."
         Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer"
-        RegistryKey    = "DisableThumbnailsOnNetworkFolders"
-        EnabledValue   = 1
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Scan"
+        RegistryKey    = "AvgCPULoadFactor"
+        EnabledValue   = 25
+        DefaultValue   = 50 # El valor por defecto es 50
         RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
-	},
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Mostrar Informacion Detallada en Pantalla Azul (BSOD)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Configura las pantallas azules de error (BSOD) para que muestren informacion tecnica detallada en lugar de la cara triste."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\CrashControl"
+        RegistryKey    = "DisplayParameters"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
@@ -300,62 +290,17 @@ $script:SystemTweaks = @(
 				}
         RestartNeeded  = "Reboot"
     },
-	[PSCustomObject]@{
-        Name           = "Deshabilitar Busqueda Automatica de Carpetas y F impresoras de Red"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Evita que el Explorador de Archivos busque impresoras y carpetas de red automaticamente, reduciendo los retrasos al abrir 'Este equipo'."
-        Method         = "Command"
-        EnableCommand  = {
-            $keysToRemove = @(
-                "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}", # Impresoras
-                "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{D20BEEC4-5CA8-4905-AE3B-BF251EA09B53}"  # Work Folders
-            )
-            foreach ($key in $keysToRemove) {
-                if (Test-Path $key) {
-                    Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
-                }
-            }
-        }
-        DisableCommand = {
-            $printersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}"
-            if (-not (Test-Path $printersKey)) { New-Item -Path $printersKey -Force | Out-Null }
-            $workFoldersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{D20BEEC4-5CA8-4905-AE3B-BF251EA09B53}"
-            if (-not (Test-Path $workFoldersKey)) { New-Item -Path $workFoldersKey -Force | Out-Null }
-        }
-        CheckCommand   = {
-            $printersKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{2227A280-3AEA-1069-A2DE-08002B30309D}"
-            return -not (Test-Path $printersKey)
-        }
-        RestartNeeded  = "Explorer"
-	},
     [PSCustomObject]@{
-        Name           = "Evitar que Edge se Cargue al Iniciar el Sistema (Directiva)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Impide que Microsoft Edge precargue procesos en segundo plano y al inicio del sistema (Startup Boost), liberando recursos."
-        Method         = "Command"
-        EnableCommand  = {
-            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
-            if (-not (Test-Path $edgePolicyPath)) { New-Item -Path $edgePolicyPath -Force | Out-Null }
-        # Un valor de 0 DESHABILITA el Startup Boost
-            Set-ItemProperty -Path $edgePolicyPath -Name "StartupBoostEnabled" -Value 0 -Type DWord -Force
-        # Un valor de 0 DESHABILITA que Edge se ejecute en segundo plano
-            Set-ItemProperty -Path $edgePolicyPath -Name "BackgroundModeEnabled" -Value 0 -Type DWord -Force
-        }
-        DisableCommand = {
-            $edgePolicyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
-            if (Test-Path $edgePolicyPath) {
-            # Para revertir, eliminamos las directivas para que Edge use su configuracion por defecto
-                Remove-ItemProperty -Path $edgePolicyPath -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
-                Remove-ItemProperty -Path $edgePolicyPath -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
-            }
-        }
-        CheckCommand   = {
-            $startupValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "StartupBoostEnabled" -ErrorAction SilentlyContinue
-            $backgroundValue = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "BackgroundModeEnabled" -ErrorAction SilentlyContinue
-        # El ajuste se considera "Activado" (es decir, Edge está deshabilitado) si ambas claves estan en 0
-            return ($null -ne $startupValue -and $startupValue.StartupBoostEnabled -eq 0 -and $null -ne $backgroundValue -and $backgroundValue.BackgroundModeEnabled -eq 0)
-        }
-        RestartNeeded  = "None"
+        Name           = "Deshabilitar Biometria (Inhabilita Windows Hello)"
+        Category       = "Seguridad"
+        Description    = "ADVERTENCIA: Desactiva por directiva el uso de datos biometricos (huella, rostro). Esto rompera el inicio de sesion con Windows Hello."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Biometrics"
+        RegistryKey    = "Enabled"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
     },
 
     # --- Categoria: Privacidad y Telemetria ---
@@ -453,6 +398,85 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "None"
     },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Sincronizacion en la Nube (Directiva)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que la configuracion de Windows (temas, contraseñas, preferencias) se sincronice con la cuenta de Microsoft."
+        Method         = "Command"
+        EnableCommand  = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\SettingSync"
+            if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+            Set-ItemProperty -Path $policyPath -Name "DisableSettingSync" -Value 2 -Type DWord -Force
+            Set-ItemProperty -Path $policyPath -Name "DisableSettingSyncUserOverride" -Value 1 -Type DWord -Force
+        }
+        DisableCommand = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\SettingSync"
+            if (Test-Path $policyPath) {
+                Remove-ItemProperty -Path $policyPath -Name "DisableSettingSync" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $policyPath -Name "DisableSettingSyncUserOverride" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\SettingSync" -Name "DisableSettingSync" -ErrorAction SilentlyContinue).DisableSettingSync
+            return $val -eq 2
+        }
+        RestartNeeded  = "Session"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Historial de Actividad (Timeline) (Directiva)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que Windows recopile y muestre el historial de actividades del usuario (Timeline)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System"
+        RegistryKey    = "EnableActivityFeed"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Session"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Telemetria Extensiva (Tareas y Servicios)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Desactiva multiples tareas programadas y servicios relacionados con la recopilacion de datos y telemetria."
+        Method         = "Command"
+        EnableCommand  = {
+            Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
+            Set-Service -Name "DiagTrack" -StartupType Disabled -ErrorAction SilentlyContinue
+        }
+        DisableCommand = {
+            Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Enable-ScheduledTask
+            Remove-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Force -ErrorAction SilentlyContinue
+            Set-Service -Name "DiagTrack" -StartupType "Automatic" -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            $task = Get-ScheduledTask -TaskName "Consolidator" -ErrorAction SilentlyContinue
+            $telemetryValue = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -ErrorAction SilentlyContinue).AllowTelemetry
+            return ($task.State -eq 'Disabled' -and $telemetryValue -eq 0)
+        }
+        RestartNeeded  = "Reboot"
+    },
+    [PSCustomObject]@{
+        Name           = "Denegar Permisos Globales a Apps (Camara, Microfono, etc.)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Establece el permiso por defecto a 'Denegar' para el acceso a hardware y datos sensibles (camara, microfono, documentos)."
+        Method         = "Command"
+        EnableCommand  = {
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam" -Name "Value" -Value "Deny" -Type String -Force
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone" -Name "Value" -Value "Deny" -Type String -Force
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\documentsLibrary" -Name "Value" -Value "Deny" -Type String -Force
+        }
+        DisableCommand = {
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam" -Name "Value" -Value "Allow" -Type String -Force
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone" -Name "Value" -Value "Allow" -Type String -Force
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\documentsLibrary" -Name "Value" -Value "Allow" -Type String -Force
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam" -Name "Value" -ErrorAction SilentlyContinue).Value
+            return $val -eq "Deny"
+        }
+        RestartNeeded  = "None"
+    },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
@@ -545,6 +569,57 @@ $script:SystemTweaks = @(
 				Remove-Item -Path $keyPath -Recurse -Force -ErrorAction SilentlyContinue }
 			}
         CheckCommand   = { Test-Path "Registry::HKEY_CLASSES_ROOT\AllFilesystemObjects\shell\CopyPath\command" }
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Notificaciones y Centro de Accion"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Oculta el Centro de Accion y deshabilita las notificaciones emergentes (toasts)."
+        Method         = "Command"
+        EnableCommand  = {
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableNotificationCenter" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\PushNotifications" -Name "ToastEnabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableNotificationCenter" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\PushNotifications" -Name "ToastEnabled" -Value 1 -Type DWord -Force
+        }
+        CheckCommand   = {
+            $val1 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableNotificationCenter" -ErrorAction SilentlyContinue).DisableNotificationCenter
+            $val2 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\PushNotifications" -Name "ToastEnabled" -ErrorAction SilentlyContinue).ToastEnabled
+            return ($val1 -eq 1 -and $val2 -eq 0)
+        }
+        RestartNeeded  = "Session"
+    },
+    [PSCustomObject]@{
+        Name           = "Activar Modo Oscuro para Sistema y Apps"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Establece el tema oscuro como predeterminado para las aplicaciones y la interfaz del sistema."
+        Method         = "Command"
+        EnableCommand  = {
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -Value 1 -Type DWord -Force
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -ErrorAction SilentlyContinue).AppsUseLightTheme
+            return $val -eq 0
+        }
+        RestartNeeded  = "None"
+    },
+     [PSCustomObject]@{
+        Name           = "Anadir 'Finalizar Tarea' al Menu Contextual de la Barra de Tareas"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Agrega una opcion para forzar el cierre de programas al hacer clic derecho en su icono de la barra de tareas."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "TaskbarEndTask"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
     }
 )
