@@ -437,7 +437,7 @@ function Show-CleaningMenu {
         Write-Host ""
         Write-Host "   [T] TODO (Ejecutar todas las limpiezas rapidas [1-3])"
         Write-Host ""
-        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
 		$cleanChoice = Read-Host "`nSelecciona una opcion"
 
@@ -497,7 +497,7 @@ function Show-BloatwareMenu {
         Write-Host "   [3] Desinstalar Mis Apps (Instaladas desde la Tienda)" -ForegroundColor Yellow
         Write-Host "       (Busca apps que Tu has instalado desde la Microsoft Store)" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         $bloatwareChoice = Read-Host "Selecciona una opcion"
         
@@ -891,7 +891,7 @@ function Manage-StartupApps {
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [D] Deshabilitar Seleccionados    [H] Habilitar Seleccionados"
         Write-Host "   [T] Seleccionar Todos             [N] Deseleccionar Todos"
-        Write-Host "   [R] Refrescar Lista               [V] Volver..." -ForegroundColor Red
+        Write-Host "   [R] Refrescar Lista               [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
 
@@ -1093,7 +1093,7 @@ function Show-DriverMenu {
         Write-Host "   [3] Restaurar drivers desde una copia de seguridad"
         Write-Host "       (Instala masivamente los drivers desde una carpeta de respaldo)" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         
         $driverChoice = Read-Host "Selecciona una opcion"
@@ -1165,7 +1165,7 @@ function Show-AdminMenu {
 	Write-Host ""
     Write-Host "   [2] Gestionar Tareas Programadas de Terceros";
     Write-Host "";
-    Write-Host "   [V] Volver..." -ForegroundColor Red;
+    Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red;
 	Write-Host ""
     $adminChoice = Read-Host "Selecciona una opcion"; switch ($adminChoice) {
     '1' { if ((Read-Host "ADVERTENCIA: Esto eliminara los registros de eventos. Estas seguro? (S/N)").ToUpper() -eq
@@ -1209,7 +1209,7 @@ function Manage-ScheduledTasks {
 		Write-Host "   [H] Habilitar Seleccionadas";
 		Write-Host "   [T] Seleccionar Todas";
 		Write-Host "   [N] No seleccionar ninguna";
-		Write-Host "   [V] Volver..." -ForegroundColor Red
+		Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $script:tasks.Count) { $index = [int]$choice - 1; $script:tasks[$index].Selected = -not $script:tasks[$index].Selected }
         elseif ($choice -eq 'T') { $script:tasks.ForEach({$_.Selected = $true}) }
@@ -1420,7 +1420,7 @@ function Show-InteractiveSelectionMenu {
         }
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [A] Aplicar a seleccionados   [T] Seleccionar Todos   [N] No seleccionar ninguno"
-        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         $choice = Read-Host "`nSelecciona una opcion"
         if ($choice -match '^\d+$' -and [int]$choice -in 1..$Items.Count) { $Items[[int]$choice - 1].Selected = -not $Items[[int]$choice - 1].Selected }
         elseif ($choice.ToUpper() -eq 'T') { $Items.ForEach({$_.Selected = $true}) }
@@ -1530,7 +1530,7 @@ function Show-SoftwareMenu {
         Write-Host ""
         Write-Host "   [E] Cambiar motor de busqueda/instalacion"
         Write-Host ""
-        Write-Host "   [V] Volver..." -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         $softwareChoice = Read-Host "`nSelecciona una opcion"
 
