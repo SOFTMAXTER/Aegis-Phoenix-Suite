@@ -63,6 +63,12 @@ $script:ServiceCatalog = @(
         Category           = "Estandar"
         DefaultStartupType = "Manual"
 	},
+    [PSCustomObject]@{
+        Name               = "WSearch"
+        Description        = "Proporciona indexacion de contenido y resultados de busqueda para archivos, correo y otro contenido."
+        Category           = "Estandar"
+        DefaultStartupType = "Automatic"
+    },
     # Categoria: Avanzado/Opcional (Servicios para funciones especificas)
     [PSCustomObject]@{
         Name               = "TermService"
@@ -88,6 +94,7 @@ $script:ServiceCatalog = @(
         Category           = "Avanzado"
         DefaultStartupType = "Manual"
 	},
+    
 	[PSCustomObject]@{
         Name               = "CscService"
         Description        = "Servicio de Archivos sin conexion, para acceder a archivos de red localmente. Innecesario para usuarios domesticos."
