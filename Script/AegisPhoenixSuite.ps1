@@ -1470,7 +1470,7 @@ function Manage-SoftwareUpdates {
     param()
     
     $allOutdated = [System.Collections.Generic.List[pscustomobject]]::new()
-    $supportedEngines = @('Winget', 'Chocolatey') # Añade mas motores aqui
+    $supportedEngines = @('Winget', 'Chocolatey', 'Scoop') # Añade mas motores aqui
 
     Write-Host "`n[+] Buscando actualizaciones en todos los motores soportados..." -ForegroundColor Yellow
     foreach ($engine in $supportedEngines) {
