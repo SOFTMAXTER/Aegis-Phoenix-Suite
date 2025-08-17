@@ -1875,7 +1875,7 @@ $mainChoice = ''
 do {
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "         Aegis Phoenix Suite v4 by SOFTMAXTER          " -ForegroundColor Cyan
+    Write-Host "         Aegis Phoenix Suite v4.0 by SOFTMAXTER          " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
