@@ -1256,20 +1256,21 @@ function Ensure-ChocolateyIsInstalled {
 
 function Ensure-ScoopIsInstalled {
     if (Get-Command 'scoop' -ErrorAction SilentlyContinue) { return $true }
+    Clear-Host
     Write-Warning "El gestor de paquetes 'Scoop' no esta instalado."
-    if ((Read-Host "¿Deseas instalarlo ahora? (S/N)").ToUpper() -eq 'S') {
-        Write-Host "`n[+] Instalando Scoop..." -ForegroundColor Yellow
-        try {
-            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
-            irm get.scoop.sh | iex
-            Write-Host "`n[OK] Scoop instalado." -ForegroundColor Green
-            return $true
-        } catch { Write-Error "Fallo la instalacion de Scoop. Error: $($_.Exception.Message)"; return $false }
-    }
+    Write-Host "`nPara usar Scoop, debe instalarse manualmente desde una terminal SIN privilegios de Administrador." -ForegroundColor Yellow
+    Write-Host "Por favor, sigue estos pasos:"
+    Write-Host "1. Abre el Menu Inicio y busca 'PowerShell' (NO hagas clic derecho, solo abrelo)."
+    Write-Host "2. En la nueva ventana de PowerShell (debe tener una barra de titulo azul, no negra), ejecuta este comando:"
+    Write-Host "   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" -ForegroundColor Cyan
+    Write-Host "3. Despues, ejecuta este otro comando para instalar Scoop:"
+    Write-Host "   irm get.scoop.sh | iex" -ForegroundColor Cyan
+    Write-Host "4. Una vez termine la instalacion, cierra esa ventana y vuelve a ejecutar este script (Aegis Phoenix Suite)."
+    Write-Host ""
+    Read-Host "Presiona Enter para volver al menu anterior..."
+    
     return $false
 }
-# ... (Las demas funciones Ensure-* se mantienen igual)
-#endregion
 
 # MEJORADO: El corazon del modulo. Ahora es mas especifico y robusto.
 function Invoke-SoftwareAction {
@@ -1298,10 +1299,7 @@ function Invoke-SoftwareAction {
                     'Search' {
                         $output = winget search $PackageName --accept-source-agreements
                         
-                        # CORRECCIoN: Se reemplaza el metodo de analisis anterior por uno mas robusto.
-                        # MEJORA: Se omiten las 2 primeras lineas (cabecera y separador) para evitar falsos positivos.
                         ($output -split "\r?\n" | Select-Object -Skip 2) | ForEach-Object {
-                            # Se usa el operador -match. Si es verdadero, la variable automatica $Matches se puebla.
                             if ($_ -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)') {
                                 $results.Add([PSCustomObject]@{
                                     Name   = $Matches['Name'].Trim()
@@ -1350,17 +1348,17 @@ function Invoke-SoftwareAction {
                     'Upgrade' { if ($PSCmdlet.ShouldProcess("Paquetes Seleccionados", "Actualizar (Choco)")) { choco upgrade -y $($PackageIdsToUpdate -join ' ') } }
                 }
             }
-            # --- AÑADIDO: Logica para Scoop ---
             'Scoop' {
                 if (-not (Ensure-ScoopIsInstalled)) { throw "Scoop no esta disponible." }
                 switch ($Action) {
                     'Search' {
-                        # El comando 'scoop search' devuelve nombres de paquetes, uno por linea, a veces con info adicional.
                         scoop search $PackageName | ForEach-Object {
-                            if ($_ -and $_ -notlike 'Results from*') {
-                                $appName = ($_.Trim() -split ' ')[0]
-                                if ($appName) {
-                                    $results.Add([PSCustomObject]@{ Name = $appName; Id = $appName; Engine = 'Scoop' })
+                            if ($_ -and $_ -notlike 'Results from*' -and $_ -notlike 'Searching...*') {
+                                if ($_ -match '^(?<Name>\S+)') {
+                                    $appName = $Matches['Name'].Trim()
+                                    if (-not [string]::IsNullOrWhiteSpace($appName)) {
+                                        $results.Add([PSCustomObject]@{ Name = $appName; Id = $appName; Engine = 'Scoop' })
+                                    }
                                 }
                             }
                         }
@@ -1369,7 +1367,6 @@ function Invoke-SoftwareAction {
                         if ($PSCmdlet.ShouldProcess($PackageName, "Instalar (Scoop)")) { scoop install $PackageName }
                     }
                     'ListOutdated' {
-                        # El comando 'scoop status' tiene una salida muy especifica que podemos parsear.
                         scoop status | ForEach-Object {
                             if ($_ -match "'(?<Name>\S+)' is outdated: '(?<Version>\S+)' -> '(?<Available>\S+)'") {
                                 $results.Add([PSCustomObject]@{
