@@ -710,24 +710,43 @@ $script:SystemTweaks = @(
         Description    = "ADVERTENCIA: Desinstala OneDrive y elimina sus datos locales. Mueve los archivos de OneDrive a la carpeta de usuario antes de proceder."
         Method         = "Command"
         EnableCommand  = {
+            # --- PASO 1 (NUEVO Y CRITICO): Deshabilitar OneDrive via Directiva de Grupo ---
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
+            if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+            Set-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
+
+            # --- PASO 2: Desinstalacion y Limpieza Profunda ---
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             if (Test-Path "$env:SystemRoot\System32\OneDriveSetup.exe") { Start-Process -FilePath "$env:SystemRoot\System32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait }
             if (Test-Path "$env:SystemRoot\SysWOW64\OneDriveSetup.exe") { Start-Process -FilePath "$env:SystemRoot\SysWOW64\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait }
             
-            # Mover archivos restantes
-            if (Test-Path "$env:USERPROFILE\OneDrive") { robocopy "$env:USERPROFILE\OneDrive" "$env:USERPROFILE" /mov /e /xj | Out-Null }
-            
             # Limpieza de registro y carpetas
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk" -Force -ErrorAction SilentlyContinue
+            
+            $clsidPath = "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+            if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
+            Set-ItemProperty -Path $clsidPath -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force
+
             Get-ScheduledTask -TaskPath '\' -TaskName 'OneDrive*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+            Remove-Item -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk" -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:USERPROFILE\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:PROGRAMDATA\Microsoft OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
         }
-        DisableCommand = { Write-Warning "La reinstalacion de OneDrive debe hacerse manualmente descargando el instalador desde el sitio de Microsoft." }
-        CheckCommand   = { return -not (Test-Path "$env:SystemRoot\System32\OneDriveSetup.exe") }
+        DisableCommand = { 
+            # Para reactivar, se elimina la directiva y se avisa para reinstalacion manual
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
+            if (Test-Path $policyPath) { Remove-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Force -ErrorAction SilentlyContinue }
+            Write-Warning "La directiva que bloquea OneDrive ha sido eliminada."
+            Write-Warning "La reinstalacion de OneDrive debe hacerse manualmente descargando el instalador desde el sitio de Microsoft." 
+        }
+        CheckCommand   = {
+            # --- DETECCION DEFINITIVA ---
+            # El ajuste esta 'Activado' (desinstalado) si la directiva de bloqueo esta activa.
+            $policyValue = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -ErrorAction SilentlyContinue).DisableFileSyncNGSC
+            return ($null -ne $policyValue -and $policyValue -eq 1)
+        }
         RestartNeeded  = "Reboot"
     }
 )
