@@ -241,6 +241,18 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar la Barra de Juegos (Directiva GPO)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Deshabilitar la Game Bar de forma global, la forma mas robusta."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
+        RegistryKey    = "AllowGameDVR"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Session"
+    },
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
@@ -702,7 +714,32 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
     },
-	
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Busqueda Web en Menu Inicio (Directiva GPO)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Eliminar completamente los resultados web de Bing y Cortana de la busqueda."
+        Method         = "Command"
+        EnableCommand  = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+            if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+            Set-ItemProperty -Path $policyPath -Name "DisableWebSearch" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $policyPath -Name "ConnectedSearchUseWeb" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search" -Name "BingSearchEnabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+            if (Test-Path $policyPath) {
+                Remove-ItemProperty -Path $policyPath -Name "DisableWebSearch" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $policyPath -Name "ConnectedSearchUseWeb" -Force -ErrorAction SilentlyContinue
+            }
+            Remove-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search" -Name "BingSearchEnabled" -Force -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "DisableWebSearch" -ErrorAction SilentlyContinue).DisableWebSearch
+            return ($null -ne $val -and $val -eq 1)
+        }
+        RestartNeeded  = "Explorer"
+    },
 	# --- Categoria: Extras (Nuevos) ---
     [PSCustomObject]@{
         Name           = "Desinstalar OneDrive Completamente"
