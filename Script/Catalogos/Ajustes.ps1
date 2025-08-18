@@ -385,17 +385,6 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
-    [PSCustomObject]@{
-        Name           = "Deshabilitar Telemetria de CEIP (SQM) (Directiva)"
-        Category       = "Privacidad y Telemetria"
-        Description    = "Desactiva el Programa para la mejora de la experiencia del cliente a nivel de directiva."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\SQMClient\Windows"
-        RegistryKey    = "CEIPEnable"
-        EnabledValue   = 0
-        RegistryType   = "DWord"
-        RestartNeeded  = "None"
-    },
 	[PSCustomObject]@{
         Name           = "Deshabilitar Telemetria de Microsoft Edge (Directiva)"
         Category       = "Privacidad y Telemetria"
