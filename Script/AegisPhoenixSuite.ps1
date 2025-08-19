@@ -1333,18 +1333,32 @@ function Invoke-SoftwareAction {
         switch ($Engine) {
             'Winget' {
                 if (-not (Test-CommandExists 'winget')) { throw "El motor 'Winget' es esencial y no se encuentra." }
+                function Parse-WingetTable($output, [int]$expectedColumnCount) {
+                    $items = [System.Collections.Generic.List[string[]]]::new()
+                    $lines = ($output | Out-String).Split("`n")
+                    $headerFound = $false
+                    foreach ($line in $lines) {
+                        if ($line -match "^Nombre\s+Id") { $headerFound = $true; continue }
+                        if (-not $headerFound -or [string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("---")) { continue }
+                        
+                        $parts = $line.Trim() -split '\s{2,}'
+                        if ($parts.Count -ge $expectedColumnCount) {
+                            $items.Add($parts)
+                        }
+                    }
+                    return $items
+                }
+
                 switch ($Action) {
                     'Search' {
                         $output = winget search $PackageName --accept-source-agreements
-                        
-                        ($output -split "\r?\n" | Select-Object -Skip 2) | ForEach-Object {
-                            if ($_ -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)') {
-                                $results.Add([PSCustomObject]@{
-                                    Name   = $Matches['Name'].Trim()
-                                    Id     = $Matches['Id'].Trim()
-                                    Engine = 'Winget'
-                                })
-                            }
+                        $tableData = Parse-WingetTable -output $output -expectedColumnCount 2
+                        foreach ($row in $tableData) {
+                            $results.Add([PSCustomObject]@{
+                                Name   = $row[0].Trim()
+                                Id     = $row[1].Trim()
+                                Engine = 'Winget'
+                            })
                         }
                     }
                     'Install' {
@@ -1354,18 +1368,17 @@ function Invoke-SoftwareAction {
                     }
                     'ListOutdated' {
                         $output = winget upgrade --include-unknown --accept-source-agreements
-                        if ($output -match "No applicable update found") { break }
+                        if (($output | Out-String) -match "No applicable update found") { break }
                         
-                        ($output -split "\r?\n" | Select-Object -Skip 2) | ForEach-Object {
-                             if ($_ -match '^(?<Name>.+?)\s{2,}(?<Id>\S+)\s{2,}(?<Version>\S+)\s{2,}(?<Available>\S+)') {
-                                $results.Add([PSCustomObject]@{
-                                    Name      = $Matches['Name'].Trim()
-                                    Id        = $Matches['Id'].Trim()
-                                    Version   = $Matches['Version'].Trim()
-                                    Available = $Matches['Available'].Trim()
-                                    Engine    = 'Winget'
-                                })
-                            }
+                        $tableData = Parse-WingetTable -output $output -expectedColumnCount 4
+                        foreach ($row in $tableData) {
+                             $results.Add([PSCustomObject]@{
+                                Name      = $row[0].Trim()
+                                Id        = $row[1].Trim()
+                                Version   = $row[2].Trim()
+                                Available = $row[3].Trim()
+                                Engine    = 'Winget'
+                            })
                         }
                     }
                     'Upgrade' {
@@ -1391,12 +1404,13 @@ function Invoke-SoftwareAction {
                 switch ($Action) {
                     'Search' {
                         scoop search $PackageName | ForEach-Object {
-                            if ($_ -and $_ -notlike 'Results from*' -and $_ -notlike 'Searching...*') {
-                                if ($_ -match '^(?<Name>\S+)') {
-                                    $appName = $Matches['Name'].Trim()
-                                    if (-not [string]::IsNullOrWhiteSpace($appName)) {
-                                        $results.Add([PSCustomObject]@{ Name = $appName; Id = $appName; Engine = 'Scoop' })
-                                    }
+                            
+							$line = ([string]$_).Trim()
+                            
+                            if ($line -and $line -notmatch 'Results from' -and $line -notmatch 'Searching...' -and $line -notmatch '----') {
+                                $appName = ($line -split '\s+')[0]
+                                if (-not [string]::IsNullOrWhiteSpace($appName)) {
+                                    $results.Add([PSCustomObject]@{ Name = $appName; Id = $appName; Engine = 'Scoop' })
                                 }
                             }
                         }
@@ -1406,7 +1420,7 @@ function Invoke-SoftwareAction {
                     }
                     'ListOutdated' {
                         scoop status | ForEach-Object {
-                            if ($_ -match "'(?<Name>\S+)' is outdated: '(?<Version>\S+)' -> '(?<Available>\S+)'") {
+                            if ($_ -match "^\s*'(?<Name>\S+)'\s+is outdated: '(?<Version>[\d\.\w\-]+)' -> '(?<Available>[\d\.\w\-]+)'") {
                                 $results.Add([PSCustomObject]@{
                                     Name      = $Matches['Name']
                                     Id        = $Matches['Name']
