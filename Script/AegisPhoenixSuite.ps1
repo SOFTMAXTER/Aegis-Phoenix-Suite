@@ -1006,6 +1006,12 @@ function Repair-SystemFiles {
     Write-Host "`n[+] Secuencia de reparacion del sistema completada." -ForegroundColor Green
     if ($repairsMade) {
         Write-Host "[RECOMENDACIoN] Se realizaron reparaciones en el sistema. Se recomienda encarecidamente reiniciar el equipo." -ForegroundColor Cyan
+		$choice = Read-Host "`n¿Deseas reiniciar ahora? (S/N)"
+        if ($choice.ToUpper() -eq 'S') {
+            Write-Host "Reiniciando el sistema en 60 segundos..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 60
+            Restart-Computer -Force
+        }
     } else {
         Write-Host "[INFO] No se detectaron corrupciones que requirieran reparacion." -ForegroundColor Green
     }
@@ -1050,11 +1056,11 @@ function Generate-SystemReport {
 		{
 			Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green;
 			Start-Process $reportPath
-			}
-			else {
-				Write-Error "No se pudo generar el reporte."
-				};
-				Read-Host "`nPresiona Enter para volver..."
+	} else {
+     	Write-Error "No se pudo generar el reporte."
+    };
+		
+	Read-Host "`nPresiona Enter para volver..."
 }
 
 
