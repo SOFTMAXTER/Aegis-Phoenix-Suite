@@ -1037,16 +1037,25 @@ function Optimize-Drives {
     }
 }
 
-function Generate-SystemReport { $parentDir = Split-Path -Parent $PSScriptRoot;
-$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos";
-if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null };
-$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
-Write-Host "`n[+] Generando reporte de energia...";
-powercfg /energy /output $reportPath /duration 30;
-if (Test-Path $reportPath) {
-	Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green;
-	Start-Process $reportPath } else { Write-Error "No se pudo generar el reporte." };
-	Read-Host "`nPresiona Enter para volver..." }
+function Generate-SystemReport {
+	$parentDir = Split-Path -Parent $PSScriptRoot;
+	$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos";
+	if (-not (Test-Path $diagDir))
+	{
+		New-Item -Path $diagDir -ItemType Directory | Out-Null };
+		$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
+		Write-Host "`n[+] Generando reporte de energia...";
+		powercfg /energy /output $reportPath /duration 30;
+		if (Test-Path $reportPath)
+		{
+			Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green;
+			Start-Process $reportPath
+			}
+			else {
+				Write-Error "No se pudo generar el reporte."
+				};
+				Read-Host "`nPresiona Enter para volver..."
+}
 
 
 function Show-InventoryMenu {
@@ -1058,12 +1067,35 @@ function Show-InventoryMenu {
     $reportFile = Join-Path -Path $reportDir -ChildPath "Reporte_Inventario_$(Get-Date -Format 'yyyy-MM-dd').txt"
     
     try {
-        # Generar reporte de hardware
-        "--- REPORTE DE HARDWARE ---`n" | Out-File -FilePath $reportFile -Encoding utf8
-        Get-ComputerInfo | Select-Object CsName, WindowsProductName, OsHardwareAbstractionLayer, CsProcessors, PhysicalMemorySize | 
+        # 1. Hardware
+        "=== REPORTE DE HARDWARE ===" | Out-File -FilePath $reportFile -Encoding utf8
+        Get-ComputerInfo | Select-Object CsName, WindowsProductName, `
+            OsHardwareAbstractionLayer, CsProcessors, PhysicalMemorySize | 
             Format-List | Out-File -FilePath $reportFile -Append -Encoding utf8
         
-        # ... (resto del codigo)
+        # 2. Discos (Nuevo)
+        "`n=== DISCOS ===" | Out-File -FilePath $reportFile -Append -Encoding utf8
+        Get-WmiObject Win32_LogicalDisk | Format-Table DeviceID, VolumeName, 
+            @{Name="Size(GB)";Expression={[math]::Round($_.Size/1GB,2)}}, 
+            @{Name="FreeSpace(GB)";Expression={[math]::Round($_.FreeSpace/1GB,2)}} | 
+            Out-File -FilePath $reportFile -Append -Encoding utf8
+        
+        # 3. Software Instalado (Nuevo)
+        "`n=== SOFTWARE INSTALADO ===" | Out-File -FilePath $reportFile -Append -Encoding utf8
+        $software = Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | 
+            Select-Object DisplayName, DisplayVersion, Publisher, InstallDate
+        $software | Where-Object { $_.DisplayName } | Sort-Object DisplayName |
+            Format-Table -AutoSize | Out-File -FilePath $reportFile -Append -Encoding utf8
+        
+        # 4. Drivers (Nuevo)
+        "`n=== DRIVERS ===" | Out-File -FilePath $reportFile -Append -Encoding utf8
+        Get-WindowsDriver -Online | 
+            Select-Object Driver, OriginalFileName, Version, 
+            @{Name="Device";Expression={(Get-WmiObject Win32_PnPSignedDriver | 
+                Where-Object { $_.DriverVersion -eq $_.Version }).DeviceName }} | 
+            Format-Table -AutoSize | Out-File -FilePath $reportFile -Append -Encoding utf8
+        
         Write-Host "[OK] Reporte generado en: '$reportFile'" -ForegroundColor Green
         Start-Process $reportFile
     }
