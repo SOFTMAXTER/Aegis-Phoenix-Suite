@@ -42,7 +42,7 @@ if not exist "%scriptPath%" (
     echo %scriptPath%
     echo.
     echo Asegurate de que el archivo .bat este en la carpeta correcta y
-    echo que el script de PowerShell se llame 'AegisPhoenixSuite.ps1' dentro de la carpeta 'SCRIPT'.
+    echo que el script de PowerShell se llame 'AegisPhoenixSuite.ps1' dentro de la carpeta 'Script'.
     echo.
     goto End
 )
