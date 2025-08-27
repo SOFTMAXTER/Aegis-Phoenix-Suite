@@ -327,6 +327,18 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Evitar que la pantalla se oscurezca en avisos UAC"
+        Category       = "Seguridad"
+        Description    = "Desactiva el 'Escritorio Seguro' para que el cuadro de dialogo de administrador (UAC) aparezca sin atenuar el fondo."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        RegistryKey    = "PromptOnSecureDesktop"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Privacidad y Telemetria ---
     [PSCustomObject]@{
