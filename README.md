@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v4.0 by SOFTMAXTER
+# Aegis Phoenix Suite v4.5 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -14,10 +14,10 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 * **Autoelevación de Privilegios**: El lanzador (`Run.bat`) comprueba si se está ejecutando como Administrador y, de no ser así, intenta reiniciarse con los permisos necesarios.
 * **Gestor de Ajustes Dinámico**: Un catálogo centralizado de ajustes de Rendimiento, Seguridad, Privacidad y UI permite que los menús se generen dinámicamente, mostrando el estado **[Activado]** o **[Desactivado]** de cada opción en tiempo real.
 * **Reversibilidad Individual**: Cada ajuste del sistema puede ser activado o desactivado de forma individual, eliminando la necesidad de una restauración global.
-* **Gestor de Software Multi-Motor**: Integra `Winget`, `Chocolatey` y `Scoop`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
-* **Instalación Automática de Dependencias**: Si se elige un motor de software (como Chocolatey o Scoop) y no está instalado, el script ofrece instalarlo automáticamente.
+* **Gestor de Software Multi-Motor**: Integra `Winget` y `Chocolatey`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
+* **Instalación Automática de Dependencias**: Si se elige un motor de software (como Chocolatey) y no está instalado, el script ofrece instalarlo automáticamente.
 * **Detección Dinámica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft, del fabricante y del usuario, presentando listas seguras y personalizadas para su eliminación.
-* **Gestión de Inicio Nativa**: Administra los programas de inicio utilizando el mismo mecanismo que el Administrador de Tareas de Windows para una compatibilidad total.* 
+* **Gestión de Inicio Nativa**: Administra los programas de inicio utilizando el mismo mecanismo que el Administrador de Tareas de Windows para una compatibilidad total.
 
 ---
 
@@ -41,7 +41,7 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
     └── Script/
         │
         └── AegisPhoenixSuite.ps1
-        └── Catalogos/                 
+        └── Catalogos/
             ├── Ajustes.ps1
             └── Servicios.ps1
     ```
@@ -75,34 +75,35 @@ Al iniciar, se presentan las categorías principales de la suite.
 * `2. Limpiar Caches de Sistema`: Ejecuta comandos para limpiar la cache de DNS (`ipconfig /flushdns`) y de la Tienda de Windows (`wsreset.exe`).
 * `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C` para realizar desfragmentación (HDD) o TRIM (SSD) de forma segura.
 * `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML que diagnostica problemas de consumo de energía y batería.
+* `5. Purgar Memoria RAM en Cache`: Libera la memoria marcada como "En espera" (Standby List). Útil para escenarios específicos como benchmarks o antes de ejecutar aplicaciones de alto consumo.
 
 ### 4. Herramientas Avanzadas
 
 Este menú da acceso a todos los módulos de nivel experto.
 
-#### → A. Gestor de Ajustes del Sistema
+#### → Gestor de Ajustes del Sistema
 * Este es el centro de control para todas las modificaciones del sistema (Rendimiento, Seguridad, Privacidad y UI).
 * **Menús Dinámicos**: Elige una categoría y el script mostrará una lista de ajustes con su estado actual (`[Activado]` o `[Desactivado]`).
 * **Reversibilidad Individual**: Selecciona cualquier ajuste para activarlo o desactivarlo al instante. No hay un "Módulo de Restauración" porque cada cambio es reversible individualmente.
 * **Descripciones Integradas**: Cada ajuste muestra una descripción clara de su función directamente en el menú.
 
-#### → I. Inventario y Reportes del Sistema
-* Genera un reporte de inventario de hardware en un archivo `.txt` dentro de una carpeta `Reportes`.
-* El informe incluye información clave como el modelo del sistema, versión de Windows, procesador y memoria física.
+#### → Inventario y Reportes del Sistema
+* Genera un reporte de inventario de hardware y software en diferentes formatos (`.txt`, `.html` o `.csv` para software) dentro de una carpeta `Reportes`.
+* El informe incluye información clave como el modelo del sistema, versión de Windows, procesador, memoria física y software instalado.
 
-#### → D. Gestión de Drivers
+#### → Gestión de Drivers
 * Abre un módulo interactivo para la administración de drivers de Windows.
 * **Copia de Seguridad**: Permite exportar todos los drivers del sistema a una carpeta especificada, ideal para reinstalaciones.
 * **Listar Drivers de Terceros**: Muestra una tabla con los drivers instalados que no son de Microsoft, para una fácil identificación.
 * **Restaurar Drivers**: Instala masivamente drivers desde una copia de seguridad, utilizando `pnputil.exe` para agregar y instalar cada paquete `.inf` encontrado.
 
-#### → W. Gestión de Software (Multi-Motor)
-* **Selector de Motor**: Permite cambiar entre `Winget`, `Chocolatey` y `Scoop` como el gestor de paquetes a utilizar.
-* `1. Buscar y aplicar actualizaciones`: Busca paquetes desactualizados en todos los motores, presenta una lista interactiva unificada y permite al usuario seleccionar qué aplicaciones actualizar.
+#### → Gestión de Software (Multi-Motor)
+* **Selector de Motor**: Permite cambiar entre `Winget` y `Chocolatey` como el gestor de paquetes a utilizar.
+* `1. Buscar y aplicar actualizaciones`: Busca paquetes desactualizados, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
 * `2. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
 * `3. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
 
-#### → S. Administración de Sistema
+#### → Administración de Sistema
 * Abre un submenú con herramientas administrativas.
 * **Limpiar Registros de Eventos de Windows**: Permite borrar los registros de eventos principales (Aplicación, Seguridad, Sistema, Instalación).
 * **Gestionar Tareas Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar tareas programadas que no pertenecen al núcleo del sistema operativo.
