@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.0
+    4.5
 #>
 
-$script:Version = "4.0"
+$script:Version = "4.5"
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
