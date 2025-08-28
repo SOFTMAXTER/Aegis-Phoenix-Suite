@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.5
+    4.0
 #>
 
-$script:Version = "4.5"
+$script:Version = "4.0"
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
@@ -127,6 +127,39 @@ function Create-RestorePoint {
 			Write-Log -LogLevel ERROR -Message "Fallo la creacion del punto de restauracion. Motivo: $_"
 		}
 		Read-Host "`nPresiona Enter para volver..."
+}
+
+function Invoke-ExplorerRestart {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    Write-Host "`n[+] Reiniciando el Explorador de Windows para aplicar los cambios visuales..." -ForegroundColor Yellow
+    Write-Log -LogLevel ACTION -Message "Reiniciando el Explorador de Windows a petición del usuario."
+
+    if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
+        try {
+            # Obtener todos los procesos del Explorador (puede haber más de uno)
+            $explorerProcesses = Get-Process -Name explorer -ErrorAction Stop
+            
+            # Detener los procesos
+            $explorerProcesses | Stop-Process -Force
+            Write-Host "   - Proceso(s) detenido(s)." -ForegroundColor Gray
+            
+            # Esperar a que terminen
+            $explorerProcesses.WaitForExit()
+            
+            # Iniciar un nuevo proceso del explorador
+            Start-Process "explorer.exe"
+            Write-Host "   - Proceso iniciado." -ForegroundColor Gray
+            Write-Host "[OK] El Explorador de Windows se ha reiniciado." -ForegroundColor Green
+        }
+        catch {
+            Write-Error "No se pudo reiniciar el Explorador de Windows. Es posible que deba reiniciar la sesión manualmente. Error: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "Fallo el reinicio del Explorador de Windows. Motivo: $($_.Exception.Message)"
+            # Intento de emergencia para iniciar explorer por si se quedó detenido
+            Start-Process "explorer.exe" -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Manage-SystemServices {
@@ -2296,6 +2329,10 @@ function Set-TweakState {
 function Show-TweakManagerMenu {
     $Category = $null
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Ajustes del Sistema (Tweaks)."
+    
+    # --- IMPLEMENTACIÓN MEJORADA: Bandera para controlar la necesidad de reiniciar el explorador ---
+    [bool]$explorerRestartNeeded = $false
+
     while ($true) {
         Clear-Host
         if ($null -eq $Category) {
@@ -2324,10 +2361,8 @@ function Show-TweakManagerMenu {
             Write-Host "Marca los ajustes que deseas alternar (activar/desactivar)."
             Write-Host "------------------------------------------------"
             
-            # --- INICIO DE LA MODIFICACIÓN DE VISUALIZACIÓN ---
             $consoleWidth = $Host.UI.RawUI.WindowSize.Width
             $descriptionIndent = 13
-            # --- FIN DE LA MODIFICACIÓN DE VISUALIZACIÓN ---
 
             for ($i = 0; $i -lt $tweaksInCategory.Count; $i++) {
                 $tweak = $tweaksInCategory[$i]
@@ -2335,22 +2370,17 @@ function Show-TweakManagerMenu {
                 $state = Get-TweakState -Tweak $tweak
                 $stateColor = if ($state -eq 'Enabled') { 'Green' } elseif ($state -eq 'Disabled') { 'Red' } else { 'Gray' }
                 
-                # Muestra la línea principal del ajuste
                 Write-Host ("   [{0,2}] {1} " -f ($i + 1), $status) -NoNewline
                 Write-Host ("{0,-15}" -f "[$state]") -ForegroundColor $stateColor -NoNewline
                 Write-Host $tweak.Name
 
-                # --- INICIO DE LA MODIFICACIÓN DE VISUALIZACIÓN ---
-                # Usamos la función auxiliar para formatear e imprimir la descripción.
                 if (-not [string]::IsNullOrWhiteSpace($tweak.Description)) {
                     $wrappedDescription = Format-WrappedText -Text $tweak.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
                     $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
                 }
-                # --- FIN DE LA MODIFICACIÓN DE VISUALIZACIÓN ---
                 Write-Host "" 
             }
 
-            # La lógica de acciones no cambia
             Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
             Write-Host "   [Numero] Marcar/Desmarcar                [T] Marcar Todos"
             Write-Host "   [A] Aplicar cambios a los seleccionados  [N] Desmarcar Todos"
@@ -2380,11 +2410,29 @@ function Show-TweakManagerMenu {
                         }
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
                         Set-TweakState -Tweak $tweakToToggle -Action $action
+
+                        # --- IMPLEMENTACIÓN MEJORADA: Si el ajuste requiere reiniciar explorer, activamos la bandera ---
+                        if ($tweakToToggle.RestartNeeded -eq 'Explorer') {
+                            $explorerRestartNeeded = $true
+                        }
                     }
                     Write-Host "`n[OK] Se han aplicado los cambios." -ForegroundColor Green
                 }
                 $tweaksInCategory.ForEach({$_.Selected = $false})
-                Read-Host "Presiona Enter para continuar..."
+
+                # --- IMPLEMENTACIÓN MEJORADA: Comprobar la bandera y preguntar al usuario ---
+                if ($explorerRestartNeeded) {
+                    $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows para ser visibles. ¿Deseas hacerlo ahora? (S/N)"
+                    if ($promptChoice.ToUpper() -eq 'S') {
+                        Invoke-ExplorerRestart # Llamamos a nuestra nueva función
+                    } else {
+                        Write-Host "[INFO] Recuerda reiniciar la sesión o el equipo para ver todos los cambios." -ForegroundColor Yellow
+                    }
+                    # Restablecer la bandera para la siguiente ronda de cambios
+                    $explorerRestartNeeded = $false
+                }
+
+                Read-Host "`nPresiona Enter para continuar..."
             }
         }
     }
