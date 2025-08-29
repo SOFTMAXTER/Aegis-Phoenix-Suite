@@ -134,7 +134,7 @@ function Invoke-ExplorerRestart {
     param()
 
     Write-Host "`n[+] Reiniciando el Explorador de Windows para aplicar los cambios visuales..." -ForegroundColor Yellow
-    Write-Log -LogLevel ACTION -Message "Reiniciando el Explorador de Windows a petición del usuario."
+    Write-Log -LogLevel ACTION -Message "Reiniciando el Explorador de Windows a peticion del usuario."
 
     if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
         try {
@@ -154,9 +154,9 @@ function Invoke-ExplorerRestart {
             Write-Host "[OK] El Explorador de Windows se ha reiniciado." -ForegroundColor Green
         }
         catch {
-            Write-Error "No se pudo reiniciar el Explorador de Windows. Es posible que deba reiniciar la sesión manualmente. Error: $($_.Exception.Message)"
+            Write-Error "No se pudo reiniciar el Explorador de Windows. Es posible que deba reiniciar la sesion manualmente. Error: $($_.Exception.Message)"
             Write-Log -LogLevel ERROR -Message "Fallo el reinicio del Explorador de Windows. Motivo: $($_.Exception.Message)"
-            # Intento de emergencia para iniciar explorer por si se quedó detenido
+            # Intento de emergencia para iniciar explorer por si se quedo detenido
             Start-Process "explorer.exe" -ErrorAction SilentlyContinue
         }
     }
@@ -312,7 +312,7 @@ function Manage-SystemServices {
 function Manage-ThirdPartyServices {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
-    Write-Log -LogLevel INFO -Message "Usuario entró al Gestión Inteligente de Servicios de Aplicaciones."
+    Write-Log -LogLevel INFO -Message "Usuario entro al Gestion Inteligente de Servicios de Aplicaciones."
 
     # Definir la ruta del archivo de respaldo
     $parentDir = Split-Path -Parent $PSScriptRoot
@@ -322,7 +322,7 @@ function Manage-ThirdPartyServices {
     }
     $backupFile = Join-Path -Path $backupDir -ChildPath "ThirdPartyServicesBackup.json"
 
-    # Función para obtener servicios de terceros
+    # Funcion para obtener servicios de terceros
     function Get-ThirdPartyServices {
         $thirdPartyServices = @()
         $allServices = Get-CimInstance -ClassName Win32_Service
@@ -335,7 +335,7 @@ function Manage-ThirdPartyServices {
         return $thirdPartyServices | Sort-Object DisplayName
     }
 
-    # Función para actualizar el backup con servicios nuevos
+    # Funcion para actualizar el backup con servicios nuevos
     function Update-ServicesBackup {
         param(
             [hashtable]$CurrentStates,
@@ -2483,7 +2483,7 @@ function Show-TweakManagerMenu {
     $Category = $null
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Ajustes del Sistema (Tweaks)."
     
-    # --- IMPLEMENTACIÓN MEJORADA: Bandera para controlar la necesidad de reiniciar el explorador ---
+    # --- IMPLEMENTACIoN MEJORADA: Bandera para controlar la necesidad de reiniciar el explorador ---
     [bool]$explorerRestartNeeded = $false
 
     while ($true) {
@@ -2564,7 +2564,7 @@ function Show-TweakManagerMenu {
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
                         Set-TweakState -Tweak $tweakToToggle -Action $action
 
-                        # --- IMPLEMENTACIÓN MEJORADA: Si el ajuste requiere reiniciar explorer, activamos la bandera ---
+                        # --- IMPLEMENTACIoN MEJORADA: Si el ajuste requiere reiniciar explorer, activamos la bandera ---
                         if ($tweakToToggle.RestartNeeded -eq 'Explorer') {
                             $explorerRestartNeeded = $true
                         }
@@ -2573,13 +2573,13 @@ function Show-TweakManagerMenu {
                 }
                 $tweaksInCategory.ForEach({$_.Selected = $false})
 
-                # --- IMPLEMENTACIÓN MEJORADA: Comprobar la bandera y preguntar al usuario ---
+                # --- IMPLEMENTACIoN MEJORADA: Comprobar la bandera y preguntar al usuario ---
                 if ($explorerRestartNeeded) {
                     $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows para ser visibles. ¿Deseas hacerlo ahora? (S/N)"
                     if ($promptChoice.ToUpper() -eq 'S') {
-                        Invoke-ExplorerRestart # Llamamos a nuestra nueva función
+                        Invoke-ExplorerRestart # Llamamos a nuestra nueva funcion
                     } else {
-                        Write-Host "[INFO] Recuerda reiniciar la sesión o el equipo para ver todos los cambios." -ForegroundColor Yellow
+                        Write-Host "[INFO] Recuerda reiniciar la sesion o el equipo para ver todos los cambios." -ForegroundColor Yellow
                     }
                     # Restablecer la bandera para la siguiente ronda de cambios
                     $explorerRestartNeeded = $false
