@@ -1973,7 +1973,7 @@ function Invoke-SoftwareUpdates {
             
             switch ($engine) {
                 'Winget' {
-                    $output = winget upgrade --include-unknown --accept-source-agreements 2>&1
+                    $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
                     $lines = $output -split "`r?`n"
                     $inTable = $false
                     
@@ -2178,7 +2178,7 @@ function Invoke-SoftwareSearchAndInstall {
         switch ($script:SoftwareEngine) {
              'Winget' {
                 # Ejecutar winget y capturar salida
-                $rawOutput = winget search $searchTerm --accept-source-agreements 2>&1
+                $rawOutput = winget search $searchTerm --source winget --accept-source-agreements 2>&1
                 
                 # Procesar la salida línea por línea
                 $lines = $rawOutput -split "`r?`n"
