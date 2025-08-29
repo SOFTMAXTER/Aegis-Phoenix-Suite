@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.0
+    4.5
 #>
 
-$script:Version = "4.0"
+$script:Version = "4.5"
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
@@ -312,10 +312,17 @@ function Manage-SystemServices {
 function Manage-ThirdPartyServices {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
-	Write-Log -LogLevel INFO -Message "Usuario entro al Gestion Inteligente de Servicios de Aplicaciones."
+    Write-Log -LogLevel INFO -Message "Usuario entró al Gestión Inteligente de Servicios de Aplicaciones."
 
-    $originalStates = @{}
+    # Definir la ruta del archivo de respaldo
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    $backupDir = Join-Path -Path $parentDir -ChildPath "Backup"
+    if (-not (Test-Path $backupDir)) {
+        New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+    }
+    $backupFile = Join-Path -Path $backupDir -ChildPath "ThirdPartyServicesBackup.json"
 
+    # Función para obtener servicios de terceros
     function Get-ThirdPartyServices {
         $thirdPartyServices = @()
         $allServices = Get-CimInstance -ClassName Win32_Service
@@ -323,20 +330,136 @@ function Manage-ThirdPartyServices {
         foreach ($service in $allServices) {
             if ($service.PathName -and $service.PathName -notmatch '\\Windows\\' -and $service.PathName -notlike '*svchost.exe*') {
                 $thirdPartyServices += $service
-                if (-not $originalStates.ContainsKey($service.Name)) {
-                    $originalStates[$service.Name] = @{ StartupType = $service.StartMode }
-                }
             }
         }
         return $thirdPartyServices | Sort-Object DisplayName
     }
 
+    # Función para actualizar el backup con servicios nuevos
+    function Update-ServicesBackup {
+        param(
+            [hashtable]$CurrentStates,
+            [string]$BackupPath
+        )
+        
+        $updated = $false
+        $currentServices = Get-ThirdPartyServices
+        
+        foreach ($service in $currentServices) {
+            if (-not $CurrentStates.ContainsKey($service.Name)) {
+                # Servicio nuevo detectado, agregar al backup
+                $CurrentStates[$service.Name] = @{
+                    StartupType = $service.StartMode
+                    DisplayName = $service.DisplayName
+                    Description = $service.Description
+                    AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                }
+                Write-Host "Servicio nuevo agregado al backup: $($service.DisplayName)" -ForegroundColor Yellow
+                $updated = $true
+            }
+        }
+        
+        if ($updated) {
+            try {
+                $CurrentStates | ConvertTo-Json -Depth 3 | Set-Content -Path $BackupPath -Encoding UTF8 -ErrorAction Stop
+                Write-Host "Backup actualizado con servicios nuevos." -ForegroundColor Green
+            } catch {
+                Write-Host "Error al actualizar el backup: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+        
+        return $CurrentStates
+    }
+
+    # Cargar o crear el backup de estados originales
+    if (Test-Path $backupFile) {
+        Write-Host "Cargando estados originales desde el archivo de respaldo..." -ForegroundColor Gray
+        try {
+            # Verificar que el archivo no esté vacío
+            if ((Get-Item $backupFile).Length -eq 0) {
+                throw "El archivo de respaldo está vacío."
+            }
+            
+            # Leer y validar el contenido JSON
+            $fileContent = Get-Content -Path $backupFile -Raw -ErrorAction Stop
+            if ([string]::IsNullOrWhiteSpace($fileContent)) {
+                throw "El archivo de respaldo está vacío o contiene solo espacios en blanco."
+            }
+            
+            # Convertir desde JSON (compatible con PowerShell 5.1)
+            $jsonObject = $fileContent | ConvertFrom-Json -ErrorAction Stop
+            
+            # Convertir el objeto PSCustomObject a Hashtable manualmente
+            $originalStates = @{}
+            foreach ($property in $jsonObject.PSObject.Properties) {
+                $originalStates[$property.Name] = @{
+                    StartupType = $property.Value.StartupType
+                    DisplayName = $property.Value.DisplayName
+                    Description = $property.Value.Description
+                    AddedDate = $property.Value.AddedDate
+                }
+            }
+            
+            Write-Host "Respaldo cargado correctamente desde: $backupFile" -ForegroundColor Green
+            
+            # Actualizar automáticamente el backup con servicios nuevos
+            $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
+            
+        } catch {
+            Write-Host "Error al cargar el archivo de respaldo: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Creando un nuevo respaldo..." -ForegroundColor Yellow
+            
+            # Crear un nuevo backup
+            $originalStates = @{}
+            $services = Get-ThirdPartyServices
+            foreach ($service in $services) {
+                $originalStates[$service.Name] = @{
+                    StartupType = $service.StartMode
+                    DisplayName = $service.DisplayName
+                    Description = $service.Description
+                    AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                }
+            }
+            
+            try {
+                $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
+                Write-Host "Nuevo respaldo creado en: $backupFile" -ForegroundColor Green
+            } catch {
+                Write-Host "Error crítico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
+                # Continuar con una hashtable vacía para evitar más errores
+                $originalStates = @{}
+            }
+        }
+    } else {
+        Write-Host "Creando respaldo de estados originales de servicios de terceros..." -ForegroundColor Gray
+        $originalStates = @{}
+        $services = Get-ThirdPartyServices
+        foreach ($service in $services) {
+            $originalStates[$service.Name] = @{
+                StartupType = $service.StartMode
+                DisplayName = $service.DisplayName
+                Description = $service.Description
+                AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            }
+        }
+        try {
+            $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
+            Write-Host "Respaldo guardado en: $backupFile" -ForegroundColor Green
+        } catch {
+            Write-Host "Error al guardar el respaldo: $($_.Exception.Message)" -ForegroundColor Red
+            # Continuar con una hashtable vacía para evitar más errores
+            $originalStates = @{}
+        }
+    }
+
+    # Obtener la lista actual de servicios para mostrar
     $rawServices = Get-ThirdPartyServices
     $displayItems = @()
     foreach ($service in $rawServices) {
         $displayItems += [PSCustomObject]@{
             ServiceObject = $service
-            Selected      = $false
+            Selected = $false
+            InBackup = $originalStates.ContainsKey($service.Name)
         }
     }
 
@@ -349,10 +472,8 @@ function Manage-ThirdPartyServices {
         Write-Host "Usa los números para marcar/desmarcar. Luego, aplica una accion."
         Write-Host ""
         
-        # --- INICIO DE LA MODIFICACIoN DE VISUALIZACIoN ---
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
         $descriptionIndent = 13
-        # --- FIN DE LA MODIFICACIoN DE VISUALIZACIoN ---
         
         $itemIndex = 0
         foreach ($item in $displayItems) {
@@ -376,28 +497,29 @@ function Manage-ThirdPartyServices {
                 }
             }
 
-            # Se imprime la línea principal del servicio
+            # Indicador de servicio en backup (usando texto en lugar de símbolos Unicode)
+            $backupIndicator = if ($item.InBackup) { " [BACKUP] " } else { " [NO BK] " }
+            $backupColor = if ($item.InBackup) { "Green" } else { "Red" }
+            
             Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
             Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+            Write-Host "$backupIndicator" -NoNewline -ForegroundColor $backupColor
             Write-Host $service.DisplayName -ForegroundColor White
 
-            # --- INICIO DE LA MODIFICACIoN DE VISUALIZACIoN ---
-            # Usamos la nueva funcion para formatear e imprimir la descripcion.
             if (-not [string]::IsNullOrWhiteSpace($service.Description)) {
                 $wrappedDescription = Format-WrappedText -Text $service.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
                 $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
             }
-            # --- FIN DE LA MODIFICACIoN DE VISUALIZACIoN ---
         }
 
-        # El resto de la funcion (menú y logica de acciones) permanece igual...
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] - Marcar / Desmarcar servicio"
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
         Write-Host "   [R] Restaurar Seleccionados a su estado original"
         Write-Host "   [T] Marcar Todos                  [N] Desmarcar Todos"
+        Write-Host "   [U] Actualizar backup con servicios nuevos"
         Write-Host ""
-		Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         
         $choice = Read-Host "Selecciona una opcion"
@@ -409,6 +531,17 @@ function Manage-ThirdPartyServices {
             }
             elseif ($choice.ToUpper() -eq 'T') { $displayItems.ForEach({$_.Selected = $true}) }
             elseif ($choice.ToUpper() -eq 'N') { $displayItems.ForEach({$_.Selected = $false}) }
+            elseif ($choice.ToUpper() -eq 'U') {
+                # Actualizar backup manualmente
+                $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
+                
+                # Actualizar indicadores de backup en la lista
+                foreach ($item in $displayItems) {
+                    $item.InBackup = $originalStates.ContainsKey($item.ServiceObject.Name)
+                }
+                
+                Read-Host "Presiona Enter para continuar..."
+            }
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $displayItems | Where-Object { $_.Selected }
                 if ($selectedItems.Count -eq 0) {
@@ -423,7 +556,27 @@ function Manage-ThirdPartyServices {
                     switch ($choice.ToUpper()) {
                         'D' { $actionDescription = "Deshabilitar" }
                         'H' { $actionDescription = "Habilitar" }
-                        'R' { $actionDescription = "Restaurar a estado original ($($originalStates[$selectedService.Name].StartupType))" }
+                        'R' { 
+                            if (-not $itemAction.InBackup) {
+                                Write-Host "El servicio '$($selectedService.DisplayName)' no tiene un estado original guardado." -ForegroundColor Red
+                                $addToBackup = Read-Host "¿Deseas agregarlo al backup ahora? (S/N)"
+                                if ($addToBackup.ToUpper() -eq 'S') {
+                                    $originalStates[$selectedService.Name] = @{
+                                        StartupType = $selectedService.StartMode
+                                        DisplayName = $selectedService.DisplayName
+                                        Description = $selectedService.Description
+                                        AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                                    }
+                                    $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile
+                                    $itemAction.InBackup = $true
+                                    Write-Host "Servicio agregado al backup." -ForegroundColor Green
+                                } else {
+                                    Write-Host "No se puede restaurar un servicio sin backup." -ForegroundColor Red
+                                    continue
+                                }
+                            }
+                            $actionDescription = "Restaurar a estado original ($($originalStates[$selectedService.Name].StartupType))" 
+                        }
                     }
                     
                     if ($PSCmdlet.ShouldProcess($selectedService.DisplayName, $actionDescription)) {
@@ -454,7 +607,7 @@ function Manage-ThirdPartyServices {
             }
         } catch {
             Write-Error "Error: $($_.Exception.Message)"
-			Write-Log -LogLevel ERROR -Message "Error en Manage-ThirdPartyServices: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "Error en Manage-ThirdPartyServices: $($_.Exception.Message)"
             Read-Host "Presiona Enter para continuar..."
         }
     }
