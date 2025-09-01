@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v4.5 by SOFTMAXTER
+# Aegis Phoenix Suite v4.6 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -11,12 +11,14 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 ## Caracteristicas Principales
 
 * **Interfaz Modular Guiada por Menús**: Todas las funciones están organizadas en categorías y submenús claros para una navegación intuitiva.
-* **Autoelevación de Privilegios**: El lanzador (`Run.bat`) comprueba si se está ejecutando como Administrador y, de no ser así, intenta reiniciarse con los permisos necesarios.
+* **Módulo de Auto-Actualización**: Comprueba si hay una nueva versión en el repositorio oficial de GitHub al iniciar y ofrece descargarla e instalarla automáticamente.
+* **Autoelevación de Privilegios**: El script verifica si se está ejecutando como Administrador y, de no ser así, solicita al usuario que lo reinicie con los permisos necesarios.
 * **Gestor de Ajustes Dinámico**: Un catálogo centralizado de ajustes de Rendimiento, Seguridad, Privacidad y UI permite que los menús se generen dinámicamente, mostrando el estado **[Activado]** o **[Desactivado]** de cada opción en tiempo real.
 * **Reversibilidad Individual**: Cada ajuste del sistema puede ser activado o desactivado de forma individual, eliminando la necesidad de una restauración global.
 * **Gestor de Software Multi-Motor**: Integra `Winget` y `Chocolatey`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
 * **Instalación Automática de Dependencias**: Si se elige un motor de software (como Chocolatey) y no está instalado, el script ofrece instalarlo automáticamente.
 * **Detección Dinámica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft, del fabricante y del usuario, presentando listas seguras y personalizadas para su eliminación.
+* **Limpieza Profunda Post-Desinstalación**: Después de eliminar bloatware, ofrece buscar y eliminar carpetas de datos de usuario sobrantes para una limpieza completa.
 * **Gestión de Inicio Nativa**: Administra los programas de inicio utilizando el mismo mecanismo que el Administrador de Tareas de Windows para una compatibilidad total.
 
 ---
@@ -25,7 +27,7 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 
 * Sistema Operativo Windows 10 o Windows 11.
 * Privilegios de Administrador para ejecutar el script.
-* Conexión a Internet para la gestión de software y la instalación de Chocolatey.
+* Conexión a Internet para la auto-actualización, la gestión de software y la instalación de Chocolatey.
 
 ---
 
@@ -64,10 +66,10 @@ Al iniciar, se presentan las categorías principales de la suite.
 ### 2. Módulo de Optimización y Limpieza
 
 * `1. Gestor de Servicios No Esenciales de Windows`: Muestra una lista interactiva de servicios del sistema que pueden ser optimizados. Permite activarlos, desactivarlos o restaurarlos a su configuración por defecto de forma individual.
-* `2. Optimizar Servicios de Programas Instalados`: Detecta y muestra servicios instalados por aplicaciones de terceros, permitiendo activarlos o desactivarlos para reducir el consumo de recursos en segundo plano.
+* `2. Optimizar Servicios de Programas Instalados`: Detecta y muestra servicios instalados por aplicaciones de terceros, permitiendo activarlos, desactivarlos o restaurarlos a su estado original (guardado en un respaldo) para reducir el consumo de recursos en segundo plano.
 * `3. Módulo de Limpieza Profunda`: Abre un submenú con opciones para eliminar archivos temporales, vaciar la papelera, limpiar cachés de sistema (miniaturas, DirectX) y una limpieza avanzada de componentes de Windows (restos de actualizaciones, `Windows.old`).
-* `4. Eliminar Apps Preinstaladas (Dinamico)`: Abre un submenú para elegir entre eliminar bloatware de Microsoft (preinstalado con Windows), de terceros (preinstalado por el fabricante) o aplicaciones instaladas por el usuario desde la Tienda.
-* `5. Gestionar Programas de Inicio (Modo Nativo)`: Abre una interfaz interactiva que detecta programas en el registro, carpetas de inicio y tareas programadas. Es **100% compatible con el Administrador de Tareas de Windows**, leyendo y escribiendo los mismos valores del sistema para habilitar o deshabilitar lo que arranca con Windows.
+* `4. Eliminar Apps Preinstaladas`: Abre un submenú para elegir entre eliminar bloatware de Microsoft (preinstalado con Windows), de terceros (preinstalado por el fabricante) o aplicaciones instaladas por el usuario desde la Tienda.
+* `5. Gestionar Programas de Inicio`: Abre una interfaz interactiva que detecta programas en el registro, carpetas de inicio y tareas programadas. Es **100% compatible con el Administrador de Tareas de Windows**, leyendo y escribiendo los mismos valores del sistema para habilitar o deshabilitar lo que arranca con Windows.
 
 ### 3. Módulo de Mantenimiento y Reparación
 
@@ -99,21 +101,21 @@ Este menú da acceso a todos los módulos de nivel experto.
 
 #### → Gestión de Software (Multi-Motor)
 * **Selector de Motor**: Permite cambiar entre `Winget` y `Chocolatey` como el gestor de paquetes a utilizar.
-* `1. Buscar y aplicar actualizaciones`: Busca paquetes desactualizados, presenta una lista interactiva y permite al usuario seleccionar qué aplicaciones actualizar.
-* `2. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
-* `3. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
+* `1. Buscar y aplicar actualizaciones`: Busca paquetes desactualizados en todos los motores disponibles, presenta una lista interactiva unificada y permite al usuario seleccionar qué aplicaciones actualizar.
+* `2. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
+* `3. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
 
 #### → Administración de Sistema
 * Abre un submenú con herramientas administrativas.
 * **Limpiar Registros de Eventos de Windows**: Permite borrar los registros de eventos principales (Aplicación, Seguridad, Sistema, Instalación).
-* **Gestionar Tareas Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar tareas programadas que no pertenecen al núcleo del sistema operativo.
+* **Gestionar Taras Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar tareas programadas que no pertenecen al núcleo del sistema operativo.
 
 ---
 
 ## Autor y Colaboradores
 
 * **Autor Principal**: SOFTMAXTER
-* **Análisis de Refinamiento de Código**: Realizado en colaboración con **Gemini**, un asistente de IA de Google, para garantizar calidad del script.
+* **Análisis y refinamiento de código**: Realizado en colaboración con **Gemini**, para garantizar calidad del script.
 
 ---
 
@@ -133,4 +135,4 @@ Este menú da acceso a todos los módulos de nivel experto.
 
 Este script realiza operaciones avanzadas que modifican el sistema. El autor no se hace responsable de la pérdida de datos o daños que puedan ocurrir en tu sistema.
 
-**Se recomienda encarecidamente crear una copia de seguridad y utilizar la función "Crear Punto de Restauración" antes de aplicar cambios importantes.**
+**Se recomienda encarecidamente crear una copia de seguridad y utilizar la función "Crear Punto de Restauracion" antes de aplicar cambios importantes.**
