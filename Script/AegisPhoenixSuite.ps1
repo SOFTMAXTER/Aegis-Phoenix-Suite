@@ -2587,7 +2587,7 @@ function Show-TweakManagerMenu {
             if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $categories.Count) {
                 $Category = $categories[[int]$choice - 1]
 				Write-Log -LogLevel INFO -Message "TWEAKS: Usuario selecciono la categoria '$Category'."
-                $tweaksInCategory = $script:SystemTweaks | Where-Object { $_.Category -eq $Category }
+                $tweaksInCategory = @($script:SystemTweaks | Where-Object { $_.Category -eq $Category })
                 $tweaksInCategory | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false -Force }
             }
         }
