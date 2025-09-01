@@ -9,24 +9,25 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.5
+    4.6
 #>
 
-$script:Version = "4.5"
+$script:Version = "4.6"
 
-# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION (VERSION DEFINITIVA) ---
+# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
 function Invoke-FullRepoUpdater {
-    # No modificar esta función. Es auto-contenida.
+    # --- CONFIGURACION ---
     $repoUser = "SOFTMAXTER"; $repoName = "Aegis-Phoenix-Suite"; $repoBranch = "main"
     $versionUrl = "https://raw.githubusercontent.com/$repoUser/$repoName/$repoBranch/version.txt"
     $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
+
     Write-Host "Comprobando actualizaciones de la suite completa..." -ForegroundColor Gray
     if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
         Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow; Start-Sleep -Seconds 1; return
     }
     try {
-        $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing).Content.Trim()
+        $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"}).Content.Trim()
         if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
             Write-Host "¡Nueva version encontrada! Local: v$($script:Version) | Remota: v$remoteVersionStr" -ForegroundColor Green
             $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
@@ -36,58 +37,57 @@ function Invoke-FullRepoUpdater {
                 if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
                 New-Item -Path $tempDir -ItemType Directory | Out-Null
                 $updaterScriptPath = Join-Path $tempDir "updater.ps1"
-                $installPath = $PSScriptRoot
+                $installPath = (Split-Path -Path $PSScriptRoot -Parent)
                 $batchPath = Join-Path $installPath "Run.bat"
 
                 $updaterScriptContent = @"
+`$ErrorActionPreference = 'Stop'
+`$Host.UI.RawUI.WindowTitle = 'PROCESO DE ACTUALIZACION DE AEGIS - NO CERRAR'
 try {
-    `$ErrorActionPreference = 'Stop'
-    Set-Location "$tempDir"
-    `$tempZip = Join-Path (Get-Location) "update.zip"
-    `$tempExtract = Join-Path (Get-Location) "extracted"
+    `$tempDir_updater = "$tempDir"
+    `$tempZip_updater = Join-Path "`$tempDir_updater" "update.zip"
+    `$tempExtract_updater = Join-Path "`$tempDir_updater" "extracted"
 
     Write-Host "[PASO 1/5] Descargando la nueva version..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip"
+    Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip_updater"
 
     Write-Host "[PASO 2/5] Descomprimiendo archivos..." -ForegroundColor Yellow
-    Expand-Archive -Path "`$tempZip" -DestinationPath "`$tempExtract" -Force
-    `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract" -Directory).FullName
+    Expand-Archive -Path "`$tempZip_updater" -DestinationPath "`$tempExtract_updater" -Force
+    `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract_updater" -Directory).FullName
 
     Write-Host "[PASO 3/5] Eliminando archivos antiguos..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 3 # Espera crucial
+    Start-Sleep -Seconds 4
     `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
-    Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force
+    if (`$null -ne `$itemsToRemove) { Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force }
 
     Write-Host "[PASO 4/5] Instalando nuevos archivos..." -ForegroundColor Yellow
-    Copy-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Recurse -Force
+    # Usamos Move-Item para mayor eficiencia
+    Move-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Force
     Get-ChildItem -Path "$installPath" -Recurse | Unblock-File
 
-    Write-Host "[PASO 5/5] ¡Actualizacion completada! Reiniciando la suite..." -ForegroundColor Green
-    Start-Sleep -Seconds 3
-    Start-Process -FilePath "$batchPath"
+    Write-Host "[PASO 5/5] ¡Actualizacion completada! Reiniciando la suite en 5 segundos..." -ForegroundColor Green
+    Start-Sleep -Seconds 5
     
-    # Limpieza final (opcional, ya que la carpeta temporal se borra en cada inicio)
-    Remove-Item -Path "$tempDir" -Recurse -Force
+    Remove-Item -Path "`$tempDir_updater" -Recurse -Force
+    Start-Process -FilePath "$batchPath"
 }
 catch {
     Write-Error "¡LA ACTUALIZACION HA FALLADO!"
-    Write-Error `$_.Exception.Message
-    Write-Host "La ventana se cerrara en 30 segundos..."
-    Start-Sleep -Seconds 30
+    Write-Error `$_
+    Read-Host "El proceso ha fallado. Presiona Enter para cerrar esta ventana."
 }
 "@
                 Set-Content -Path $updaterScriptPath -Value $updaterScriptContent -Encoding utf8
-                Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "'$updaterScriptPath'"
+                $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`""
+                Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Hidden
                 exit
             } else { Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1 }
         } else { Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green; Start-Sleep -Seconds 1 }
     } catch { Write-Warning "No se pudo verificar la version remota." }
 }
 
-# Ejecutar el actualizador.
+# Ejecutar el actualizador DESPUES de definir la version
 Invoke-FullRepoUpdater
-
-# --- FIN DEL MODULO DE AUTO-ACTUALIZACION ---
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
