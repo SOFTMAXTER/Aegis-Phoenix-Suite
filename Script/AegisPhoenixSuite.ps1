@@ -12,117 +12,82 @@
     4.5
 #>
 
-# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION COMPLETA (VERSION CORREGIDA) ---
+$script:Version = "4.5"
+
+# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION (VERSION DEFINITIVA) ---
 
 function Invoke-FullRepoUpdater {
-    # --- CONFIGURACION ---
-    $repoUser = "SOFTMAXTER"
-    $repoName = "Aegis-Phoenix-Suite"
-    $repoBranch = "main"
-
+    # No modificar esta función. Es auto-contenida.
+    $repoUser = "SOFTMAXTER"; $repoName = "Aegis-Phoenix-Suite"; $repoBranch = "main"
     $versionUrl = "https://raw.githubusercontent.com/$repoUser/$repoName/$repoBranch/version.txt"
     $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
-
     Write-Host "Comprobando actualizaciones de la suite completa..." -ForegroundColor Gray
-
-    # 1. Verificar conexion a internet.
     if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
-        Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow
-        Start-Sleep -Seconds 2
-        return
+        Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow; Start-Sleep -Seconds 1; return
     }
-
-    # 2. Descargar y leer el archivo de version remoto.
     try {
         $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing).Content.Trim()
-        $localVersion = [System.Version]$script:Version
-        $remoteVersion = [System.Version]$remoteVersionStr
-    }
-    catch {
-        Write-Warning "No se pudo verificar la version remota. Se continuara con la version actual."
-        Start-Sleep -Seconds 2
-        return
-    }
-
-    # 3. Comparar versiones.
-    if ($remoteVersion -gt $localVersion) {
-        Write-Host "¡Nueva version de la suite encontrada! Version local: v$($localVersion) | Version remota: v$($remoteVersion)" -ForegroundColor Green
-        
-        $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
-
-        if ($confirmation.ToUpper() -eq 'S') {
-            Write-Warning "Este proceso reemplazara todos los archivos de la suite. NO CIERRES ESTA VENTANA."
-            
-            try {
+        if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
+            Write-Host "¡Nueva version encontrada! Local: v$($script:Version) | Remota: v$remoteVersionStr" -ForegroundColor Green
+            $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
+            if ($confirmation.ToUpper() -eq 'S') {
+                Write-Warning "El actualizador se ejecutara en una nueva ventana. NO LA CIERRES."
                 $tempDir = Join-Path $env:TEMP "AegisUpdater"
-                $tempZip = Join-Path $tempDir "update.zip"
-                $tempExtract = Join-Path $tempDir "extracted"
-
                 if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
                 New-Item -Path $tempDir -ItemType Directory | Out-Null
-
-                Write-Host "Descargando la nueva version..." -ForegroundColor Yellow
-                Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
-
-                Write-Host "Descomprimiendo archivos..." -ForegroundColor Yellow
-                Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
-                
-                $updateSourcePath = (Get-ChildItem -Path $tempExtract -Directory).FullName
+                $updaterScriptPath = Join-Path $tempDir "updater.ps1"
                 $installPath = $PSScriptRoot
+                $batchPath = Join-Path $installPath "Run.bat"
 
-                $updaterScriptPath = Join-Path $tempDir "replace.ps1"
-                # --- LOGICA DE REEMPLAZO CORREGIDA Y SIMPLIFICADA ---
                 $updaterScriptContent = @"
-# Esperar a que el proceso principal se cierre completamente
-Start-Sleep -Seconds 4
+try {
+    `$ErrorActionPreference = 'Stop'
+    Set-Location "$tempDir"
+    `$tempZip = Join-Path (Get-Location) "update.zip"
+    `$tempExtract = Join-Path (Get-Location) "extracted"
 
-# Obtener la lista de archivos y carpetas a eliminar (todo excepto las carpetas de datos de usuario)
-`$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
+    Write-Host "[PASO 1/5] Descargando la nueva version..." -ForegroundColor Yellow
+    Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip"
 
-# Comando de eliminacion mas robusto
-Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[PASO 2/5] Descomprimiendo archivos..." -ForegroundColor Yellow
+    Expand-Archive -Path "`$tempZip" -DestinationPath "`$tempExtract" -Force
+    `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract" -Directory).FullName
 
-# Copiar el nuevo contenido
-Copy-Item -Path "$updateSourcePath\*" -Destination "$installPath" -Recurse -Force
+    Write-Host "[PASO 3/5] Eliminando archivos antiguos..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 3 # Espera crucial
+    `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
+    Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force
 
-# Desbloquear todos los archivos descargados
-Get-ChildItem -Path "$installPath" -Recurse | Unblock-File -ErrorAction SilentlyContinue
+    Write-Host "[PASO 4/5] Instalando nuevos archivos..." -ForegroundColor Yellow
+    Copy-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Recurse -Force
+    Get-ChildItem -Path "$installPath" -Recurse | Unblock-File
 
-# Limpiar archivos temporales de la actualizacion
-Remove-Item -Path "$tempDir" -Recurse -Force
-
-# Reiniciar la suite actualizada
-Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "'$($installPath)\AegisPhoenixSuite.ps1'"
+    Write-Host "[PASO 5/5] ¡Actualizacion completada! Reiniciando la suite..." -ForegroundColor Green
+    Start-Sleep -Seconds 3
+    Start-Process -FilePath "$batchPath"
+    
+    # Limpieza final (opcional, ya que la carpeta temporal se borra en cada inicio)
+    Remove-Item -Path "$tempDir" -Recurse -Force
+}
+catch {
+    Write-Error "¡LA ACTUALIZACION HA FALLADO!"
+    Write-Error `$_.Exception.Message
+    Write-Host "La ventana se cerrara en 30 segundos..."
+    Start-Sleep -Seconds 30
+}
 "@
                 Set-Content -Path $updaterScriptPath -Value $updaterScriptContent -Encoding utf8
-
-                Write-Host "Finalizando... El script se reiniciara en unos segundos con la nueva version." -ForegroundColor Green
                 Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "'$updaterScriptPath'"
                 exit
-            }
-            catch {
-                Write-Error "Ocurrio un error critico durante la actualizacion."
-                Write-Error $_.Exception.Message
-                Read-Host "Presiona Enter para continuar con la version actual..."
-            }
-        }
-        else {
-            Write-Host "Actualizacion omitida por el usuario. Se continuara con la version actual." -ForegroundColor Yellow
-            Start-Sleep -Seconds 2
-        }
-    }
-    else {
-        Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green
-        Start-Sleep -Seconds 2
-    }
+            } else { Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1 }
+        } else { Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green; Start-Sleep -Seconds 1 }
+    } catch { Write-Warning "No se pudo verificar la version remota." }
 }
 
-# Ejecutar el actualizador al inicio del script.
+# Ejecutar el actualizador.
 Invoke-FullRepoUpdater
 
-# --- FIN DEL MODULO DE AUTO-ACTUALIZACION COMPLETA (VERSION CORREGIDA) ---
-
-$script:Version = "4.5"
+# --- FIN DEL MODULO DE AUTO-ACTUALIZACION ---
 
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
