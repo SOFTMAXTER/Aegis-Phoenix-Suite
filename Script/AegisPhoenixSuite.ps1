@@ -103,7 +103,7 @@ try {
     . "$PSScriptRoot\Catalogos\Servicios.ps1"
 }
 catch {
-    Write-Error "Error critico: No se pudieron cargar los archivos de catálogo."
+    Write-Error "Error critico: No se pudieron cargar los archivos de catalogo."
     Write-Error "Asegurate de que 'Ajustes.ps1' y 'Servicios.ps1' existen en la subcarpeta 'Catalogos'."
     Read-Host "Presiona Enter para salir."
     exit
@@ -161,7 +161,7 @@ function Format-WrappedText {
         [int]$MaxWidth
     )
 
-    # Calculamos el ancho real disponible para el texto, restando la sangría.
+    # Calculamos el ancho real disponible para el texto, restando la sangria.
     $wrapWidth = $MaxWidth - $Indent
     if ($wrapWidth -le 0) { $wrapWidth = 1 } # Evitar un ancho negativo o cero
 
@@ -170,27 +170,27 @@ function Format-WrappedText {
     $currentLine = ""
 
     foreach ($word in $words) {
-        # Si la línea actual está vacía, simplemente añadimos la palabra.
+        # Si la linea actual esta vacia, simplemente añadimos la palabra.
         if ($currentLine.Length -eq 0) {
             $currentLine = $word
         }
-        # Si añadir la siguiente palabra (con un espacio) excede el límite...
+        # Si añadir la siguiente palabra (con un espacio) excede el limite...
         elseif (($currentLine.Length + $word.Length + 1) -gt $wrapWidth) {
-            # ...guardamos la línea actual y empezamos una nueva con la palabra actual.
+            # ...guardamos la linea actual y empezamos una nueva con la palabra actual.
             $lines.Add($currentLine)
             $currentLine = $word
         }
-        # Si no excede el límite, añadimos la palabra a la línea actual.
+        # Si no excede el limite, añadimos la palabra a la linea actual.
         else {
             $currentLine += " " + $word
         }
     }
-    # Añadimos la última línea que se estaba construyendo.
+    # Añadimos la ultima linea que se estaba construyendo.
     if ($currentLine) {
         $lines.Add($currentLine)
     }
 
-    # Creamos el bloque de texto final con la sangría aplicada a cada línea.
+    # Creamos el bloque de texto final con la sangria aplicada a cada linea.
     $indentation = " " * $Indent
     return $lines | ForEach-Object { "$indentation$_" }
 }
@@ -220,7 +220,7 @@ function Invoke-ExplorerRestart {
 
     if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
         try {
-            # Obtener todos los procesos del Explorador (puede haber más de uno)
+            # Obtener todos los procesos del Explorador (puede haber mas de uno)
             $explorerProcesses = Get-Process -Name explorer -ErrorAction Stop
             
             # Detener los procesos
@@ -263,16 +263,16 @@ function Manage-SystemServices {
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "     Gestion de Servicios No Esenciales de Windows     " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "Usa los números para marcar/desmarcar. Luego, aplica una accion."
+        Write-Host "Usa los numeros para marcar/desmarcar. Luego, aplica una accion."
         Write-Host ""
 
         $itemIndex = 0
         $categories = $fullServiceList.Definition.Category | Select-Object -Unique
         
         # --- INICIO DE LA MODIFICACIoN DE VISUALIZACIoN ---
-        # Obtenemos el ancho de la consola para que el texto se ajuste dinámicamente.
+        # Obtenemos el ancho de la consola para que el texto se ajuste dinamicamente.
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
-        # Definimos la sangría para las descripciones.
+        # Definimos la sangria para las descripciones.
         $descriptionIndent = 13 
         # --- FIN DE LA MODIFICACIoN DE VISUALIZACIoN ---
 
@@ -302,7 +302,7 @@ function Manage-SystemServices {
                     }
                 } else { $statusText = "[No Encontrado]" }
                 
-                # Se imprime la línea principal del servicio
+                # Se imprime la linea principal del servicio
                 Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
                 Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
                 Write-Host $serviceDef.Name -ForegroundColor White
@@ -318,7 +318,7 @@ function Manage-SystemServices {
             Write-Host ""
         }
         
-        # El resto de la funcion (menú y logica de acciones) permanece igual...
+        # El resto de la funcion (menu y logica de acciones) permanece igual...
         Write-Host "--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] - Marcar / Desmarcar servicio"
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
@@ -340,7 +340,7 @@ function Manage-SystemServices {
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $fullServiceList | Where-Object { $_.Selected }
                 if ($selectedItems.Count -eq 0) {
-                    Write-Warning "No has seleccionado ningún servicio."
+                    Write-Warning "No has seleccionado ningun servicio."
                     Start-Sleep -Seconds 2
                     continue
                 }
@@ -457,15 +457,15 @@ function Manage-ThirdPartyServices {
     if (Test-Path $backupFile) {
         Write-Host "Cargando estados originales desde el archivo de respaldo..." -ForegroundColor Gray
         try {
-            # Verificar que el archivo no esté vacío
+            # Verificar que el archivo no este vacio
             if ((Get-Item $backupFile).Length -eq 0) {
-                throw "El archivo de respaldo está vacío."
+                throw "El archivo de respaldo esta vacio."
             }
             
             # Leer y validar el contenido JSON
             $fileContent = Get-Content -Path $backupFile -Raw -ErrorAction Stop
             if ([string]::IsNullOrWhiteSpace($fileContent)) {
-                throw "El archivo de respaldo está vacío o contiene solo espacios en blanco."
+                throw "El archivo de respaldo esta vacio o contiene solo espacios en blanco."
             }
             
             # Convertir desde JSON (compatible con PowerShell 5.1)
@@ -484,7 +484,7 @@ function Manage-ThirdPartyServices {
             
             Write-Host "Respaldo cargado correctamente desde: $backupFile" -ForegroundColor Green
             
-            # Actualizar automáticamente el backup con servicios nuevos
+            # Actualizar automaticamente el backup con servicios nuevos
             $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
             
         } catch {
@@ -507,8 +507,8 @@ function Manage-ThirdPartyServices {
                 $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
                 Write-Host "Nuevo respaldo creado en: $backupFile" -ForegroundColor Green
             } catch {
-                Write-Host "Error crítico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
-                # Continuar con una hashtable vacía para evitar más errores
+                Write-Host "Error critico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
+                # Continuar con una hashtable vacia para evitar mas errores
                 $originalStates = @{}
             }
         }
@@ -529,7 +529,7 @@ function Manage-ThirdPartyServices {
             Write-Host "Respaldo guardado en: $backupFile" -ForegroundColor Green
         } catch {
             Write-Host "Error al guardar el respaldo: $($_.Exception.Message)" -ForegroundColor Red
-            # Continuar con una hashtable vacía para evitar más errores
+            # Continuar con una hashtable vacia para evitar mas errores
             $originalStates = @{}
         }
     }
@@ -551,7 +551,7 @@ function Manage-ThirdPartyServices {
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "   Gestion Inteligente de Servicios de Aplicaciones    " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "Usa los números para marcar/desmarcar. Luego, aplica una accion."
+        Write-Host "Usa los numeros para marcar/desmarcar. Luego, aplica una accion."
         Write-Host ""
         
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
@@ -579,7 +579,7 @@ function Manage-ThirdPartyServices {
                 }
             }
 
-            # Indicador de servicio en backup (usando texto en lugar de símbolos Unicode)
+            # Indicador de servicio en backup (usando texto en lugar de simbolos Unicode)
             $backupIndicator = if ($item.InBackup) { " [BACKUP] " } else { " [NO BK] " }
             $backupColor = if ($item.InBackup) { "Green" } else { "Red" }
             
@@ -627,7 +627,7 @@ function Manage-ThirdPartyServices {
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $displayItems | Where-Object { $_.Selected }
                 if ($selectedItems.Count -eq 0) {
-                    Write-Warning "No has seleccionado ningún servicio."
+                    Write-Warning "No has seleccionado ningun servicio."
                     Start-Sleep -Seconds 2
                     continue
                 }
@@ -786,7 +786,7 @@ function Show-CleaningMenu {
 
     $cleanChoice = ''
     do {
-        # --- Cálculo de datos en CADA iteracion del bucle ---
+        # --- Calculo de datos en CADA iteracion del bucle ---
         Write-Host "Refrescando datos, por favor espera..." -ForegroundColor Gray
         $tempPaths = @(
 	    	"$env:TEMP",
@@ -1516,7 +1516,7 @@ function Clear-RAMCache {
         return
     }
 
-    # Ruta donde se guardará la herramienta
+    # Ruta donde se guardara la herramienta
     $toolDir = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "Tools"
     if (-not (Test-Path $toolDir)) {
         New-Item -Path $toolDir -ItemType Directory | Out-Null
@@ -1560,7 +1560,7 @@ function Clear-RAMCache {
 }
 
 function Clear-SystemCaches {
-	Write-Log -LogLevel INFO -Message "Usuario inicio la limpieza de cachés del sistema (DNS, Tienda)."
+	Write-Log -LogLevel INFO -Message "Usuario inicio la limpieza de caches del sistema (DNS, Tienda)."
     try {
         ipconfig /flushdns | Out-Null
         Write-Host "[OK] Cache DNS limpiada." -ForegroundColor Green
@@ -1602,7 +1602,7 @@ function Generate-SystemReport {
 	{
 		New-Item -Path $diagDir -ItemType Directory | Out-Null };
 		$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
-		Write-Log -LogLevel INFO -Message "Generando reporte de energía del sistema.";
+		Write-Log -LogLevel INFO -Message "Generando reporte de energia del sistema.";
 		powercfg /energy /output $reportPath /duration 60;
 		if (Test-Path $reportPath)
 		{
@@ -1801,14 +1801,14 @@ function Show-AdminMenu {
                                 if ($logName -eq 'Setup') {
                                     # --- INICIO DE LA CORRECCIoN FINAL ---
 
-                                    # 1. Ejecutamos wevtutil SIN el parámetro /q para máxima compatibilidad.
+                                    # 1. Ejecutamos wevtutil SIN el parametro /q para maxima compatibilidad.
                                     wevtutil.exe clear-log $logName
                                     
                                     # 2. VERIFICAMOS EL CoDIGO DE SALIDA. Si es 0, todo fue bien.
                                     if ($LASTEXITCODE -eq 0) {
                                         $success = $true
                                     } else {
-                                        # 3. Si falla, creamos un error explícito para que el bloque 'catch' lo capture.
+                                        # 3. Si falla, creamos un error explicito para que el bloque 'catch' lo capture.
                                         throw "wevtutil.exe fallo con el codigo de salida $LASTEXITCODE."
                                     }
                                 }
@@ -1817,7 +1817,7 @@ function Show-AdminMenu {
                                     $success = $true
                                 }
 
-                                # 4. El mensaje de éxito SoLO se muestra si la variable $success es verdadera.
+                                # 4. El mensaje de exito SoLO se muestra si la variable $success es verdadera.
                                 if ($success) {
                                     Write-Host "[OK] Registro '$logName' limpiado exitosamente." -ForegroundColor Green
                                     Write-Log -LogLevel ACTION -Message "Registro de eventos '$logName' limpiado por el usuario."
@@ -1853,7 +1853,7 @@ function Manage-ScheduledTasks {
 	
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Tareas Programadas de Terceros."
 
-    # --- Funcion Auxiliar con el método de manipulacion de objetos corregido ---
+    # --- Funcion Auxiliar con el metodo de manipulacion de objetos corregido ---
     function Get-ThirdPartyTasks {
         Write-Host "`n[+] Actualizando lista de tareas (usando filtro avanzado)..." -ForegroundColor Gray
         
@@ -1863,7 +1863,7 @@ function Manage-ScheduledTasks {
             ($_.TaskPath -like '\Microsoft\*' -and $_.Author -notlike 'Microsoft*')
         }
 
-        # --- CAMBIO CRÍTICO: En lugar de crear un objeto nuevo, AÑADIMOS la propiedad 'Selected' al objeto original ---
+        # --- CAMBIO CRiTICO: En lugar de crear un objeto nuevo, AÑADIMOS la propiedad 'Selected' al objeto original ---
         # Esto conserva el tipo de objeto original (CimInstance), lo que es crucial para que las acciones funcionen.
         $tasks | ForEach-Object {
             Add-Member -InputObject $_ -MemberType NoteProperty -Name 'Selected' -Value $false -Force
@@ -1939,8 +1939,8 @@ function Manage-ScheduledTasks {
                 # Usamos .TaskName para el mensaje, que es la propiedad correcta del objeto original.
                 if ($PSCmdlet.ShouldProcess($task.TaskName, $action)) {
                     try {
-                        # --- CAMBIO CRÍTICO EN LA ACCIoN: Pasamos el objeto $task completo por la tubería ---
-                        # Esta es la forma más nativa y robusta de ejecutar estos comandos.
+                        # --- CAMBIO CRiTICO EN LA ACCIoN: Pasamos el objeto $task completo por la tuberia ---
+                        # Esta es la forma mas nativa y robusta de ejecutar estos comandos.
                         if ($choice.ToUpper() -eq 'D') {
                             $task | Disable-ScheduledTask -ErrorAction Stop
                         } else {
@@ -1954,7 +1954,7 @@ function Manage-ScheduledTasks {
                 }
             }
 
-            Write-Host "`n[OK] Operacion completada. La lista se actualizará para reflejar los cambios reales." -ForegroundColor Green
+            Write-Host "`n[OK] Operacion completada. La lista se actualizara para reflejar los cambios reales." -ForegroundColor Green
             Read-Host "Presiona Enter para continuar..."
             
             $displayTasks = Get-ThirdPartyTasks
@@ -2020,19 +2020,19 @@ function Invoke-SoftwareUpdates {
         $allUpdates = @()
         $activeEngines = @()
         
-        # Verificar qué motores están disponibles
+        # Verificar que motores estan disponibles
         foreach ($engine in @('Winget', 'Chocolatey')) {
             $isEngineAvailable = Test-SoftwareEngine $engine
             
             if (-not $isEngineAvailable -and $engine -eq 'Chocolatey') {
-                # Ofrecer instalar Chocolatey si no está disponible
+                # Ofrecer instalar Chocolatey si no esta disponible
                 $isEngineAvailable = Ensure-ChocolateyIsInstalled
             }
             
             if ($isEngineAvailable) {
                 $activeEngines += $engine
             } else {
-                Write-Host "Motor $engine no está disponible." -ForegroundColor Yellow
+                Write-Host "Motor $engine no esta disponible." -ForegroundColor Yellow
                 if ($engine -eq 'Winget') {
                     Write-Host "Nota: Winget debe instalarse manualmente desde Microsoft Store." -ForegroundColor Yellow
                 }
@@ -2180,10 +2180,10 @@ function Test-SoftwareEngine {
             return [bool]$wingetPath
         }
         'Chocolatey' { 
-            # Verificar de múltiples formas para asegurar deteccion
+            # Verificar de multiples formas para asegurar deteccion
             $chocoPath = Get-Command "choco" -ErrorAction SilentlyContinue
             if (-not $chocoPath) {
-                # Verificar también en la ruta común de instalacion
+                # Verificar tambien en la ruta comun de instalacion
                 $commonChocoPath = "$env:ProgramData\chocolatey\bin\choco.exe"
                 return (Test-Path $commonChocoPath)
             }
@@ -2194,17 +2194,17 @@ function Test-SoftwareEngine {
 }
 
 function Ensure-ChocolateyIsInstalled {
-    # Primero verificar si ya está instalado
+    # Primero verificar si ya esta instalado
     if (Test-SoftwareEngine 'Chocolatey') { return $true }
     
-    Write-Host "El gestor de paquetes 'Chocolatey' no está instalado." -ForegroundColor Yellow
+    Write-Host "El gestor de paquetes 'Chocolatey' no esta instalado." -ForegroundColor Yellow
     
     if ($script:SoftwareEngine -eq 'Chocolatey') {
         $installChoice = Read-Host "¿Deseas instalarlo ahora? (S/N)"
         if ($installChoice -eq 'S' -or $installChoice -eq 's') {
             Write-Host "`n[+] Instalando Chocolatey..." -ForegroundColor Yellow
             try {
-                # Forzar política de ejecucion
+                # Forzar politica de ejecucion
                 Set-ExecutionPolicy Bypass -Scope Process -Force
                 
                 # Configurar protocolo de seguridad
@@ -2243,7 +2243,7 @@ function Invoke-SoftwareSearchAndInstall {
     try {
         Write-Host "Buscando '$searchTerm'..." -ForegroundColor Yellow
         
-        # Verificar si el motor seleccionado está disponible
+        # Verificar si el motor seleccionado esta disponible
         if ($script:SoftwareEngine -eq 'Chocolatey' -and -not (Ensure-ChocolateyIsInstalled)) {
             Write-Host "No se puede continuar sin Chocolatey." -ForegroundColor Red
             Read-Host "`nPresiona Enter para continuar"
@@ -2251,7 +2251,7 @@ function Invoke-SoftwareSearchAndInstall {
         }
         
         if (-not (Test-SoftwareEngine $script:SoftwareEngine)) {
-            Write-Host "El motor $script:SoftwareEngine no está disponible." -ForegroundColor Red
+            Write-Host "El motor $script:SoftwareEngine no esta disponible." -ForegroundColor Red
             Read-Host "`nPresiona Enter para continuar"
             return
         }
@@ -2262,22 +2262,22 @@ function Invoke-SoftwareSearchAndInstall {
                 # Ejecutar winget y capturar salida
                 $rawOutput = winget search $searchTerm --source winget --accept-source-agreements 2>&1
                 
-                # Procesar la salida línea por línea
+                # Procesar la salida linea por linea
                 $lines = $rawOutput -split "`r?`n"
                 $inTable = $false
                 
                 foreach ($line in $lines) {
                     $trimmedLine = $line.Trim()
                     
-                    # Detectar el inicio de la tabla (línea con muchos guiones)
+                    # Detectar el inicio de la tabla (linea con muchos guiones)
                     if ($trimmedLine -match "^[-\\s]{20,}") {
                         $inTable = $true
                         continue
                     }
                     
-                    # Si estamos en la tabla y la línea tiene contenido
+                    # Si estamos en la tabla y la linea tiene contenido
                     if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
-                        # Dividir por múltiples espacios
+                        # Dividir por multiples espacios
                         $columns = $trimmedLine -split "\s{2,}"
                         if ($columns.Count -ge 3) {
                             $results += [PSCustomObject]@{
@@ -2405,7 +2405,7 @@ function Invoke-BatchInstallation {
         return
     }
 
-    # Verificar si el motor seleccionado está disponible
+    # Verificar si el motor seleccionado esta disponible
     if ($script:SoftwareEngine -eq 'Chocolatey' -and -not (Ensure-ChocolateyIsInstalled)) {
         Write-Host "No se puede continuar sin Chocolatey." -ForegroundColor Red
         Read-Host "`nPresiona Enter para continuar"
@@ -2413,7 +2413,7 @@ function Invoke-BatchInstallation {
     }
     
     if (-not (Test-SoftwareEngine $script:SoftwareEngine)) {
-        Write-Host "El motor $script:SoftwareEngine no está disponible." -ForegroundColor Red
+        Write-Host "El motor $script:SoftwareEngine no esta disponible." -ForegroundColor Red
         Read-Host "`nPresiona Enter para continuar"
         return
     }
@@ -2521,7 +2521,7 @@ function Set-TweakState {
     )
 
     Write-Host " -> Aplicando '$Action' al ajuste '$($Tweak.Name)'..." -ForegroundColor Yellow
-    Write-Log -LogLevel INFO -Message "Intentando aplicar '$Action' al ajuste '$($Tweak.Name)' en la categoría '$($Tweak.Category)'."
+    Write-Log -LogLevel INFO -Message "Intentando aplicar '$Action' al ajuste '$($Tweak.Name)' en la categoria '$($Tweak.Category)'."
     try {
         if ($Action -eq 'Enable') {
             if ($Tweak.Method -eq 'Registry') {
@@ -2640,7 +2640,7 @@ function Show-TweakManagerMenu {
                     foreach ($tweakToToggle in $selectedTweaks) {
                         $currentState = Get-TweakState -Tweak $tweakToToggle
                         if ($currentState -eq 'NotApplicable') {
-                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitirá."
+                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitira."
                             continue
                         }
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
@@ -2938,7 +2938,7 @@ try {
     . "$PSScriptRoot\Catalogos\Servicios.ps1"
 }
 catch {
-    Write-Error "Error critico: No se pudieron cargar los archivos de catálogo."
+    Write-Error "Error critico: No se pudieron cargar los archivos de catalogo."
     Write-Error "Asegurate de que 'Ajustes.ps1' y 'Servicios.ps1' existen en la subcarpeta 'Catalogos'."
     Read-Host "Presiona Enter para salir."
     exit
@@ -2996,7 +2996,7 @@ function Format-WrappedText {
         [int]$MaxWidth
     )
 
-    # Calculamos el ancho real disponible para el texto, restando la sangría.
+    # Calculamos el ancho real disponible para el texto, restando la sangria.
     $wrapWidth = $MaxWidth - $Indent
     if ($wrapWidth -le 0) { $wrapWidth = 1 } # Evitar un ancho negativo o cero
 
@@ -3005,27 +3005,27 @@ function Format-WrappedText {
     $currentLine = ""
 
     foreach ($word in $words) {
-        # Si la línea actual está vacía, simplemente añadimos la palabra.
+        # Si la linea actual esta vacia, simplemente añadimos la palabra.
         if ($currentLine.Length -eq 0) {
             $currentLine = $word
         }
-        # Si añadir la siguiente palabra (con un espacio) excede el límite...
+        # Si añadir la siguiente palabra (con un espacio) excede el limite...
         elseif (($currentLine.Length + $word.Length + 1) -gt $wrapWidth) {
-            # ...guardamos la línea actual y empezamos una nueva con la palabra actual.
+            # ...guardamos la linea actual y empezamos una nueva con la palabra actual.
             $lines.Add($currentLine)
             $currentLine = $word
         }
-        # Si no excede el límite, añadimos la palabra a la línea actual.
+        # Si no excede el limite, añadimos la palabra a la linea actual.
         else {
             $currentLine += " " + $word
         }
     }
-    # Añadimos la última línea que se estaba construyendo.
+    # Añadimos la ultima linea que se estaba construyendo.
     if ($currentLine) {
         $lines.Add($currentLine)
     }
 
-    # Creamos el bloque de texto final con la sangría aplicada a cada línea.
+    # Creamos el bloque de texto final con la sangria aplicada a cada linea.
     $indentation = " " * $Indent
     return $lines | ForEach-Object { "$indentation$_" }
 }
@@ -3055,7 +3055,7 @@ function Invoke-ExplorerRestart {
 
     if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
         try {
-            # Obtener todos los procesos del Explorador (puede haber más de uno)
+            # Obtener todos los procesos del Explorador (puede haber mas de uno)
             $explorerProcesses = Get-Process -Name explorer -ErrorAction Stop
             
             # Detener los procesos
@@ -3098,16 +3098,16 @@ function Manage-SystemServices {
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "     Gestion de Servicios No Esenciales de Windows     " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "Usa los números para marcar/desmarcar. Luego, aplica una accion."
+        Write-Host "Usa los numeros para marcar/desmarcar. Luego, aplica una accion."
         Write-Host ""
 
         $itemIndex = 0
         $categories = $fullServiceList.Definition.Category | Select-Object -Unique
         
         # --- INICIO DE LA MODIFICACIoN DE VISUALIZACIoN ---
-        # Obtenemos el ancho de la consola para que el texto se ajuste dinámicamente.
+        # Obtenemos el ancho de la consola para que el texto se ajuste dinamicamente.
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
-        # Definimos la sangría para las descripciones.
+        # Definimos la sangria para las descripciones.
         $descriptionIndent = 13 
         # --- FIN DE LA MODIFICACIoN DE VISUALIZACIoN ---
 
@@ -3137,7 +3137,7 @@ function Manage-SystemServices {
                     }
                 } else { $statusText = "[No Encontrado]" }
                 
-                # Se imprime la línea principal del servicio
+                # Se imprime la linea principal del servicio
                 Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
                 Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
                 Write-Host $serviceDef.Name -ForegroundColor White
@@ -3153,7 +3153,7 @@ function Manage-SystemServices {
             Write-Host ""
         }
         
-        # El resto de la funcion (menú y logica de acciones) permanece igual...
+        # El resto de la funcion (menu y logica de acciones) permanece igual...
         Write-Host "--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] - Marcar / Desmarcar servicio"
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
@@ -3175,7 +3175,7 @@ function Manage-SystemServices {
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $fullServiceList | Where-Object { $_.Selected }
                 if ($selectedItems.Count -eq 0) {
-                    Write-Warning "No has seleccionado ningún servicio."
+                    Write-Warning "No has seleccionado ningun servicio."
                     Start-Sleep -Seconds 2
                     continue
                 }
@@ -3292,15 +3292,15 @@ function Manage-ThirdPartyServices {
     if (Test-Path $backupFile) {
         Write-Host "Cargando estados originales desde el archivo de respaldo..." -ForegroundColor Gray
         try {
-            # Verificar que el archivo no esté vacío
+            # Verificar que el archivo no este vacio
             if ((Get-Item $backupFile).Length -eq 0) {
-                throw "El archivo de respaldo está vacío."
+                throw "El archivo de respaldo esta vacio."
             }
             
             # Leer y validar el contenido JSON
             $fileContent = Get-Content -Path $backupFile -Raw -ErrorAction Stop
             if ([string]::IsNullOrWhiteSpace($fileContent)) {
-                throw "El archivo de respaldo está vacío o contiene solo espacios en blanco."
+                throw "El archivo de respaldo esta vacio o contiene solo espacios en blanco."
             }
             
             # Convertir desde JSON (compatible con PowerShell 5.1)
@@ -3319,7 +3319,7 @@ function Manage-ThirdPartyServices {
             
             Write-Host "Respaldo cargado correctamente desde: $backupFile" -ForegroundColor Green
             
-            # Actualizar automáticamente el backup con servicios nuevos
+            # Actualizar automaticamente el backup con servicios nuevos
             $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
             
         } catch {
@@ -3342,8 +3342,8 @@ function Manage-ThirdPartyServices {
                 $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
                 Write-Host "Nuevo respaldo creado en: $backupFile" -ForegroundColor Green
             } catch {
-                Write-Host "Error crítico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
-                # Continuar con una hashtable vacía para evitar más errores
+                Write-Host "Error critico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
+                # Continuar con una hashtable vacia para evitar mas errores
                 $originalStates = @{}
             }
         }
@@ -3364,7 +3364,7 @@ function Manage-ThirdPartyServices {
             Write-Host "Respaldo guardado en: $backupFile" -ForegroundColor Green
         } catch {
             Write-Host "Error al guardar el respaldo: $($_.Exception.Message)" -ForegroundColor Red
-            # Continuar con una hashtable vacía para evitar más errores
+            # Continuar con una hashtable vacia para evitar mas errores
             $originalStates = @{}
         }
     }
@@ -3386,7 +3386,7 @@ function Manage-ThirdPartyServices {
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "   Gestion Inteligente de Servicios de Aplicaciones    " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "Usa los números para marcar/desmarcar. Luego, aplica una accion."
+        Write-Host "Usa los numeros para marcar/desmarcar. Luego, aplica una accion."
         Write-Host ""
         
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
@@ -3414,7 +3414,7 @@ function Manage-ThirdPartyServices {
                 }
             }
 
-            # Indicador de servicio en backup (usando texto en lugar de símbolos Unicode)
+            # Indicador de servicio en backup (usando texto en lugar de simbolos Unicode)
             $backupIndicator = if ($item.InBackup) { " [BACKUP] " } else { " [NO BK] " }
             $backupColor = if ($item.InBackup) { "Green" } else { "Red" }
             
@@ -3462,7 +3462,7 @@ function Manage-ThirdPartyServices {
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $displayItems | Where-Object { $_.Selected }
                 if ($selectedItems.Count -eq 0) {
-                    Write-Warning "No has seleccionado ningún servicio."
+                    Write-Warning "No has seleccionado ningun servicio."
                     Start-Sleep -Seconds 2
                     continue
                 }
@@ -3621,7 +3621,7 @@ function Show-CleaningMenu {
 
     $cleanChoice = ''
     do {
-        # --- Cálculo de datos en CADA iteracion del bucle ---
+        # --- Calculo de datos en CADA iteracion del bucle ---
         Write-Host "Refrescando datos, por favor espera..." -ForegroundColor Gray
         $tempPaths = @(
 	    	"$env:TEMP",
@@ -4351,7 +4351,7 @@ function Clear-RAMCache {
         return
     }
 
-    # Ruta donde se guardará la herramienta
+    # Ruta donde se guardara la herramienta
     $toolDir = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "Tools"
     if (-not (Test-Path $toolDir)) {
         New-Item -Path $toolDir -ItemType Directory | Out-Null
@@ -4395,7 +4395,7 @@ function Clear-RAMCache {
 }
 
 function Clear-SystemCaches {
-	Write-Log -LogLevel INFO -Message "Usuario inicio la limpieza de cachés del sistema (DNS, Tienda)."
+	Write-Log -LogLevel INFO -Message "Usuario inicio la limpieza de caches del sistema (DNS, Tienda)."
     try {
         ipconfig /flushdns | Out-Null
         Write-Host "[OK] Cache DNS limpiada." -ForegroundColor Green
@@ -4437,7 +4437,7 @@ function Generate-SystemReport {
 	{
 		New-Item -Path $diagDir -ItemType Directory | Out-Null };
 		$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
-		Write-Log -LogLevel INFO -Message "Generando reporte de energía del sistema.";
+		Write-Log -LogLevel INFO -Message "Generando reporte de energia del sistema.";
 		powercfg /energy /output $reportPath /duration 60;
 		if (Test-Path $reportPath)
 		{
@@ -4636,14 +4636,14 @@ function Show-AdminMenu {
                                 if ($logName -eq 'Setup') {
                                     # --- INICIO DE LA CORRECCIoN FINAL ---
 
-                                    # 1. Ejecutamos wevtutil SIN el parámetro /q para máxima compatibilidad.
+                                    # 1. Ejecutamos wevtutil SIN el parametro /q para maxima compatibilidad.
                                     wevtutil.exe clear-log $logName
                                     
                                     # 2. VERIFICAMOS EL CoDIGO DE SALIDA. Si es 0, todo fue bien.
                                     if ($LASTEXITCODE -eq 0) {
                                         $success = $true
                                     } else {
-                                        # 3. Si falla, creamos un error explícito para que el bloque 'catch' lo capture.
+                                        # 3. Si falla, creamos un error explicito para que el bloque 'catch' lo capture.
                                         throw "wevtutil.exe fallo con el codigo de salida $LASTEXITCODE."
                                     }
                                 }
@@ -4652,7 +4652,7 @@ function Show-AdminMenu {
                                     $success = $true
                                 }
 
-                                # 4. El mensaje de éxito SoLO se muestra si la variable $success es verdadera.
+                                # 4. El mensaje de exito SoLO se muestra si la variable $success es verdadera.
                                 if ($success) {
                                     Write-Host "[OK] Registro '$logName' limpiado exitosamente." -ForegroundColor Green
                                     Write-Log -LogLevel ACTION -Message "Registro de eventos '$logName' limpiado por el usuario."
@@ -4688,7 +4688,7 @@ function Manage-ScheduledTasks {
 	
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Tareas Programadas de Terceros."
 
-    # --- Funcion Auxiliar con el método de manipulacion de objetos corregido ---
+    # --- Funcion Auxiliar con el metodo de manipulacion de objetos corregido ---
     function Get-ThirdPartyTasks {
         Write-Host "`n[+] Actualizando lista de tareas (usando filtro avanzado)..." -ForegroundColor Gray
         
@@ -4698,7 +4698,7 @@ function Manage-ScheduledTasks {
             ($_.TaskPath -like '\Microsoft\*' -and $_.Author -notlike 'Microsoft*')
         }
 
-        # --- CAMBIO CRÍTICO: En lugar de crear un objeto nuevo, AÑADIMOS la propiedad 'Selected' al objeto original ---
+        # --- CAMBIO CRiTICO: En lugar de crear un objeto nuevo, AÑADIMOS la propiedad 'Selected' al objeto original ---
         # Esto conserva el tipo de objeto original (CimInstance), lo que es crucial para que las acciones funcionen.
         $tasks | ForEach-Object {
             Add-Member -InputObject $_ -MemberType NoteProperty -Name 'Selected' -Value $false -Force
@@ -4774,8 +4774,8 @@ function Manage-ScheduledTasks {
                 # Usamos .TaskName para el mensaje, que es la propiedad correcta del objeto original.
                 if ($PSCmdlet.ShouldProcess($task.TaskName, $action)) {
                     try {
-                        # --- CAMBIO CRÍTICO EN LA ACCIoN: Pasamos el objeto $task completo por la tubería ---
-                        # Esta es la forma más nativa y robusta de ejecutar estos comandos.
+                        # --- CAMBIO CRiTICO EN LA ACCIoN: Pasamos el objeto $task completo por la tuberia ---
+                        # Esta es la forma mas nativa y robusta de ejecutar estos comandos.
                         if ($choice.ToUpper() -eq 'D') {
                             $task | Disable-ScheduledTask -ErrorAction Stop
                         } else {
@@ -4789,7 +4789,7 @@ function Manage-ScheduledTasks {
                 }
             }
 
-            Write-Host "`n[OK] Operacion completada. La lista se actualizará para reflejar los cambios reales." -ForegroundColor Green
+            Write-Host "`n[OK] Operacion completada. La lista se actualizara para reflejar los cambios reales." -ForegroundColor Green
             Read-Host "Presiona Enter para continuar..."
             
             $displayTasks = Get-ThirdPartyTasks
@@ -4855,19 +4855,19 @@ function Invoke-SoftwareUpdates {
         $allUpdates = @()
         $activeEngines = @()
         
-        # Verificar qué motores están disponibles
+        # Verificar que motores estan disponibles
         foreach ($engine in @('Winget', 'Chocolatey')) {
             $isEngineAvailable = Test-SoftwareEngine $engine
             
             if (-not $isEngineAvailable -and $engine -eq 'Chocolatey') {
-                # Ofrecer instalar Chocolatey si no está disponible
+                # Ofrecer instalar Chocolatey si no esta disponible
                 $isEngineAvailable = Ensure-ChocolateyIsInstalled
             }
             
             if ($isEngineAvailable) {
                 $activeEngines += $engine
             } else {
-                Write-Host "Motor $engine no está disponible." -ForegroundColor Yellow
+                Write-Host "Motor $engine no esta disponible." -ForegroundColor Yellow
                 if ($engine -eq 'Winget') {
                     Write-Host "Nota: Winget debe instalarse manualmente desde Microsoft Store." -ForegroundColor Yellow
                 }
@@ -5015,10 +5015,10 @@ function Test-SoftwareEngine {
             return [bool]$wingetPath
         }
         'Chocolatey' { 
-            # Verificar de múltiples formas para asegurar deteccion
+            # Verificar de multiples formas para asegurar deteccion
             $chocoPath = Get-Command "choco" -ErrorAction SilentlyContinue
             if (-not $chocoPath) {
-                # Verificar también en la ruta común de instalacion
+                # Verificar tambien en la ruta comun de instalacion
                 $commonChocoPath = "$env:ProgramData\chocolatey\bin\choco.exe"
                 return (Test-Path $commonChocoPath)
             }
@@ -5029,17 +5029,17 @@ function Test-SoftwareEngine {
 }
 
 function Ensure-ChocolateyIsInstalled {
-    # Primero verificar si ya está instalado
+    # Primero verificar si ya esta instalado
     if (Test-SoftwareEngine 'Chocolatey') { return $true }
     
-    Write-Host "El gestor de paquetes 'Chocolatey' no está instalado." -ForegroundColor Yellow
+    Write-Host "El gestor de paquetes 'Chocolatey' no esta instalado." -ForegroundColor Yellow
     
     if ($script:SoftwareEngine -eq 'Chocolatey') {
         $installChoice = Read-Host "¿Deseas instalarlo ahora? (S/N)"
         if ($installChoice -eq 'S' -or $installChoice -eq 's') {
             Write-Host "`n[+] Instalando Chocolatey..." -ForegroundColor Yellow
             try {
-                # Forzar política de ejecucion
+                # Forzar politica de ejecucion
                 Set-ExecutionPolicy Bypass -Scope Process -Force
                 
                 # Configurar protocolo de seguridad
@@ -5078,7 +5078,7 @@ function Invoke-SoftwareSearchAndInstall {
     try {
         Write-Host "Buscando '$searchTerm'..." -ForegroundColor Yellow
         
-        # Verificar si el motor seleccionado está disponible
+        # Verificar si el motor seleccionado esta disponible
         if ($script:SoftwareEngine -eq 'Chocolatey' -and -not (Ensure-ChocolateyIsInstalled)) {
             Write-Host "No se puede continuar sin Chocolatey." -ForegroundColor Red
             Read-Host "`nPresiona Enter para continuar"
@@ -5086,7 +5086,7 @@ function Invoke-SoftwareSearchAndInstall {
         }
         
         if (-not (Test-SoftwareEngine $script:SoftwareEngine)) {
-            Write-Host "El motor $script:SoftwareEngine no está disponible." -ForegroundColor Red
+            Write-Host "El motor $script:SoftwareEngine no esta disponible." -ForegroundColor Red
             Read-Host "`nPresiona Enter para continuar"
             return
         }
@@ -5097,22 +5097,22 @@ function Invoke-SoftwareSearchAndInstall {
                 # Ejecutar winget y capturar salida
                 $rawOutput = winget search $searchTerm --source winget --accept-source-agreements 2>&1
                 
-                # Procesar la salida línea por línea
+                # Procesar la salida linea por linea
                 $lines = $rawOutput -split "`r?`n"
                 $inTable = $false
                 
                 foreach ($line in $lines) {
                     $trimmedLine = $line.Trim()
                     
-                    # Detectar el inicio de la tabla (línea con muchos guiones)
+                    # Detectar el inicio de la tabla (linea con muchos guiones)
                     if ($trimmedLine -match "^[-\\s]{20,}") {
                         $inTable = $true
                         continue
                     }
                     
-                    # Si estamos en la tabla y la línea tiene contenido
+                    # Si estamos en la tabla y la linea tiene contenido
                     if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
-                        # Dividir por múltiples espacios
+                        # Dividir por multiples espacios
                         $columns = $trimmedLine -split "\s{2,}"
                         if ($columns.Count -ge 3) {
                             $results += [PSCustomObject]@{
@@ -5240,7 +5240,7 @@ function Invoke-BatchInstallation {
         return
     }
 
-    # Verificar si el motor seleccionado está disponible
+    # Verificar si el motor seleccionado esta disponible
     if ($script:SoftwareEngine -eq 'Chocolatey' -and -not (Ensure-ChocolateyIsInstalled)) {
         Write-Host "No se puede continuar sin Chocolatey." -ForegroundColor Red
         Read-Host "`nPresiona Enter para continuar"
@@ -5248,7 +5248,7 @@ function Invoke-BatchInstallation {
     }
     
     if (-not (Test-SoftwareEngine $script:SoftwareEngine)) {
-        Write-Host "El motor $script:SoftwareEngine no está disponible." -ForegroundColor Red
+        Write-Host "El motor $script:SoftwareEngine no esta disponible." -ForegroundColor Red
         Read-Host "`nPresiona Enter para continuar"
         return
     }
@@ -5356,7 +5356,7 @@ function Set-TweakState {
     )
 
     Write-Host " -> Aplicando '$Action' al ajuste '$($Tweak.Name)'..." -ForegroundColor Yellow
-    Write-Log -LogLevel INFO -Message "Intentando aplicar '$Action' al ajuste '$($Tweak.Name)' en la categoría '$($Tweak.Category)'."
+    Write-Log -LogLevel INFO -Message "Intentando aplicar '$Action' al ajuste '$($Tweak.Name)' en la categoria '$($Tweak.Category)'."
     try {
         if ($Action -eq 'Enable') {
             if ($Tweak.Method -eq 'Registry') {
@@ -5475,7 +5475,7 @@ function Show-TweakManagerMenu {
                     foreach ($tweakToToggle in $selectedTweaks) {
                         $currentState = Get-TweakState -Tweak $tweakToToggle
                         if ($currentState -eq 'NotApplicable') {
-                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitirá."
+                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitira."
                             continue
                         }
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
