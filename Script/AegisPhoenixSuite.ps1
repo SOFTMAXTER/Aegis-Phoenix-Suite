@@ -5,13 +5,6 @@
     Aegis Phoenix Suite v4 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
-    Requiere ejecuci<#
-.SYNOPSIS
-    Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
-.DESCRIPTION
-    Aegis Phoenix Suite v4 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
-    logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
-    software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
