@@ -16,10 +16,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.6
+    4.6.1
 #>
 
-$script:Version = "4.6"
+$script:Version = "4.6.1"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -318,8 +318,14 @@ function Manage-SystemServices {
             Write-Host ""
         }
         
+		$selectedCount = $tweaksInCategory.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+			Write-Host ""
+            Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
+        }
+		
         # El resto de la funcion (menu y logica de acciones) permanece igual...
-        Write-Host "--- Acciones ---" -ForegroundColor Yellow
+        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] - Marcar / Desmarcar servicio"
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
         Write-Host "   [R] Restaurar Seleccionados a su estado por defecto"
@@ -592,6 +598,12 @@ function Manage-ThirdPartyServices {
                 $wrappedDescription = Format-WrappedText -Text $service.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
                 $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
             }
+        }
+		
+	    $selectedCount = $displayItems.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+			Write-Host ""
+            Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
@@ -1056,6 +1068,12 @@ function Show-AppSelectionMenu {
             $status = if ($AppList[$i].Selected) { "[X]" } else { "[ ]" }
             Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $AppList[$i].Name)
         }
+		
+	    $selectedCount = $AppList.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+			Write-Host ""
+            Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
+        }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] Marcar/Desmarcar  [E] Eliminar seleccionados"
@@ -1355,6 +1373,12 @@ function Manage-StartupApps {
             Write-Host ("   [{0,2}] {1} " -f ($i + 1), $statusMarker) -NoNewline
             Write-Host ("{0,-50}" -f $item.Name) -NoNewline
             Write-Host ("[{0,-8}]" -f $item.Status) -ForegroundColor $statusColor
+        }
+		
+	    $selectedCount = $startupItems.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+			Write-Host ""
+            Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
@@ -1906,6 +1930,12 @@ function Manage-ScheduledTasks {
             Write-Host ("   [{0,2}] {1} {2,-50}" -f ($i + 1), $statusMarker, $task.TaskName) -NoNewline
             Write-Host ("[{0}]" -f $task.State) -ForegroundColor $stateColor
         }
+		
+	    $selectedCount = $displayTasks.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+			Write-Host ""
+            Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
+        }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] Marcar/Desmarcar"
@@ -2118,6 +2148,12 @@ function Invoke-SoftwareUpdates {
             for ($i = 0; $i -lt $allUpdates.Count; $i++) {
                 $status = if ($allUpdates[$i].Selected) { "[X]" } else { "[ ]" }
                 Write-Host "   [$($i+1)] $status $($allUpdates[$i].Name) (v$($allUpdates[$i].Version) -> v$($allUpdates[$i].Available)) - [$($allUpdates[$i].Engine)]" -ForegroundColor White
+            }
+			
+			$selectedCount = $allUpdates.Where({$_.Selected}).Count
+            if ($selectedCount -gt 0) {
+				Write-Host ""
+                Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
             }
 
             Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
@@ -2637,16 +2673,35 @@ function Show-TweakManagerMenu {
                 if ($selectedTweaks.Count -eq 0) {
                     Write-Warning "No has seleccionado ningun ajuste."
                 } else {
+                    Write-Host "`n[+] Se aplicarán los siguientes cambios:" -ForegroundColor Cyan
+                    foreach ($tweak in $selectedTweaks) {
+                        $currentState = Get-TweakState -Tweak $tweak
+                        if ($currentState -ne 'NotApplicable') {
+                            $action = if ($currentState -eq 'Enabled') { 'Desactivar' } else { 'Activar' }
+                            $actionColor = if ($action -eq 'Activar') { 'Green' } else { 'Red' }
+                            Write-Host "    - " -NoNewline
+                            Write-Host "[$action]" -ForegroundColor $actionColor -NoNewline
+                            Write-Host " $($tweak.Name)"
+                        }
+                    }
+
+                    $confirmation = Read-Host "`n¿Estás seguro de que deseas continuar? (S/N)"
+                    if ($confirmation.ToUpper() -ne 'S') {
+                        Write-Host "[INFO] Operación cancelada por el usuario." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 2
+                        continue # Vuelve al inicio del bucle sin aplicar cambios
+                    }
+
                     foreach ($tweakToToggle in $selectedTweaks) {
                         $currentState = Get-TweakState -Tweak $tweakToToggle
                         if ($currentState -eq 'NotApplicable') {
-                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitira."
+                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitirá."
                             continue
                         }
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
                         Set-TweakState -Tweak $tweakToToggle -Action $action
 
-                        # --- IMPLEMENTACIoN MEJORADA: Si el ajuste requiere reiniciar explorer, activamos la bandera ---
+                        # Si el ajuste requiere reiniciar explorer, activamos la bandera
                         if ($tweakToToggle.RestartNeeded -eq 'Explorer') {
                             $explorerRestartNeeded = $true
                         }
@@ -2655,7 +2710,7 @@ function Show-TweakManagerMenu {
                 }
                 $tweaksInCategory.ForEach({$_.Selected = $false})
 
-                # --- IMPLEMENTACIoN MEJORADA: Comprobar la bandera y preguntar al usuario ---
+                # Comprobar la bandera y preguntar al usuario
                 if ($explorerRestartNeeded) {
                     $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows para ser visibles. ¿Deseas hacerlo ahora? (S/N)"
                     if ($promptChoice.ToUpper() -eq 'S') {
