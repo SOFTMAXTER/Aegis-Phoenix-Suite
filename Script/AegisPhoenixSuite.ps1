@@ -5709,9 +5709,10 @@ do {
     Write-Host ""
     Write-Host "-------------------------------------------------------"
     Write-Host ""
+	
     Write-Host "   [S] Salir del script" -ForegroundColor Red
     Write-Host ""
-
+    Write-Host "   [L] Ver Registro de Actividad (Log)" -ForegroundColor Gray
     $mainChoice = Read-Host "Selecciona una opcion y presiona Enter"
 
     switch ($mainChoice.ToUpper()) {
@@ -5719,6 +5720,17 @@ do {
         '2' { Show-OptimizationMenu }
         '3' { Show-MaintenanceMenu }
         '4' { Show-AdvancedMenu }
+		'L' {
+             $parentDir = Split-Path -Parent $PSScriptRoot
+             $logFile = Join-Path -Path $parentDir -ChildPath "Logs\Registro.log"
+             if (Test-Path $logFile) {
+                 Write-Host "`n[+] Abriendo archivo de registro..." -ForegroundColor Green
+                 Start-Process notepad.exe -ArgumentList $logFile
+             } else {
+                 Write-Warning "El archivo de registro aún no ha sido creado. Realiza alguna acción primero."
+                 Read-Host "`nPresiona Enter para continuar..."
+             }
+        }
         'S' { Write-Host "`nGracias por usar Aegis Phoenix Suite by SOFTMAXTER!" }
         default {
             Write-Host "`n[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
