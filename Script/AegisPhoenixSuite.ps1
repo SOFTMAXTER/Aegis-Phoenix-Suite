@@ -5709,10 +5709,9 @@ do {
     Write-Host ""
     Write-Host "-------------------------------------------------------"
     Write-Host ""
-	
+    Write-Host "   [L] Ver Registro de Actividad (Log)" -ForegroundColor Gray
     Write-Host "   [S] Salir del script" -ForegroundColor Red
     Write-Host ""
-    Write-Host "   [L] Ver Registro de Actividad (Log)" -ForegroundColor Gray
     $mainChoice = Read-Host "Selecciona una opcion y presiona Enter"
 
     switch ($mainChoice.ToUpper()) {
