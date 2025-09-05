@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.6.1
+    4.6.2
 #>
 
-$script:Version = "4.6.1"
+$script:Version = "4.6.2"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -311,7 +311,7 @@ function Manage-SystemServices {
             Write-Host ""
         }
         
-		$selectedCount = $tweaksInCategory.Where({$_.Selected}).Count
+		$selectedCount = $fullServiceList.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
 			Write-Host ""
             Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
@@ -712,7 +712,7 @@ function Get-CleanableSize {
     $totalSize = 0
     foreach ($path in $Paths) {
         if (Test-Path $path) {
-            $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue -File
             if ($null -ne $items) {
                 $size = ($items | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
                 $totalSize += $size
@@ -1686,7 +1686,9 @@ function Show-InventoryMenu {
             $softwareList | Export-Csv -Path $reportPath -NoTypeInformation -Encoding UTF8
             Write-Host "[INFO] El reporte de hardware y discos no se exporta a CSV." -ForegroundColor Yellow
         }
-        default { Write-Warning "Opcion no valida."; return }
+        default {
+			Write-Warning "Opcion no valida.";
+			return }
     }
 
     Write-Host "`n[OK] Reporte generado exitosamente en: '$reportPath'" -ForegroundColor Green
@@ -2351,6 +2353,12 @@ function Invoke-SoftwareSearchAndInstall {
                 $status = if ($results[$i].Selected) { "[X]" } else { "[ ]" }
                 Write-Host "   [$($i+1)] $status $($results[$i].Name) ($($results[$i].Version))" -ForegroundColor White
             }
+			
+			$selectedCount = $results.Where({$_.Selected}).Count
+            if ($selectedCount -gt 0) {
+				Write-Host ""
+                Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
+            }
 
             Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
 			Write-Host ""
@@ -2643,6 +2651,12 @@ function Show-TweakManagerMenu {
                     $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
                 }
                 Write-Host "" 
+            }
+			
+	    		$selectedCount = $tweaksInCategory.Where({$_.Selected}).Count
+                if ($selectedCount -gt 0) {
+		          	Write-Host ""
+                    Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
             }
 
             Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
@@ -3590,7 +3604,7 @@ function Get-CleanableSize {
     $totalSize = 0
     foreach ($path in $Paths) {
         if (Test-Path $path) {
-            $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue -File
             if ($null -ne $items) {
                 $size = ($items | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
                 $totalSize += $size
