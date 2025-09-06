@@ -4,9 +4,9 @@
 $script:SystemTweaks = @(
     # --- Categoria: Rendimiento UI ---
     [PSCustomObject]@{
-        Name           = "Acelerar la Aparicion de Menus"
+        Name           = "Eliminar Retraso Visual de Menus"
         Category       = "Rendimiento UI"
-        Description    = "Reduce el retraso (en ms) al mostrar los menus contextuales del Explorador."
+        Description    = "Hace que los menus del clic derecho aparezcan instantaneamente, eliminando la animacion de desvanecimiento para una sensacion de mayor rapidez."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_CURRENT_USER\Control Panel\Desktop"
         RegistryKey    = "MenuShowDelay"
@@ -27,9 +27,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Session"
 	},
     [PSCustomObject]@{
-        Name           = "Aplicar Configuracion Visual Personalizada (Rendimiento/Calidad)"
+        Name           = "Activar Modo de Maximo Rendimiento Visual"
         Category       = "Rendimiento UI"
-        Description    = "Maxima fluidez, cero distracciones. Establece los valores visuales por defecto del sistema (HKLM) segun una configuracion personalizada."
+        Description    = "Desactiva animaciones, sombras y transparencias para priorizar la fluidez y velocidad del sistema sobre los efectos visuales. Ideal para equipos de bajos recursos o para minimizar distracciones."
         Method         = "Command"
         EnableCommand  = {
             # --- VALORES VERIFICADOS POR EL USUARIO APLICADOS A HKLM ---
@@ -84,9 +84,9 @@ $script:SystemTweaks = @(
 
     # --- Categoria: Rendimiento del Sistema ---
     [PSCustomObject]@{
-        Name           = "Aumentar Prioridad de CPU para Ventana Activa"
+        Name           = "Priorizar Aplicacion en Primer Plano (CPU Boost)"
         Category       = "Rendimiento del Sistema"
-        Description    = "Asigna mas ciclos de CPU a la aplicacion en primer plano, mejorando su respuesta."
+        Description    = "Modifica el planificador de Windows para que la aplicacion que estas usando reciba mas potencia de la CPU, mejorando su capacidad de respuesta."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\PriorityControl"
         RegistryKey    = "Win32PrioritySeparation"
@@ -96,13 +96,13 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Limitacion de Red para Multimedia"
+        Name           = "Liberar 100% del Ancho de Banda de Red"
         Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva la limitacion de red del Programador de Clases Multimedia (MMCSS) para maximizar el rendimiento de todo el trafico de red."
+        Description    = "Desactiva la reserva de ancho de banda que Windows hace para streaming, permitiendo que todas las aplicaciones (juegos, descargas) usen la totalidad de tu conexion."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
         RegistryKey    = "NetworkThrottlingIndex"
-        EnabledValue   = '4294967295' # 4294967295 en DWord
+        EnabledValue   = '4294967295'
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
@@ -128,9 +128,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
-        Name           = "Desactivar VBS (Seguridad Basada en Virtualizacion)"
+        Name           = "Desactivar VBS para Maximo Rendimiento en Juegos"
         Category       = "Rendimiento del Sistema"
-        Description    = "Mejora el rendimiento en juegos y maquinas virtuales. Reduce la seguridad."
+        Description    = "Aumenta los FPS en juegos y el rendimiento en emuladores al desactivar una capa de seguridad por virtualizacion. ADVERTENCIA: Reduce la proteccion del nucleo del sistema."
         Method         = "Command"
         EnableCommand  = { bcdedit /set hypervisorlaunchtype off }
         DisableCommand = { bcdedit /set hypervisorlaunchtype Auto }
@@ -212,7 +212,7 @@ $script:SystemTweaks = @(
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Scan"
         RegistryKey    = "AvgCPULoadFactor"
         EnabledValue   = 25
-        DefaultValue   = 50 # El valor por defecto es 50
+        DefaultValue   = 50
         RegistryType   = "DWord"
         RestartNeeded  = "None"
     },
@@ -253,12 +253,36 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Session"
     },
+	[PSCustomObject]@{
+        Name           = "Reducir Latencia del Sistema (Gaming/Audio)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Ajusta el programador de tareas para que los procesos en segundo plano no interfieran con las aplicaciones en tiempo real, reduciendo el lag en juegos y audio."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+        RegistryKey    = "SystemResponsiveness"
+        EnabledValue   = 10
+        DefaultValue   = 20
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Servicio NDU"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Desactiva el servicio de monitorizacion de red (NDU),"
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Ndu"
+        RegistryKey    = "Start"
+        EnabledValue   = 4
+        DefaultValue   = 2
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
-        Name           = "Activar Proteccion contra Ransomware"
+        Name           = "Habilitar Escudo Anti-Ransomware (Carpetas Protegidas)"
         Category       = "Seguridad"
-        Description    = "Habilita la proteccion de carpetas controladas de Windows Defender."
+        Description    = "Activa la proteccion de Acceso Controlado a Carpetas de Windows Defender, impidiendo que aplicaciones no autorizadas modifiquen tus archivos personales."
         Method         = "Command"
         EnableCommand  = {
 			if ((Get-Service -Name "WinDefend" -ErrorAction SilentlyContinue).Status -ne 'Running')
@@ -298,21 +322,34 @@ $script:SystemTweaks = @(
         Description    = "Desactiva el antiguo motor de PowerShell v2.0 para reducir la superficie de ataque."
         Method         = "Command"
         EnableCommand  = {
-			Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart;
-			Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart
-			}
+            # --- CÓDIGO CORREGIDO ---
+            # Se añade un bloque try/catch para manejar el error si la característica no existe.
+            try {
+                Disable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -NoRestart -ErrorAction Stop
+                Disable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "No se pudo deshabilitar PowerShell v2.0. Es muy probable que esta característica ya no exista en tu versión de Windows, lo cual es bueno para la seguridad."
+            }
+        }
         DisableCommand = {
-			Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -NoRestart;
-			Enable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root -NoRestart
-			}
+            # --- CÓDIGO CORREGIDO ---
+            # Se aplica la misma lógica para el comando de reactivación.
+            try {
+                Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -NoRestart -ErrorAction Stop
+                Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "No se pudo habilitar PowerShell v2.0. Es probable que esta característica no esté disponible en tu versión de Windows."
+            }
+        }
         CheckCommand   = {
 			try {
 				$feature = Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -ErrorAction Stop;
 				return ($feature.State -eq 'Disabled')
 				} catch {
-					return 'NotApplicable'
+					return 'NotApplicable' }
 					}
-				}
         RestartNeeded  = "Reboot"
     },
     [PSCustomObject]@{
@@ -328,9 +365,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
-        Name           = "Evitar que la pantalla se oscurezca en avisos UAC"
+        Name           = "Desactivar Escritorio Seguro en Avisos UAC"
         Category       = "Seguridad"
-        Description    = "Desactiva el 'Escritorio Seguro' para que el cuadro de dialogo de administrador (UAC) aparezca sin atenuar el fondo."
+        Description    = "Los avisos de administrador (UAC) apareceran sobre tu escritorio actual sin atenuar la pantalla. Acelera el proceso pero reduce el aislamiento de seguridad del aviso."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         RegistryKey    = "PromptOnSecureDesktop"
@@ -461,9 +498,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Telemetria Extensiva (Tareas y Servicios)"
+        Name           = "Desactivar Recopilacion de Datos de Microsoft"
         Category       = "Privacidad y Telemetria"
-        Description    = "Desactiva multiples tareas programadas y servicios relacionados con la recopilacion de datos y telemetria."
+        Description    = "Deshabilita el servicio 'DiagTrack' y las tareas del 'Programa para la mejora de la experiencia del cliente' para minimizar el envío de datos de uso a Microsoft."
         Method         = "Command"
         EnableCommand  = {
             Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Disable-ScheduledTask
@@ -539,6 +576,18 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "None"
     },
+    [PSCustomObject]@{
+        Name           = "Bloquear Ejecucion de Apps en Segundo Plano"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Aplica una directiva de sistema que impide que las aplicaciones de la Tienda se ejecuten en segundo plano, ahorrando batería y recursos. (Mas efectivo en W10)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy"
+        RegistryKey    = "LetAppsRunInBackground"
+        EnabledValue   = 2
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Session"
+    },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
@@ -553,9 +602,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "None"
     },
     [PSCustomObject]@{
-        Name           = "Habilitar Menu Contextual Clasico (Estilo Win10)"
+        Name           = "Restaurar Menu Contextual Completo (Anti Mostrar mas)"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Reemplaza el menu contextual de Windows 11 por el clasico mas completo."
+        Description    = "En Windows 11, reemplaza el menu contextual simplificado, mostrando siempre el menu clasico con todas las opciones directamente, sin necesidad de un clic extra."
         Method         = "Command"
         EnableCommand  = {
 			$regPath = 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32';
@@ -566,9 +615,9 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Busqueda con Bing en el Menu Inicio (Directiva)"
+        Name           = "Convertir Busqueda de Inicio en 100% Local"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Evita que las busquedas en el menu de inicio muestren resultados web de Bing."
+        Description    = "Elimina por completo las sugerencias y resultados web de Bing del menu de inicio, haciendo que la busqueda se centre unicamente en tus archivos y aplicaciones locales."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer"
         RegistryKey    = "DisableSearchBoxSuggestions"
