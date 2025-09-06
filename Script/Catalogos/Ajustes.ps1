@@ -322,25 +322,21 @@ $script:SystemTweaks = @(
         Description    = "Desactiva el antiguo motor de PowerShell v2.0 para reducir la superficie de ataque."
         Method         = "Command"
         EnableCommand  = {
-            # --- CÓDIGO CORREGIDO ---
-            # Se añade un bloque try/catch para manejar el error si la característica no existe.
             try {
                 Disable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -NoRestart -ErrorAction Stop
                 Disable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
             }
             catch {
-                Write-Warning "No se pudo deshabilitar PowerShell v2.0. Es muy probable que esta característica ya no exista en tu versión de Windows, lo cual es bueno para la seguridad."
+                Write-Warning "No se pudo deshabilitar PowerShell v2.0. Es muy probable que esta característica ya no exista en tu version de Windows, lo cual es bueno para la seguridad."
             }
         }
         DisableCommand = {
-            # --- CÓDIGO CORREGIDO ---
-            # Se aplica la misma lógica para el comando de reactivación.
             try {
                 Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -NoRestart -ErrorAction Stop
                 Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
             }
             catch {
-                Write-Warning "No se pudo habilitar PowerShell v2.0. Es probable que esta característica no esté disponible en tu versión de Windows."
+                Write-Warning "No se pudo habilitar PowerShell v2.0. Es probable que esta característica no esté disponible en tu version de Windows."
             }
         }
         CheckCommand   = {
