@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.6.2
+    4.6.3
 #>
 
-$script:Version = "4.6.2"
+$script:Version = "4.6.3"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -2680,7 +2680,7 @@ function Show-TweakManagerMenu {
                 if ($selectedTweaks.Count -eq 0) {
                     Write-Warning "No has seleccionado ningun ajuste."
                 } else {
-                    Write-Host "`n[+] Se aplicarán los siguientes cambios:" -ForegroundColor Cyan
+                    Write-Host "`n[+] Se aplicaran los siguientes cambios:" -ForegroundColor Cyan
                     foreach ($tweak in $selectedTweaks) {
                         $currentState = Get-TweakState -Tweak $tweak
                         if ($currentState -ne 'NotApplicable') {
@@ -2692,9 +2692,9 @@ function Show-TweakManagerMenu {
                         }
                     }
 
-                    $confirmation = Read-Host "`n¿Estás seguro de que deseas continuar? (S/N)"
+                    $confirmation = Read-Host "`n¿Estas seguro de que deseas continuar? (S/N)"
                     if ($confirmation.ToUpper() -ne 'S') {
-                        Write-Host "[INFO] Operación cancelada por el usuario." -ForegroundColor Yellow
+                        Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
                         Start-Sleep -Seconds 2
                         continue # Vuelve al inicio del bucle sin aplicar cambios
                     }
@@ -2702,7 +2702,7 @@ function Show-TweakManagerMenu {
                     foreach ($tweakToToggle in $selectedTweaks) {
                         $currentState = Get-TweakState -Tweak $tweakToToggle
                         if ($currentState -eq 'NotApplicable') {
-                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitirá."
+                            Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitira."
                             continue
                         }
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
