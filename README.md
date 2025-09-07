@@ -104,6 +104,7 @@ Este menú da acceso a todos los módulos de nivel experto.
 * `1. Buscar y aplicar actualizaciones`: Busca paquetes desactualizados en todos los motores disponibles, presenta una lista interactiva unificada y permite al usuario seleccionar qué aplicaciones actualizar.
 * `2. Buscar e Instalar un software específico`: Permite buscar un programa en el catálogo del motor activo y seleccionarlo de una lista para instalarlo directamente.
 * `3. Instalar software en masa`: Lee un archivo de texto con IDs de paquetes y ejecuta el comando de instalación del motor seleccionado para cada uno.
+* Alternativa recomendada: <a href="https://github.com/marticliment/UniGetUI" target="_blank">UniGetUI</a>
 
 #### → Administración de Sistema
 * Abre un submenú con herramientas administrativas.
