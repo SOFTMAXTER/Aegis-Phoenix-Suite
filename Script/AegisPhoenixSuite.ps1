@@ -24,7 +24,8 @@ function Invoke-FullRepoUpdater {
 
     Write-Host "Comprobando actualizaciones de la suite completa..." -ForegroundColor Gray
     if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
-        Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow; Start-Sleep -Seconds 1; return
+        Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow; Start-Sleep -Seconds 1
+		return
     }
     try {
         $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"}).Content.Trim()
@@ -81,9 +82,15 @@ catch {
                 $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`""
                 Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Hidden
                 exit
-            } else { Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1 }
-        } else { Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green; Start-Sleep -Seconds 1 }
-    } catch { Write-Warning "No se pudo verificar la version remota." }
+            } else { Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow
+			Start-Sleep -Seconds 1
+			}
+        } else { Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green
+		Start-Sleep -Seconds 1
+		}
+    } catch {
+		Write-Warning "No se pudo verificar la version remota."
+	}
 }
 
 # Ejecutar el actualizador DESPUES de definir la version
@@ -453,25 +460,20 @@ function Manage-ThirdPartyServices {
     }
 
     # Cargar o crear el backup de estados originales
+    $originalStates = @{} # Inicializar como hashtable vacia por defecto
+
     if (Test-Path $backupFile) {
         Write-Host "Cargando estados originales desde el archivo de respaldo..." -ForegroundColor Gray
         try {
-            # Verificar que el archivo no este vacio
-            if ((Get-Item $backupFile).Length -eq 0) {
-                throw "El archivo de respaldo esta vacio."
-            }
-            
-            # Leer y validar el contenido JSON
             $fileContent = Get-Content -Path $backupFile -Raw -ErrorAction Stop
+            
             if ([string]::IsNullOrWhiteSpace($fileContent)) {
-                throw "El archivo de respaldo esta vacio o contiene solo espacios en blanco."
+                throw [System.IO.InvalidDataException]::new("El archivo de respaldo esta vacio o no contiene datos validos.")
             }
             
-            # Convertir desde JSON (compatible con PowerShell 5.1)
             $jsonObject = $fileContent | ConvertFrom-Json -ErrorAction Stop
             
             # Convertir el objeto PSCustomObject a Hashtable manualmente
-            $originalStates = @{}
             foreach ($property in $jsonObject.PSObject.Properties) {
                 $originalStates[$property.Name] = @{
                     StartupType = $property.Value.StartupType
@@ -482,38 +484,34 @@ function Manage-ThirdPartyServices {
             }
             
             Write-Host "Respaldo cargado correctamente desde: $backupFile" -ForegroundColor Green
-            
-            # Actualizar automaticamente el backup con servicios nuevos
             $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
-            
-        } catch {
-            Write-Host "Error al cargar el archivo de respaldo: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "Creando un nuevo respaldo..." -ForegroundColor Yellow
-            
-            # Crear un nuevo backup
-            $originalStates = @{}
-            $services = Get-ThirdPartyServices
-            foreach ($service in $services) {
-                $originalStates[$service.Name] = @{
-                    StartupType = $service.StartMode
-                    DisplayName = $service.DisplayName
-                    Description = $service.Description
-                    AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                }
-            }
-            
-            try {
-                $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
-                Write-Host "Nuevo respaldo creado en: $backupFile" -ForegroundColor Green
-            } catch {
-                Write-Host "Error critico: No se pudo crear el respaldo. Error: $($_.Exception.Message)" -ForegroundColor Red
-                # Continuar con una hashtable vacia para evitar mas errores
-                $originalStates = @{}
-            }
         }
-    } else {
+        catch [System.Text.Json.JsonException], [System.ArgumentException] {
+            Write-Error "El archivo de respaldo '$backupFile' parece estar corrupto (JSON no valido)."
+            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Archivo JSON corrupto. Error: $($_.Exception.Message)"
+            # (Aqui iria la logica para recrear el respaldo)
+        }
+        catch [System.IO.InvalidDataException] {
+            Write-Error "El archivo de respaldo '$backupFile' esta vacio."
+            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Archivo vacio. Error: $($_.Exception.Message)"
+            # (Aqui iria la logica para recrear el respaldo)
+        }
+        catch [System.IO.IOException] {
+            Write-Error "No se pudo leer el archivo de respaldo '$backupFile'. Verifique los permisos o si otro programa lo esta usando."
+            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Error de I/O. Error: $($_.Exception.Message)"
+            Read-Host "Presiona Enter para continuar sin usar el respaldo..."
+            # Se mantiene la hashtable vacia
+        }
+        catch {
+            Write-Error "Ocurrio un error inesperado al cargar el archivo de respaldo."
+            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Error inesperado. Error: $($_.Exception.Message)"
+            # (Aqui iria la logica para recrear el respaldo como fallback)
+        }
+    } 
+
+    # Si despues de todo, la tabla esta vacia, es porque no existia o fallo la carga. La creamos.
+    if ($originalStates.Keys.Count -eq 0) {
         Write-Host "Creando respaldo de estados originales de servicios de terceros..." -ForegroundColor Gray
-        $originalStates = @{}
         $services = Get-ThirdPartyServices
         foreach ($service in $services) {
             $originalStates[$service.Name] = @{
@@ -527,9 +525,7 @@ function Manage-ThirdPartyServices {
             $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
             Write-Host "Respaldo guardado en: $backupFile" -ForegroundColor Green
         } catch {
-            Write-Host "Error al guardar el respaldo: $($_.Exception.Message)" -ForegroundColor Red
-            # Continuar con una hashtable vacia para evitar mas errores
-            $originalStates = @{}
+            Write-Error "Error al guardar el respaldo: $($_.Exception.Message)"
         }
     }
 
