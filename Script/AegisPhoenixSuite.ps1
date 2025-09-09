@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.6.3
+    4.6.4
 #>
 
-$script:Version = "4.6.3"
+$script:Version = "4.6.4"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -21,15 +21,13 @@ function Invoke-FullRepoUpdater {
     $repoUser = "SOFTMAXTER"; $repoName = "Aegis-Phoenix-Suite"; $repoBranch = "main"
     $versionUrl = "https://raw.githubusercontent.com/$repoUser/$repoName/$repoBranch/version.txt"
     $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
-
-    Write-Host "Comprobando actualizaciones de la suite completa..." -ForegroundColor Gray
-    if (-not (Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet)) {
-        Write-Host "   -> Sin conexion a internet. Omitiendo la comprobacion." -ForegroundColor Yellow; Start-Sleep -Seconds 1
-		return
-    }
+    
     try {
+        # Se intenta la operación de red con un timeout corto para no retrasar el script si no hay conexión.
         $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"}).Content.Trim()
+
         if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
+            # Solo si se encuentra una actualización, se le notifica al usuario.
             Write-Host "¡Nueva version encontrada! Local: v$($script:Version) | Remota: v$remoteVersionStr" -ForegroundColor Green
             $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
             if ($confirmation.ToUpper() -eq 'S') {
@@ -62,7 +60,6 @@ try {
     if (`$null -ne `$itemsToRemove) { Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force }
 
     Write-Host "[PASO 4/5] Instalando nuevos archivos..." -ForegroundColor Yellow
-    # Usamos Move-Item para mayor eficiencia
     Move-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Force
     Get-ChildItem -Path "$installPath" -Recurse | Unblock-File
 
@@ -82,15 +79,15 @@ catch {
                 $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`""
                 Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Hidden
                 exit
-            } else { Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow
-			Start-Sleep -Seconds 1
-			}
-        } else { Write-Host "   -> La suite ya esta en su ultima version (v$($script:Version))." -ForegroundColor Green
-		Start-Sleep -Seconds 1
-		}
-    } catch {
-		Write-Warning "No se pudo verificar la version remota."
-	}
+            } else {
+				Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1
+        	}
+        } 
+    }
+    catch {
+		
+        return
+    }
 }
 
 # Ejecutar el actualizador DESPUES de definir la version
