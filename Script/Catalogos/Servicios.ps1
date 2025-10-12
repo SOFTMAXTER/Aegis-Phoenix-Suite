@@ -69,6 +69,24 @@ $script:ServiceCatalog = @(
         Category           = "Estandar"
         DefaultStartupType = "Automatic"
     },
+	[PSCustomObject]@{
+        Name               = "fhsvc"
+        Description        = "Servicio de Historial de Archivos. Innecesario si usas otro software de backup o no lo utilizas."
+        Category           = "Estandar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "TrkWks"
+        Description        = "Mantiene los accesos directos a archivos que se mueven en unidades NTFS. Bajo impacto, seguro de desactivar."
+        Category           = "Estandar"
+        DefaultStartupType = "Automatic"
+    },
+    [PSCustomObject]@{
+        Name               = "RetailDemo"
+        Description        = "Ejecuta una demo del sistema operativo para equipos de exhibicion en tiendas. Inutil para usuarios finales."
+        Category           = "Estandar"
+        DefaultStartupType = "Manual"
+    },
     # Categoria: Avanzado/Opcional (Servicios para funciones especificas)
     [PSCustomObject]@{
         Name               = "TermService"
@@ -100,5 +118,48 @@ $script:ServiceCatalog = @(
         Description        = "Servicio de Archivos sin conexion, para acceder a archivos de red localmente. Innecesario para usuarios domesticos."
         Category           = "Avanzado"
         DefaultStartupType = "Automatic"
-	}
+	},
+	 [PSCustomObject]@{
+        Name               = "StiSvc"
+        Description        = "Servicio de Adquisicion de Imagenes de Windows (WIA). Necesario para escaneres y camaras antiguas."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "SSDPSRV"
+        Description        = "Descubre dispositivos en la red local (servidores multimedia, impresoras). Innecesario si no se comparte multimedia."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "upnphost"
+        Description        = "Permite alojar dispositivos UPnP en la red. Similar a SSDPSRV, innecesario si no se comparte en red."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
+    # Categoria: Opcional
+    [PSCustomObject]@{
+        Name               = "XblAuthManager"
+        Description        = "Servicio de autenticacion de Xbox Live. Desactivar si no se usan juegos de la Store o la Game Bar."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "XblGameSave"
+        Description        = "Servicio para guardar partidas de juegos de Xbox Live en la nube. Innecesario si no se usa esta funcion."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "XboxGipSvc"
+        Description        = "Servicio de gestion de accesorios de Xbox. Innecesario si no se conectan perifericos de Xbox al PC."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "XboxNetApiSvc"
+        Description        = "Servicio de red de Xbox Live. Desactivar si no se usan las funciones online de la plataforma Xbox."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+    }
 )
