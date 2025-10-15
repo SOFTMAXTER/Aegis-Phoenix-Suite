@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v4.6 by SOFTMAXTER
+# Aegis Phoenix Suite v4.6.5 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -13,6 +13,7 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 * **Interfaz Modular Guiada por Menús**: Todas las funciones están organizadas en categorías y submenús claros para una navegación intuitiva.
 * **Módulo de Auto-Actualización**: Comprueba si hay una nueva versión en el repositorio oficial de GitHub al iniciar y ofrece descargarla e instalarla automáticamente.
 * **Autoelevación de Privilegios**: El script verifica si se está ejecutando como Administrador y, de no ser así, solicita al usuario que lo reinicie con los permisos necesarios.
+* **Registro Completo de Actividad**: Todas las acciones realizadas por el usuario se guardan en un archivo de registro (`Logs/Registro.log`) para una fácil auditoría y depuración.
 * **Gestor de Ajustes Dinámico**: Un catálogo centralizado de ajustes de Rendimiento, Seguridad, Privacidad y UI permite que los menús se generen dinámicamente, mostrando el estado **[Activado]** o **[Desactivado]** de cada opción en tiempo real.
 * **Reversibilidad Individual**: Cada ajuste del sistema puede ser activado o desactivado de forma individual, eliminando la necesidad de una restauración global.
 * **Gestor de Software Multi-Motor**: Integra `Winget` y `Chocolatey`, permitiendo al usuario cambiar de motor para buscar, instalar y actualizar software, maximizando la cobertura de paquetes.
@@ -20,6 +21,8 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 * **Detección Dinámica de Bloatware**: Escanea el sistema en tiempo real para encontrar aplicaciones de Microsoft, del fabricante y del usuario, presentando listas seguras y personalizadas para su eliminación.
 * **Limpieza Profunda Post-Desinstalación**: Después de eliminar bloatware, ofrece buscar y eliminar carpetas de datos de usuario sobrantes para una limpieza completa.
 * **Gestión de Inicio Nativa**: Administra los programas de inicio utilizando el mismo mecanismo que el Administrador de Tareas de Windows para una compatibilidad total.
+* **Diagnóstico de Salud de Discos (S.M.A.R.T.)**: Los reportes de inventario incluyen el estado de salud de los discos físicos para detectar fallos de hardware a tiempo.
+* **Módulos de Diagnóstico y Respaldo Avanzados**: Incluye herramientas profesionales para el diagnóstico de red, análisis de registros de eventos y respaldo de datos de usuario con `Robocopy`.
 
 ---
 
@@ -62,6 +65,7 @@ Al iniciar, se presentan las categorías principales de la suite.
 * **2. Módulo de Optimizacion y Limpieza**: Accede al submenú con herramientas para mejorar el rendimiento y liberar espacio en disco.
 * **3. Módulo de Mantenimiento y Reparación**: Contiene utilidades para diagnosticar y reparar problemas del sistema operativo.
 * **4. Herramientas Avanzadas**: Abre un menú que agrupa todos los módulos de nivel experto.
+* **L. Ver Registro de Actividad (Log)**: Abre el archivo `Registro.log` con el historial completo de las acciones realizadas en la suite.
 
 ### 2. Módulo de Optimización y Limpieza
 
@@ -78,6 +82,7 @@ Al iniciar, se presentan las categorías principales de la suite.
 * `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C` para realizar desfragmentación (HDD) o TRIM (SSD) de forma segura.
 * `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML que diagnostica problemas de consumo de energía y batería.
 * `5. Purgar Memoria RAM en Cache`: Libera la memoria marcada como "En espera" (Standby List). Útil para escenarios específicos como benchmarks o antes de ejecutar aplicaciones de alto consumo.
+* `6. Diagnostico y Reparacion de Red`: Abre un submenú completo para diagnosticar problemas de conexión, incluyendo `ping`, `tracert`, `nslookup` y herramientas de reparación para limpiar la caché de DNS, renovar la IP y restablecer la pila de red (TCP/IP y Winsock).
 
 ### 4. Herramientas Avanzadas
 
@@ -91,7 +96,7 @@ Este menú da acceso a todos los módulos de nivel experto.
 
 #### → Inventario y Reportes del Sistema
 * Genera un reporte de inventario de hardware y software en diferentes formatos (`.txt`, `.html` o `.csv` para software) dentro de una carpeta `Reportes`.
-* El informe incluye información clave como el modelo del sistema, versión de Windows, procesador, memoria física y software instalado.
+* El informe incluye información clave como modelo del sistema, versión de Windows, procesador, memoria, software instalado y el **estado de salud de los discos físicos (S.M.A.R.T.)**.
 
 #### → Gestión de Drivers
 * Abre un módulo interactivo para la administración de drivers de Windows.
@@ -109,7 +114,16 @@ Este menú da acceso a todos los módulos de nivel experto.
 #### → Administración de Sistema
 * Abre un submenú con herramientas administrativas.
 * **Limpiar Registros de Eventos de Windows**: Permite borrar los registros de eventos principales (Aplicación, Seguridad, Sistema, Instalación).
-* **Gestionar Taras Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar tareas programadas que no pertenecen al núcleo del sistema operativo.
+* **Gestionar Tareas Programadas de Terceros**: Presenta un gestor interactivo para listar, habilitar o deshabilitar tareas programadas que no pertenecen al núcleo del sistema operativo.
+
+#### → Analizador Rápido de Registros de Eventos
+* Genera reportes HTML interactivos de los eventos más importantes del sistema.
+* Permite generar un reporte completo (errores críticos, de sistema, de aplicación) o buscar eventos por un origen específico (ej. "Disk", "nvlddmkm") para diagnosticar problemas concretos.
+
+#### → Herramienta de Respaldo de Datos de Usuario (Robocopy)
+* Utiliza la robusta herramienta `Robocopy` para crear respaldos de archivos personales.
+* Ofrece un modo de respaldo simple (copiar/actualizar) y un modo de sincronización completa (espejo).
+* Permite respaldar las carpetas de perfil de usuario (Escritorio, Documentos, etc.) o seleccionar una carpeta/archivo personalizado a través de un diálogo gráfico.
 
 ---
 
