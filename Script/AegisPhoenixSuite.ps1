@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.6.5
+    4.7.0
 #>
 
-$script:Version = "4.6.5"
+$script:Version = "4.7.0"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -23,11 +23,11 @@ function Invoke-FullRepoUpdater {
     $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
     
     try {
-        # Se intenta la operación de red con un timeout corto para no retrasar el script si no hay conexión.
+        # Se intenta la operacion de red con un timeout corto para no retrasar el script si no hay conexion.
         $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"}).Content.Trim()
 
         if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
-            # Solo si se encuentra una actualización, se le notifica al usuario.
+            # Solo si se encuentra una actualizacion, se le notifica al usuario.
             Write-Host "¡Nueva version encontrada! Local: v$($script:Version) | Remota: v$remoteVersionStr" -ForegroundColor Green
             $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
             if ($confirmation.ToUpper() -eq 'S') {
@@ -195,17 +195,74 @@ function Format-WrappedText {
 # --- FUNCIONES DE ACCION (Las herramientas que hacen el trabajo) ---
 
 function Create-RestorePoint {
-    Write-Host "`n[+] Creando un punto de restauracion del sistema..." -ForegroundColor Yellow
-	Write-Log -LogLevel INFO -Message "Intentando crear un punto de restauracion del sistema."
+    # 1. Verificamos y aseguramos que la Proteccion del Sistema este habilitada en C:
     try {
-        Checkpoint-Computer -Description "AegisPhoenixSuite_v$($script:Version)_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" -RestorePointType "MODIFY_SETTINGS"
+        Write-Host "[INFO] Verificando el estado de la Proteccion del Sistema en la unidad C:..." -ForegroundColor Gray
+        Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+    } catch {
+        Write-Error "No se pudo habilitar la Proteccion del Sistema en la unidad C:. Esta funcion es necesaria para crear puntos de restauracion."
+        Write-Error "Por favor, habilitala manualmente desde 'Propiedades del Sistema > Proteccion del Sistema'. Error: $($_.Exception.Message)"
+        Read-Host "`nOcurrio un error. Presiona Enter para continuar..."
+        return
+    }
+
+    # 2. Gestionamos el servicio VSS
+    $vssService = Get-Service -Name VSS -ErrorAction SilentlyContinue
+    if (-not $vssService) {
+        Write-Error "El servicio 'Volume Shadow Copy' (VSS) no se encuentra en este sistema."
+        Read-Host "`nPresiona Enter para continuar..."
+        return
+    }
+
+    $originalStartupType = $vssService.StartupType
+    $originalStatus = $vssService.Status
+    
+    try {
+        $serviceNeedsChange = $false
+        if ($originalStartupType -eq 'Disabled') {
+            $serviceNeedsChange = $true
+            Write-Host "[INFO] El servicio VSS esta deshabilitado. Habilitandolo temporalmente..." -ForegroundColor Gray
+            Set-Service -Name VSS -StartupType Manual
+        }
+        
+        if ((Get-Service VSS).Status -eq 'Stopped') {
+            $serviceNeedsChange = $true
+            Write-Host "[INFO] Iniciando el servicio VSS..." -ForegroundColor Gray
+            Start-Service -Name VSS -ErrorAction Stop
+        }
+
+        # 3. Creamos el punto de restauracion
+        Write-Host "[+] Creando punto de restauracion. Esto puede tardar unos minutos..." -ForegroundColor Yellow
+        Checkpoint-Computer -Description "Aegis Phoenix Suite v$($script:Version)" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
+        
         Write-Host "[OK] Punto de restauracion creado exitosamente." -ForegroundColor Green
-		Write-Log -LogLevel ACTION -Message "Punto de restauracion creado exitosamente."
-		} catch {
-			Write-Error "No se pudo crear el punto de restauracion. Error: $_"
-			Write-Log -LogLevel ERROR -Message "Fallo la creacion del punto de restauracion. Motivo: $_"
-		}
-		Read-Host "`nPresiona Enter para volver..."
+        Write-Log -LogLevel ACTION -Message "SISTEMA: Se creo un punto de restauracion."
+
+    } catch {
+        Write-Error "Fallo la creacion del punto de restauracion. Error: $($_.Exception.Message)"
+        Write-Log -LogLevel ERROR -Message "SISTEMA: Fallo la creacion del punto de restauracion. Error: $($_.Exception.Message)"
+        # La pausa en caso de error ya existe y es correcta.
+        Read-Host "`nOcurrio un error. Presiona Enter para continuar..."
+    } finally {
+        # 4. Restauramos el estado original del servicio
+        if ($serviceNeedsChange) {
+            Write-Host "[INFO] Restaurando el estado original del servicio VSS..." -ForegroundColor Gray
+            
+            try {
+                Set-Service -Name VSS -StartupType $originalStartupType -ErrorAction SilentlyContinue
+                if ($originalStatus -eq 'Stopped' -and (Get-Service VSS).Status -eq 'Running') {
+                    Stop-Service -Name VSS -ErrorAction SilentlyContinue
+                }
+                Write-Host "[OK] Estado del servicio VSS restaurado." -ForegroundColor Green
+            } catch {
+                Write-Error "Fallo al restaurar el estado original del servicio VSS. Por favor, revisalo manualmente. Error: $($_.Exception.Message)"
+                Read-Host "`nOcurrio un error al restaurar el servicio. Presiona Enter para continuar..."
+            }
+        }
+    }
+
+    # --- NUEVO: Anadimos una pausa final antes de volver al menu ---
+    Read-Host "`nProceso finalizado. Presiona Enter para volver al menu principal..."
 }
 
 function Invoke-ExplorerRestart {
@@ -715,6 +772,7 @@ function Invoke-AdvancedSystemClean {
     param()
 	Write-Log -LogLevel INFO -Message "Usuario inicio la Limpieza Avanzada de Componentes de Windows."
     Write-Host "`n[+] Iniciando Limpieza Avanzada de Componentes del Sistema..." -ForegroundColor Cyan
+	Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Avanzada del Sistema."; Invoke-AdvancedSystemClean
     Write-Warning "Esta operacion eliminara archivos de instalaciones anteriores de Windows (Windows.old) y restos de actualizaciones."
     Write-Warning "Despues de esta limpieza, NO podras volver a la version anterior de Windows."
     if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
@@ -742,8 +800,9 @@ function Invoke-AdvancedSystemClean {
     }
 }
 
-# --- FUNCIoN DE MENu PRINCIPAL (ACTUALIZADA Y CORREGIDA) ---
+# --- FUNCIoN DE MENu PRINCIPAL ---
 function Show-CleaningMenu {
+	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Limpieza."
     # Funcion auxiliar para medir y limpiar rutas de forma segura.
     function Invoke-SafeClean {
         param(
@@ -848,21 +907,21 @@ function Show-CleaningMenu {
 			
             '1' { 
                 $freed = Invoke-SafeClean -Paths $tempPaths -Description "Archivos Temporales y Dumps de Errores"
+				Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Segura."; Invoke-SafeClean
                 $totalFreed += $freed
             }
             '2' {
                 $freed = Invoke-SafeClean -Paths $cachePaths -Description "Caches de Sistema y Drivers"
+				Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Profunda."; Invoke-DeepClean
                 $totalFreed += $freed
                 # Limpieza de miniaturas no devuelve tamaño, pero se ejecuta
                 Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue; try { Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction Stop; Write-Host "[OK] Cache de miniaturas limpiada." -ForegroundColor Green } catch { Write-Warning "No se pudo limpiar la cache de miniaturas." } finally { Start-Process "explorer" }
             }
             '3' {
-                # --- CORRECCIoN: Se usa el conteo de items como condicion principal ---
                 if ($recycleBinItemCount -gt 0) {
                     Write-Host "[+] Vaciando la Papelera de Reciclaje..."
                     Clear-RecycleBin -Force -Confirm:$false -ErrorAction SilentlyContinue
                     Start-Sleep -Seconds 1 # Pequeña pausa
-                    # Se informa el tamaño pre-calculado como liberado, ya que el comando se ejecuto
                     $totalFreed += $recycleBinSize 
                     Write-Host "[OK] Operacion de vaciado completada." -ForegroundColor Green
 					Write-Log -LogLevel ACTION -Message "Papelera de Reciclaje vaciada exitosamente."
@@ -903,6 +962,7 @@ function Show-CleaningMenu {
 }
 
 function Show-BloatwareMenu {
+	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Bloatware."
     $bloatwareChoice = ''
     do {
         Clear-Host
@@ -1615,7 +1675,693 @@ function Generate-SystemReport {
 }
 
 # ===================================================================
-# --- INICIO DEL MÓDULO DE INVENTARIO PROFESIONAL ---
+# --- INICIO DEL MoDULO DE DIAGNoSTICO Y REPARACIoN DE RED (REFACTORIZADO) ---
+# ===================================================================
+
+# --- Funciones de Accion (Herramientas del modulo) ---
+
+function Invoke-ShowIpConfig {
+    [CmdletBinding()]
+    param()
+    
+    try {
+        Write-Host "`n[+] Mostrando configuracion de red detallada (ipconfig /all)..." -ForegroundColor Cyan
+        ipconfig.exe /all
+    }
+    catch {
+        Write-Error "No se pudo obtener la configuracion de red. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-PingTest {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Write-Host "`n[+] Realizando prueba de conectividad a Internet (8.8.8.8)..." -ForegroundColor Cyan
+        Test-NetConnection -ComputerName "8.8.8.8" -WarningAction SilentlyContinue
+    }
+    catch {
+    Write-Error "La prueba de conexion fallo. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-DnsResolutionTest {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Write-Host "`n[+] Realizando prueba de resolucion de nombres de dominio (google.com)..." -ForegroundColor Cyan
+        Resolve-DnsName -Name "google.com" -ErrorAction Stop | Format-Table
+    }
+    catch {
+        Write-Error "No se pudo resolver el nombre de dominio. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-TraceRoute {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Write-Host "`n[+] Trazando la ruta de red hacia 8.8.8.8 (puede tardar un momento)..." -ForegroundColor Cyan
+        Test-NetConnection -ComputerName "8.8.8.8" -TraceRoute -WarningAction Stop
+    }
+    catch {
+        Write-Error "El trazado de ruta fallo. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-FlushDnsCache {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Write-Host "`n[+] Limpiando la cache de resolucion de DNS..." -ForegroundColor Cyan
+        Clear-DnsClientCache
+        Write-Host "[OK] Cache de DNS limpiada exitosamente." -ForegroundColor Green
+    }
+    catch {
+        Write-Error "No se pudo limpiar la cache de DNS. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-RenewIpAddress {
+    [CmdletBinding()]
+    param()
+    
+    try {
+        Write-Host "`n[+] Liberando y renovando la direccion IP..." -ForegroundColor Cyan
+        Write-Host " - Liberando IP actual (ipconfig /release)..." -ForegroundColor Gray
+        ipconfig.exe /release | Out-Null
+        Write-Host " - Solicitando nueva IP (ipconfig /renew)..." -ForegroundColor Gray
+        ipconfig.exe /renew | Out-Null
+        Write-Host "[OK] Proceso de renovacion de IP completado." -ForegroundColor Green
+    }
+    catch {
+        Write-Error "No se pudo renovar la direccion IP. Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ResetNetworkStacks {
+    [CmdletBinding()]
+    param()
+    
+    try {
+        Write-Warning "¡ADVERTENCIA! Esta accion requiere reiniciar el equipo para completarse."
+        Write-Host "`n[+] Restableciendo la Pila de Red (Winsock y TCP/IP)..." -ForegroundColor Red
+        Write-Host " - Restableciendo el catalogo de Winsock..." -ForegroundColor Gray
+        netsh.exe winsock reset | Out-Null
+        Write-Host " - Restableciendo la pila TCP/IP..." -ForegroundColor Gray
+        netsh.exe int ip reset | Out-Null
+        Write-Host "[OK] Pila de red restablecida. Por favor, reinicia tu equipo para aplicar los cambios." -ForegroundColor Green
+    }
+    catch {
+        Write-Error "No se pudo restablecer la pila de red. Error: $($_.Exception.Message)"
+    }
+}
+
+# --- Funcion Principal del Menu (Controlador del modulo) ---
+
+function Show-NetworkDiagnosticsMenu {
+    # Menu definido como un array de objetos para mayor flexibilidad y mantenibilidad.
+    $menuItems = @(
+        [PSCustomObject]@{
+            Text   = "Ver configuracion IP detallada (ipconfig /all)"
+            Type   = "Diagnostico"
+            Action = { Invoke-ShowIpConfig }
+            NeedsConfirmation = $false
+        },
+        [PSCustomObject]@{
+            Text   = "Probar conectividad a Internet (ping)"
+            Type   = "Diagnostico"
+            Action = { Invoke-PingTest }
+            NeedsConfirmation = $false
+        },
+        [PSCustomObject]@{
+            Text   = "Probar resolucion de DNS (nslookup)"
+            Type   = "Diagnostico"
+            Action = { Invoke-DnsResolutionTest }
+            NeedsConfirmation = $false
+        },
+        [PSCustomObject]@{
+            Text   = "Trazar ruta de red (tracert)"
+            Type   = "Diagnostico"
+            Action = { Invoke-TraceRoute }
+            NeedsConfirmation = $false
+        },
+        [PSCustomObject]@{
+            Text   = "Limpiar cache de DNS"
+            Type   = "Reparacion"
+            Action = { Invoke-FlushDnsCache }
+            NeedsConfirmation = $true
+        },
+        [PSCustomObject]@{
+            Text   = "Renovar concesion de IP"
+            Type   = "Reparacion"
+            Action = { Invoke-RenewIpAddress }
+            NeedsConfirmation = $true
+        },
+        [PSCustomObject]@{
+            Text   = "Restablecer la Pila de Red (Requiere Reinicio)"
+            Type   = "Reparacion"
+            Action = { Invoke-ResetNetworkStacks }
+            NeedsConfirmation = $true
+        }
+    )
+
+    $netChoice = ''
+    do {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "      Modulo de Diagnostico y Reparacion de Red        " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        
+        $isConnected = Test-NetConnection -ComputerName "1.1.1.1" -InformationLevel Quiet -WarningAction SilentlyContinue
+        Write-Host "Estado de la Conexion: " -NoNewline
+        if ($isConnected) {
+            Write-Host "CONECTADO A INTERNET" -ForegroundColor Green
+        } else {
+            Write-Host "SIN CONEXIoN A INTERNET" -ForegroundColor Red
+        }
+        Write-Host ""
+
+        # Generacion dinamica del menu
+        $itemIndex = 1
+        $menuItems | Group-Object -Property Type | ForEach-Object {
+            $categoryColor = if ($_.Name -eq "Reparacion") { "Red" } else { "Yellow" }
+            Write-Host "--- Acciones de $($_.Name) ---" -ForegroundColor $categoryColor
+            foreach ($item in $_.Group) {
+                Write-Host "   [$itemIndex] $($item.Text)"
+                $itemIndex++
+            }
+            Write-Host ""
+        }
+        
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $rawChoice = Read-Host "Selecciona una opcion"
+
+        if ($rawChoice.ToUpper() -eq 'V') { continue }
+
+        if (($rawChoice -match '^\d+$') -and ([int]$rawChoice -ge 1 -and [int]$rawChoice -le $menuItems.Count)) {
+            $selectedOption = $menuItems[[int]$rawChoice - 1]
+            $proceed = $true
+
+            if ($selectedOption.NeedsConfirmation) {
+                $confirm = Read-Host "`n¿Estas seguro de que deseas ejecutar '$($selectedOption.Text)'? (S/N)"
+                if ($confirm.ToUpper() -ne 'S') {
+                    $proceed = $false
+                    Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
+                }
+            }
+
+            if ($proceed) {
+				Write-Log -LogLevel INFO -Message "NETWORK: Ejecutando la acción '$($selectedOption.Text)'."
+                # Invocar el bloque de accion asociado a la opcion del menu
+                & $selectedOption.Action
+            }
+
+            Read-Host "`nPresiona Enter para continuar..."
+        }
+        else {
+            Write-Warning "Opcion no valida."
+            Start-Sleep -Seconds 2
+        }
+        
+    } while ($rawChoice.ToUpper() -ne 'V')
+}
+
+# ===================================================================
+# --- INICIO DEL MODULO DE ANALIZADOR DE REGISTROS DE EVENTOS ---
+# ===================================================================
+
+# --- Funcion auxiliar principal para obtener eventos ---
+
+function Generate-EventTable {
+        param($Title, $Icon, $Events)
+        $eventCount = if ($null -ne $Events) { @($Events).Count } else { 0 }
+        
+        $safeTitle = $Title -replace '[^a-zA-Z0-9]', ''
+        $tableId = "table-$safeTitle"
+        $inputId = "search-$safeTitle"
+
+        $html = "<div class='section'><h2><i class='fas fa-$Icon'></i>$Title ($eventCount)</h2>"
+        # Añadimos el buscador
+        $html += "<div class='search-box'><input type='text' id='$inputId' onkeyup=`"searchTable('$inputId', '$tableId')`" placeholder='Buscar en esta seccion...'></div>"
+        
+        if ($eventCount -gt 0) {
+            $html += "<table id='$tableId'><thead><tr><th>Fecha y Hora</th><th>Origen</th><th>Mensaje (Primera Linea)</th></tr></thead><tbody>"
+            foreach ($event in $Events) {
+                $message = [System.Web.HttpUtility]::HtmlEncode(($event.Message -split "[`r`n]")[0])
+                $html += "<tr><td>$($event.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss'))</td><td>$($event.ProviderName)</td><td>$message</td></tr>"
+            }
+            $html += "</tbody></table>"
+        } else {
+            $html += "<p>No se encontraron eventos recientes en esta categoria.</p>"
+        }
+        $html += "</div>"
+        return $html
+}
+
+function Get-EventLogReportData {
+    [CmdletBinding()]
+    param(
+        [int]$MaxEventsPerCategory = 30
+    )
+
+    Write-Host "`n[+] Recopilando los ultimos $MaxEventsPerCategory eventos importantes. Esto puede tardar un momento..." -ForegroundColor Yellow
+
+    # Categoria 1: Errores Criticos del Sistema (Nivel 1)
+    $criticalEvents = Get-WinEvent -FilterHashtable @{LogName='System'; Level=1} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
+
+    # Categoria 2: Errores del Sistema (Nivel 2)
+    $systemErrorEvents = Get-WinEvent -FilterHashtable @{LogName='System'; Level=2} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
+
+    # Categoria 3: Errores de Aplicaciones (Nivel 2)
+    $appErrorEvents = Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
+
+    # Categoria 4: Auditorias de Seguridad Fallidas
+    $auditFailEvents = Get-WinEvent -FilterHashtable @{LogName='Security'; Keywords=4503599627370496} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
+
+    # Devolvemos un solo objeto con todas las colecciones de eventos
+    return [PSCustomObject]@{
+        CriticalSystemEvents   = $criticalEvents
+        SystemErrorEvents      = $systemErrorEvents
+        ApplicationErrorEvents = $appErrorEvents
+        FailedSecurityAudits   = $auditFailEvents
+        ReportDate             = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Hostname               = $env:COMPUTERNAME
+    }
+}
+
+function Build-EventLogHtmlReport {
+    param ([Parameter(Mandatory=$true)] $EventData)
+
+    Add-Type -AssemblyName System.Web
+
+    # --- CSS (sin cambios) ---
+    $head = @"
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Analisis de Eventos - Aegis Phoenix Suite</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        :root { --bg-color: #f4f7f9; --main-text-color: #2c3e50; --primary-color: #c0392b; --secondary-color: #34495e; --card-bg-color: #ffffff; --header-text-color: #ecf0f1; --border-color: #dfe6e9; --shadow: 0 5px 15px rgba(0,0,0,0.08); }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
+        h1, h2 { margin: 0; font-weight: 600; } h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; }
+        h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
+        .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; } .section { background-color: var(--card-bg-color); border-radius: 8px; padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 15px; } th { background-color: var(--secondary-color); color: var(--header-text-color); text-align: left; padding: 12px 15px; font-weight: 600; }
+        td { padding: 10px 15px; border-bottom: 1px solid var(--border-color); } tr:nth-child(even) { background-color: #fdfdfd; } tr:hover { background-color: #f1f5f8; }
+        .search-box input { width: 98%; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 5px; margin-bottom: 15px; font-size: 1em; } /* Estilo del buscador */
+        .footer { text-align: center; margin-top: 40px; color: #6c757d; font-size: 0.8em; }
+    </style>
+</head>
+"@
+    
+    $body = "<body>"
+    $body += "<h1><i class='fas fa-shield-alt'></i>Aegis Phoenix Suite - Reporte de Analisis de Eventos</h1>"
+    $body += "<p class='timestamp'>Generado el: $($EventData.ReportDate) para el equipo $($EventData.Hostname)</p>"
+    $body += Generate-EventTable -Title "Errores Criticos del Sistema" -Icon "bomb" -Events $EventData.CriticalSystemEvents
+    $body += Generate-EventTable -Title "Errores del Sistema" -Icon "times-circle" -Events $EventData.SystemErrorEvents
+    $body += Generate-EventTable -Title "Errores de Aplicaciones" -Icon "cogs" -Events $EventData.ApplicationErrorEvents
+    $body += Generate-EventTable -Title "Auditorias de Seguridad Fallidas" -Icon "user-secret" -Events $EventData.FailedSecurityAudits
+    
+    $body += @"
+        <script>
+            function searchTable(inputId, tableId) {
+                const filter = document.getElementById(inputId).value.toUpperCase();
+                const table = document.getElementById(tableId);
+                const rows = table.getElementsByTagName('tbody')[0].rows;
+                for (let i = 0; i < rows.length; i++) {
+                    const cells = rows[i].getElementsByTagName('td');
+                    let found = false;
+                    for (let j = 0; j < cells.length; j++) {
+                        if (cells[j] && cells[j].textContent.toUpperCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    rows[i].style.display = found ? "" : "none";
+                }
+            }
+        </script>
+        <div class="footer"><p>Aegis Phoenix Suite by SOFTMAXTER</p></div>
+    </body>
+"@
+    
+    return "<!DOCTYPE html><html lang='es'>$($head)$($body)</html>"
+}
+
+function Show-EventLogAnalyzerMenu {
+    $logChoice = ''
+    do {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "         Analizador Rapido de Registros de Eventos     " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Generar reporte HTML completo (ultimos eventos)"
+        Write-Host "   [2] Buscar eventos por un origen especifico y generar reporte"
+        Write-Host ""
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $logChoice = Read-Host "Selecciona una opcion"
+        
+        $parentDir = Split-Path -Parent $PSScriptRoot
+        $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+        if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null }
+        
+        switch ($logChoice.ToUpper()) {
+            '1' {
+				Write-Log -LogLevel INFO -Message "EVENTLOG: Usuario selecciono 'Generar reporte HTML completo'."
+                $eventData = Get-EventLogReportData
+                $htmlContent = Build-EventLogHtmlReport -EventData $eventData
+                $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Eventos_Completo_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
+                Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
+                
+                Write-Host "`n[OK] Reporte completo generado en: '$reportPath'" -ForegroundColor Green
+                Start-Process $reportPath
+                Read-Host "`nPresiona Enter para continuar..."
+            }
+            '2' {
+				Write-Log -LogLevel INFO -Message "EVENTLOG: Usuario seleccionó 'Buscar eventos por origen'."
+                $providerName = Read-Host "Introduce la palabra clave del origen a buscar (ej. Office, Disk, nvlddmkm)"
+                if ([string]::IsNullOrWhiteSpace($providerName)) {
+                    Write-Warning "La palabra clave no puede estar vacia." ; Start-Sleep -Seconds 2; continue
+                }
+                $maxEvents = Read-Host "Introduce el numero maximo de eventos a buscar (ej. 100)"
+                if (-not ($maxEvents -match '^\d+$') -or [int]$maxEvents -le 0) { $maxEvents = 100 }
+
+                Write-Host "`n[+] Buscando eventos que contengan '$providerName' en los registros de Sistema y Aplicacion..." -ForegroundColor Yellow
+                
+                $searchTerm = "*$providerName*"
+                $systemEvents = Get-WinEvent -LogName 'System' -MaxEvents 5000 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -like $searchTerm }
+                $appEvents = Get-WinEvent -LogName 'Application' -MaxEvents 5000 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -like $searchTerm }
+                
+                $searchedEvents = ($systemEvents + $appEvents) | Sort-Object TimeCreated -Descending | Select-Object -First ([int]$maxEvents)
+                
+                if ($searchedEvents.Count -eq 0) {
+                    Write-Host "`n[INFO] No se encontraron eventos que coincidan con la busqueda '$providerName'." -ForegroundColor Yellow
+                    Read-Host "`nPresiona Enter para continuar..."
+                    continue
+                }
+                Add-Type -AssemblyName System.Web
+                $head = (Get-Content (Join-Path $PSScriptRoot 'AegisPhoenixSuite.ps1') -Raw) -match '(?s)<head>.*?</head>' | ForEach-Object { $matches[0] }
+                $js = (Get-Content (Join-Path $PSScriptRoot 'AegisPhoenixSuite.ps1') -Raw) -match '(?s)<script>.*?</script>' | ForEach-Object { $matches[0] }
+                
+                $body = "<body><h1><i class='fas fa-shield-alt'></i>Aegis Phoenix Suite - Busqueda de Eventos</h1>"
+                $body += "<p class='timestamp'>Resultados para la busqueda '$providerName' el $(Get-Date -Format 'yyyy-MM-dd HH-mm:ss')</p>"
+                $body += Generate-EventTable -Title "Resultados de Busqueda para '$providerName'" -Icon "search" -Events $searchedEvents
+                $body += $js
+                $body += "<div class='footer'><p>Aegis Phoenix Suite by SOFTMAXTER</p></div></body>"
+                $htmlContent = "<!DOCTYPE html><html lang='es'>$head$body</html>"
+
+                $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Busqueda_Eventos_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
+                Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
+
+                Write-Host "`n[OK] Reporte de busqueda generado en: '$reportPath'" -ForegroundColor Green
+                Start-Process $reportPath
+                Read-Host "`nPresiona Enter para continuar..."
+            }
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
+        }
+    } while ($logChoice.ToUpper() -ne 'V')
+}
+
+# ===================================================================
+# --- INICIO DEL MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
+# ===================================================================
+
+function Select-PathDialog {
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Folder', 'File')]
+        [string]$DialogType,
+
+        [string]$Title,
+
+        [string]$Filter = "Todos los archivos (*.*)|*.*"
+    )
+    
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        if ($DialogType -eq 'Folder') {
+            $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dialog.Description = $Title
+            if ($dialog.ShowDialog() -eq 'OK') {
+                return $dialog.SelectedPath
+            }
+        } elseif ($DialogType -eq 'File') {
+            $dialog = New-Object System.Windows.Forms.OpenFileDialog
+            $dialog.Title = $Title
+            $dialog.Filter = $Filter
+            $dialog.CheckFileExists = $true
+            $dialog.CheckPathExists = $true
+            $dialog.Multiselect = $true # Permitimos seleccionar multiples archivos
+            if ($dialog.ShowDialog() -eq 'OK') {
+                return $dialog.FileNames # Devolvemos un array de nombres de archivo
+            }
+        }
+    } catch {
+        Write-Error "No se pudo mostrar el dialogo de seleccion. Error: $($_.Exception.Message)"
+    }
+    
+    return $null # Devuelve nulo si el usuario cancela
+}
+
+# --- FUNCION 2: LOGICA PRINCIPAL DEL RESPALDO (ROBOCOPY) ---
+function Invoke-UserDataBackup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Copy', 'Mirror')]
+        [string]$Mode,
+
+        [string[]]$CustomSourcePath
+    )
+
+    # 1. Determinamos el origen: automatico o personalizado
+    $backupType = 'Folders'
+    $sourcePaths = @()
+    if ($CustomSourcePath) {
+        if ($CustomSourcePath.Count -eq 1 -and (Get-Item $CustomSourcePath[0]).PSIsContainer) {
+            $backupType = 'Folders'
+            $sourcePaths = $CustomSourcePath
+        } else {
+            $backupType = 'Files'
+            $sourcePaths = $CustomSourcePath
+        }
+    } else {
+        $backupType = 'Folders'
+        $sourcePaths = @(
+            [System.Environment]::GetFolderPath('Desktop')
+			[System.Environment]::GetFolderPath('MyDocuments')
+            [System.Environment]::GetFolderPath('MyPictures')
+            [System.Environment]::GetFolderPath('MyMusic')
+            [System.Environment]::GetFolderPath('MyVideos')
+        ) | Where-Object { Test-Path $_ }
+    }
+    
+    # 2. Solicitamos y validamos el destino
+    Write-Host "`n[+] Por favor, selecciona la carpeta de destino para el respaldo..." -ForegroundColor Yellow
+    $destinationPath = Select-PathDialog -DialogType 'Folder' -Title "Paso 2: Elige la Carpeta de Destino del Respaldo"
+    
+    if ([string]::IsNullOrWhiteSpace($destinationPath)) {
+        Write-Warning "No se selecciono una carpeta de destino. Operacion cancelada." ; Start-Sleep -Seconds 2; return
+    }
+
+    # Comprobacion inteligente de Origen vs. Destino
+    $sourceDriveLetter = (Get-Item -Path $sourcePaths[0]).PSDrive.Name
+    $destinationDriveLetter = (Get-Item -Path $destinationPath).PSDrive.Name
+    if ($sourceDriveLetter.ToUpper() -eq $destinationDriveLetter.ToUpper()) {
+        Write-Warning "El destino esta en la misma unidad que el origen (Unidad $($sourceDriveLetter.ToUpper()):)."
+        Write-Warning "Un respaldo en el mismo disco no protege contra fallos del disco fisico."
+        if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
+            Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return
+        }
+    }
+    
+    # Calculamos el espacio requerido
+    Write-Host "`n[+] Calculando espacio requerido para el respaldo. Esto puede tardar..." -ForegroundColor Yellow
+    $sourceTotalSize = 0
+    try {
+        if ($backupType -eq 'Files') {
+            $sourceTotalSize = ($sourcePaths | Get-Item | Measure-Object -Property Length -Sum).Sum
+        } else {
+            foreach ($folder in $sourcePaths) {
+                $sourceTotalSize += (Get-ChildItem -Path $folder -Recurse -Force -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum
+            }
+        }
+    } catch {
+        Write-Warning "No se pudo calcular el tamano total. Error: $($_.Exception.Message)"
+    }
+    
+    $destinationFreeSpace = (Get-Volume -DriveLetter $destinationDriveLetter).SizeRemaining
+    $sourceTotalSizeGB = [math]::Round($sourceTotalSize / 1GB, 2)
+    $destinationFreeSpaceGB = [math]::Round($destinationFreeSpace / 1GB, 2)
+    Write-Host "Espacio requerido estimado: $sourceTotalSizeGB GB"
+    Write-Host "Espacio disponible en el destino ($($destinationDriveLetter.ToUpper()):): $destinationFreeSpaceGB GB"
+
+    if ($sourceTotalSize -gt $destinationFreeSpace) {
+        Write-Error "No hay suficiente espacio en el disco de destino para completar el respaldo."
+        Read-Host "`nOperacion abortada. Presiona Enter para volver al menu..."
+        return
+    }
+
+    # 3. Configuramos Robocopy
+    $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
+    if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+    $logFile = Join-Path $logDir "Respaldo_Robocopy_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').log"
+    $baseRoboCopyArgs = @("/COPY:DAT", "/R:3", "/W:5", "/XJ", "/NP", "/TEE")
+
+    # 4. Mostramos el resumen y pedimos confirmacion final
+    Clear-Host
+    $modeDescription = if ($Mode -eq 'Mirror') { "Sincronizacion Completa (Modo Espejo)" } else { "Respaldo Simple (Anadir/Actualizar)" }
+    Write-Host "--- RESUMEN DE LA OPERACION DE RESPALDO ---" -ForegroundColor Cyan
+    Write-Host "Modo: $modeDescription"
+    Write-Host "Destino: $destinationPath"
+    if ($backupType -eq 'Files') {
+        Write-Host "Archivos de Origen:"
+    } else {
+        Write-Host "Carpetas de Origen:"
+    }
+    $sourcePaths | ForEach-Object { Write-Host " - $_" }
+    if ($Mode -eq 'Mirror') {
+        Write-Warning "El Modo Espejo eliminara cualquier archivo en el destino que no exista en el origen."
+    }
+    Write-Host "Se generara un registro detallado en: $logFile"
+    Write-Log -LogLevel INFO -Message "BACKUP: Resumen de la operación. Modo: '$Mode'. Origen: $($sourcePaths -join ', '). Destino: '$destinationPath'."
+	
+    if ((Read-Host "`nEstas listo para iniciar el respaldo? (S/N)").ToUpper() -ne 'S') {
+        Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return
+    }
+
+    # 5. Ejecutamos el respaldo
+    $logArg = "/LOG+:`"$logFile`""
+
+    if ($backupType -eq 'Files') {
+        Write-Host "`n[+] Respaldando $($sourcePaths.Count) archivo(s) hacia '$destinationPath'..." -ForegroundColor Yellow
+        $baseFileArgs = $baseRoboCopyArgs
+        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
+        foreach ($group in $filesByDirectory) {
+            $sourceDir = $group.Name
+            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
+            Write-Host " - Procesando lote desde '$sourceDir'..." -ForegroundColor Gray
+            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $baseFileArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    } else {
+        $folderArgs = $baseRoboCopyArgs + "/E"
+        if ($Mode -eq 'Mirror') {
+            $folderArgs = $baseRoboCopyArgs + "/MIR"
+        }
+        foreach ($sourceFolder in $sourcePaths) {
+            $folderName = Split-Path $sourceFolder -Leaf
+            $destinationFolder = Join-Path $destinationPath $folderName
+            Write-Host "`n[+] Respaldando '$folderName' hacia '$destinationFolder'..." -ForegroundColor Yellow
+            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    }
+
+    Write-Host "`n[EXITO] Operacion de respaldo completada." -ForegroundColor Green
+    Write-Host "Se ha guardado un registro detallado en '$logFile'"
+    if ((Read-Host "Deseas abrir el archivo de registro ahora? (S/N)").ToUpper() -eq 'S') {
+        Start-Process "notepad.exe" -ArgumentList $logFile
+    }
+    Read-Host "`nPresiona Enter para volver al menu..."
+}
+
+
+# --- FUNCION 3: INTERFAZ DE USUARIO DEL MODULO DE RESPALDO ---
+function Show-UserDataBackupMenu {
+    # Funcion interna para no repetir el menu de seleccion de modo
+    function Get-BackupMode {
+        Write-Host ""
+        Write-Host "--- Elige un modo de respaldo ---" -ForegroundColor Yellow
+        Write-Host "   [1] Simple (Anadir y Actualizar)"
+        Write-Host "       Copia archivos nuevos o modificados. No borra nada en el destino." -ForegroundColor Gray
+        Write-Host "   [2] Sincronizacion (Espejo)"
+        Write-Host "       Hace que el destino sea identico al origen. Borra archivos en el destino." -ForegroundColor Red
+        
+        $modeChoice = Read-Host "`nSelecciona el modo"
+        
+        switch ($modeChoice) {
+            '1' { return 'Copy' }
+            '2' { return 'Mirror' }
+            default {
+                Write-Warning "Opcion invalida." ; Start-Sleep -Seconds 2
+                return $null
+            }
+        }
+    }
+
+    $backupChoice = ''
+    do {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "           Herramienta de Respaldo de Datos de Usuario " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "--- Elige un tipo de respaldo ---" -ForegroundColor Yellow
+        Write-Host "   [1] Respaldo de Perfil de Usuario (Escritorio, Documentos, etc.)"
+        Write-Host "   [2] Respaldo de Carpeta o Archivo(s) Personalizado"
+        Write-Host ""
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $backupChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($backupChoice.ToUpper()) {
+            '1' {
+				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo de Perfil de Usuario'."
+                $backupMode = Get-BackupMode
+                if ($backupMode) {
+                    Invoke-UserDataBackup -Mode $backupMode
+                }
+            }
+            '2' {
+				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo Personalizado'."
+                $typeChoice = Read-Host "Deseas seleccionar una [C]arpeta o [A]rchivo(s)?"
+                $dialogType = ""
+                $dialogTitle = ""
+
+                if ($typeChoice.ToUpper() -eq 'C') {
+                    $dialogType = 'Folder'
+                    $dialogTitle = "Respaldo Personalizado: Elige la Carpeta de Origen"
+                } elseif ($typeChoice.ToUpper() -eq 'A') {
+                    $dialogType = 'File'
+                    $dialogTitle = "Respaldo Personalizado: Elige el o los Archivo(s) de Origen"
+                } else {
+                    Write-Warning "Opcion invalida."; Start-Sleep -Seconds 2; continue
+                }
+
+                $customPath = Select-PathDialog -DialogType $dialogType -Title $dialogTitle
+
+                if ($customPath) {
+                    $backupMode = Get-BackupMode
+                    if ($backupMode) {
+                        Invoke-UserDataBackup -Mode $backupMode -CustomSourcePath $customPath
+                    }
+                } else {
+                    Write-Warning "No se selecciono ninguna ruta. Operacion cancelada."
+                    Start-Sleep -Seconds 2
+                }
+            }
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
+        }
+    } while ($backupChoice.ToUpper() -ne 'V')
+}
+
+# ===================================================================
+# --- INICIO DEL MoDULO DE INVENTARIO PROFESIONAL ---
 # ===================================================================
 
 function Get-DetailedWindowsVersion {
@@ -1650,7 +2396,7 @@ function Get-DetailedWindowsVersion {
     return "$baseProductName $friendlyEdition (Build: $fullBuildString)"
 }
 
-# --- FUNCIÓN AUXILIAR 1: Recopilador de Datos Exhaustivo ---
+# --- FUNCIoN AUXILIAR 1: Recopilador de Datos Exhaustivo ---
 function Get-SystemInventoryData {
     Write-Host "`n[+] Recopilando informacion exhaustiva del sistema. Esto puede tardar un momento..." -ForegroundColor Yellow
     
@@ -1702,7 +2448,7 @@ function Get-SystemInventoryData {
                 $vram_gb = [math]::Round([int]$matches[1] / 1024, 2)
             }
 
-            # Devolvemos el objeto con la información completa. Esta es la salida si todo va bien.
+            # Devolvemos el objeto con la informacion completa. Esta es la salida si todo va bien.
             [PSCustomObject]@{
                 Name          = $cardName
                 DriverVersion = $driverVersion
@@ -1713,10 +2459,10 @@ function Get-SystemInventoryData {
             throw "El archivo DxDiag.txt no se pudo crear."
         }
     } catch {
-        # MÉTODO DE RESPALDO: WMI Antiguo
+        # MeTODO DE RESPALDO: WMI Antiguo
         # ---------------------------------
-        # Esto solo se ejecutará si el bloque 'try' (DxDiag) falla por cualquier motivo.
-        Write-Warning "El método principal con DxDiag.txt falló. Usando WMI como último recurso (la VRAM puede ser imprecisa). Error: $($_.Exception.Message)"
+        # Esto solo se ejecutara si el bloque 'try' (DxDiag) falla por cualquier motivo.
+        Write-Warning "El metodo principal con DxDiag.txt fallo. Usando WMI como ultimo recurso (la VRAM puede ser imprecisa). Error: $($_.Exception.Message)"
         
         Get-CimInstance -ClassName Win32_VideoController | Select-Object -First 1 | ForEach-Object {
             [PSCustomObject]@{
@@ -1732,7 +2478,7 @@ function Get-SystemInventoryData {
         }
     }
 
-    # -- Asignación final al objeto de Hardware --
+    # -- Asignacion final al objeto de Hardware --
     $hardwareData = @{
         PlacaBase = Get-CimInstance -ClassName Win32_BaseBoard | Select-Object Manufacturer, Product, SerialNumber
         BIOS      = "Ver. $((Get-CimInstance -ClassName Win32_BIOS).SMBIOSBIOSVersion) Tipo de Arranque. ($(if (Test-Path "$env:windir\Boot\EFI") { 'UEFI' } else { 'Legacy' }))"
@@ -1811,15 +2557,27 @@ function Get-SystemInventoryData {
         Where-Object { $_.DisplayName } | 
         Sort-Object DisplayName
 
+    # --- NUEVO: Recopilamos el estado de salud de los discos físicos ---
+    $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='EstadoSalud'; E={
+    switch ($_.HealthStatus) {
+        'Healthy'   { 'Saludable' }
+        'Warning'   { 'Advertencia' }
+        'Unhealthy' { 'No saludable' }
+        default     { $_.HealthStatus } # Si hay un estado desconocido, muestra el original en ingles
+        }
+    }
+}
+
     # -- Objeto final --
     return [PSCustomObject]@{
         System = $systemData; Hardware = $hardwareData; Security = $securityData; Disks = $diskData
         Network = $networkData; OSConfig = $osConfigData; Software = $softwareData
+		PhysicalDisks = $physicalDiskData
         ReportDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     }
 }
 
-# --- FUNCIÓN AUXILIAR 2: Constructor del HTML Profesional ---
+# --- FUNCIoN AUXILIAR 2: Constructor del HTML Profesional ---
 function Build-FullInventoryHtmlReport {
     param ([Parameter(Mandatory=$true)] $InventoryData)
 
@@ -1845,7 +2603,7 @@ function Build-FullInventoryHtmlReport {
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
         .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
         h1, h2 { margin: 0; font-weight: 600; }
-        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; } /* Título más grande */
+        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; } /* Título mas grande */
         h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
         .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; }
         .section { background-color: var(--card-bg-color); border-radius: 8px; padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
@@ -1905,6 +2663,13 @@ function Build-FullInventoryHtmlReport {
         $body += "<tr><td>$($disk.Dispositivo) ($($disk.Nombre))</td><td>$($disk.TamanoTotalGB)</td><td>$($disk.EspacioLibreGB)</td><td>$($disk.UsoPorc)%" + (Get-ProgressBarHtml($disk.UsoPorc)) + "</td></tr>"
     }
     $body += "</tbody></table></div>"
+	
+	# --- NUEVO: Añadimos la tabla de salud de discos físicos ---
+    $body += "<div class='section'><h2><i class='fas fa-heartbeat'></i>Diagnostico de Salud de Discos (S.M.A.R.T.)</h2><table><thead><tr><th>Nombre</th><th>Tipo</th><th>No. de Serie</th><th>Estado de Salud</th></tr></thead><tbody>"
+    foreach ($pdisk in $InventoryData.PhysicalDisks) {
+        $body += "<tr><td>$($pdisk.FriendlyName)</td><td>$($pdisk.MediaType)</td><td>$($pdisk.SerialNumber)</td><td>$($pdisk.EstadoSalud)</td></tr>"
+    }
+    $body += "</tbody></table></div>"
 
     $body += "<div class='section'><h2><i class='fas fa-network-wired'></i>Red</h2><table><thead><tr><th>Nombre</th><th>Descripcion</th><th>Estado</th><th>MAC</th></tr></thead><tbody>"
     foreach ($adapter in $InventoryData.Network) {
@@ -1926,7 +2691,7 @@ function Build-FullInventoryHtmlReport {
     }
     $body += "</tbody></table></div>"
 
-    # --- INICIO: Añadida columna de Fecha de Instalación al HTML ---
+    # --- INICIO: Añadida columna de Fecha de Instalacion al HTML ---
     $body += "<div class='section'><h2><i class='fas fa-box-open'></i>Software Instalado ($($InventoryData.Software.Count))</h2>"
     $body += "<div class='search-box'><input type='text' id='softwareSearch' onkeyup='searchSoftware()' placeholder='Buscar software por nombre...'></div>"
     $body += "<table id='softwareTable'><thead><tr><th>Nombre</th><th>Version</th><th>Editor</th><th>Fecha de Instalacion</th></tr></thead><tbody>"
@@ -1934,7 +2699,7 @@ function Build-FullInventoryHtmlReport {
         $body += "<tr><td>$($app.DisplayName)</td><td>$($app.DisplayVersion)</td><td>$($app.Publisher)</td><td>$($app.InstallDate)</td></tr>"
     }
     $body += "</tbody></table></div>"
-    # --- FIN: Añadida columna de Fecha de Instalación al HTML ---
+    # --- FIN: Añadida columna de Fecha de Instalacion al HTML ---
     
     $body += @"
         <script>
@@ -1953,7 +2718,7 @@ function Build-FullInventoryHtmlReport {
     return "<!DOCTYPE html><html lang='es'>$($head)$($body)</html>"
 }
 
-# --- FUNCIÓN PRINCIPAL DEL MENÚ ---
+# --- FUNCIoN PRINCIPAL DEL MENu ---
 function Show-InventoryMenu {
     Clear-Host
     Write-Host "--- Generador de Reportes de Inventario Profesional ---" -ForegroundColor Cyan
@@ -1964,6 +2729,7 @@ function Show-InventoryMenu {
     Write-Host "   [3] Hojas de Calculo (.csv) - Multiples archivos para analisis de datos."
 
     $formatChoice = Read-Host "`nElige una opcion"
+	Write-Log -LogLevel INFO -Message "INVENTORY: Usuario selecciono generar reporte en formato '$formatChoice'."
     $parentDir = Split-Path -Parent $PSScriptRoot
     $reportDir = Join-Path -Path $parentDir -ChildPath "Reportes"
     if (-not (Test-Path $reportDir)) { New-Item -Path $reportDir -ItemType Directory -Force | Out-Null }
@@ -1980,7 +2746,7 @@ function Show-InventoryMenu {
             $reportContent += "Reporte de Inventario - Aegis Phoenix Suite - $($inventoryData.ReportDate)"
             $reportContent += "================================================="
             
-            # --- SECCIÓN: SISTEMA Y CPU (Formato manual para mejor claridad) ---
+            # --- SECCIoN: SISTEMA Y CPU (Formato manual para mejor claridad) ---
             $reportContent += ""
             $reportContent += "=== SISTEMA OPERATIVO Y CPU ==="
             $reportContent += "WindowsVersion   : $($inventoryData.System.WindowsVersion)"
@@ -1991,7 +2757,7 @@ function Show-InventoryMenu {
             $reportContent += "MemoriaEnUsoPorc : $($inventoryData.System.MemoriaEnUsoPorc)"
             $reportContent += "Uptime           : $($inventoryData.System.Uptime)"
             
-            # --- SECCIÓN: HARDWARE (Formato manual) ---
+            # --- SECCIoN: HARDWARE (Formato manual) ---
             $reportContent += ""
             $reportContent += "=== HARDWARE DETALLADO ==="
             $reportContent += "Placa Base       : $($inventoryData.Hardware.PlacaBase.Manufacturer) $($inventoryData.Hardware.PlacaBase.Product)"
@@ -2001,19 +2767,24 @@ function Show-InventoryMenu {
                 $reportContent += "Driver de Video  : $($gpu.DriverVersion)"
             }
 
-            # --- SECCIÓN: SEGURIDAD
+            # --- SECCIoN: SEGURIDAD
             $reportContent += ""
             $reportContent += "=== ESTADO DE SEGURIDAD ==="
             $reportContent += "Antivirus : $(if ($inventoryData.Security.Antivirus) { ($inventoryData.Security.Antivirus.displayName -join ', ') } else { 'No Detectado' })"
             $reportContent += "Firewall  : $(($inventoryData.Security.Firewall | ForEach-Object { "$($_.Name): $(if($_.Enabled){'Activado'}else{'Desactivado'})" }) -join ' | ')"
             $reportContent += "BitLocker : $($inventoryData.Security.BitLocker)"
 
-            # --- SECCIÓN: DISCOS
+            # --- SECCIoN: DISCOS
             $reportContent += ""
             $reportContent += "=== DISCOS ==="
             $reportContent += ($inventoryData.Disks | Format-Table | Out-String).TrimEnd()
+			
+			# --- NUEVO: Añadimos la seccion de salud de discos físicos ---
+            $reportContent += ""
+            $reportContent += "=== DIAGNOSTICO DE SALUD DE DISCOS (S.M.A.R.T.) ==="
+            $reportContent += ($inventoryData.PhysicalDisks | Format-Table | Out-String).TrimEnd()
 
-            # --- SECCIÓN: RED
+            # --- SECCIoN: RED
             $reportContent += ""
             $reportContent += "=== RED ==="
             $reportContent += ($inventoryData.Network | Format-Table -Wrap | Out-String).TrimEnd()
@@ -2026,18 +2797,18 @@ function Show-InventoryMenu {
             $reportContent += "=== PROCESOS DE MAYOR CONSUMO (MEMORIA) ==="
             $reportContent += ($inventoryData.OSConfig.TopMemory | Format-Table | Out-String).TrimEnd()
 
-            # --- SECCIÓN: ACTUALIZACIONES
+            # --- SECCIoN: ACTUALIZACIONES
             $reportContent += ""
             $reportContent += "=== ULTIMAS ACTUALIZACIONES INSTALADAS ==="
             $reportContent += ($inventoryData.OSConfig.Hotfixes | Format-Table -Wrap | Out-String).TrimEnd()
 
-            # --- SECCIÓN: SOFTWARE
+            # --- SECCIoN: SOFTWARE
             $reportContent += ""
             $reportContent += "=== SOFTWARE INSTALADO ($($inventoryData.Software.Count)) ==="
             foreach ($app in $inventoryData.Software) {
                 $reportContent += "-------------------------------------------------"
                 $reportContent += "Nombre    : $($app.DisplayName)"
-                $reportContent += "Versión   : $($app.DisplayVersion)"
+                $reportContent += "Version   : $($app.DisplayVersion)"
                 $reportContent += "Editor    : $($app.Publisher)"
                 $reportContent += "Instalado : $($app.InstallDate)"
             }
@@ -2122,46 +2893,45 @@ function Show-DriverMenu {
         
         switch ($driverChoice) {
             '1' {
-                $destPath = Read-Host "Introduce la ruta completa para GUARDAR la copia (ej: C:\MisDrivers)"
-                if ([string]::IsNullOrWhiteSpace($destPath)) {
-                    Write-Warning "La ruta no puede estar vacia."
-                } else {
-                    if (-not (Test-Path $destPath)) {
-                        New-Item -Path $destPath -ItemType Directory | Out-Null
-                    }
+                $destPath = Select-PathDialog -DialogType 'Folder' -Title "Selecciona la carpeta para GUARDAR la copia de drivers"
+                if (-not [string]::IsNullOrWhiteSpace($destPath)) {
                     Write-Host "`n[+] Exportando drivers a '$destPath'..." -ForegroundColor Yellow
                     Export-WindowsDriver -Online -Destination $destPath
                     Write-Host "[OK] Copia de seguridad completada." -ForegroundColor Green
 					Write-Log -LogLevel ACTION -Message "Copia de seguridad de drivers completada en '$destPath'."
+                } else {
+                    Write-Warning "Operacion cancelada."
                 }
             }
             '2' {
+				Write-Log -LogLevel INFO -Message "DRIVERS: El usuario listo los drivers de terceros instalados."
                 Write-Host "`n[+] Listando drivers no-Microsoft instalados..." -ForegroundColor Yellow
                 Get-WindowsDriver -Online | Where-Object { $_.ProviderName -ne 'Microsoft' } | Format-Table ProviderName, ClassName, Date, Version -AutoSize
             }
             '3' {
-                $sourcePath = Read-Host "Introduce la ruta completa de la CARPETA con la copia de drivers"
-                if (-not (Test-Path $sourcePath)) {
-                    Write-Error "La ruta especificada no existe: '$sourcePath'"
-					Write-Log -LogLevel ERROR -Message "DRIVERS: La ruta de restauracion '$sourcePath' no existe."
-                } elseif ($PSCmdlet.ShouldProcess("el sistema", "Restaurar todos los drivers desde '$sourcePath'")) {
-                    Write-Host "`n[+] Iniciando restauracion de drivers..." -ForegroundColor Yellow
-                    Write-Host "Esto puede tardar varios minutos y podrias ver ventanas de instalacion." -ForegroundColor Yellow
+                $sourcePath = Select-PathDialog -DialogType 'Folder' -Title "Selecciona la CARPETA con la copia de drivers"
+                if (-not [string]::IsNullOrWhiteSpace($sourcePath)) {
+                    if ($PSCmdlet.ShouldProcess("el sistema", "Restaurar todos los drivers desde '$sourcePath'")) {
+                        Write-Host "`n[+] Iniciando restauracion de drivers..." -ForegroundColor Yellow
+                        Write-Host "Esto puede tardar varios minutos y podrias ver ventanas de instalacion." -ForegroundColor Yellow
 
-                    $driverInfFiles = Get-ChildItem -Path $sourcePath -Filter "*.inf" -Recurse
-                    if ($driverInfFiles.Count -eq 0) {
-                        Write-Warning "No se encontraron archivos de driver (.inf) en la ruta especificada."
-                    } else {
-                        $total = $driverInfFiles.Count
-                        $current = 0
-                        foreach ($inf in $driverInfFiles) {
-                            $current++
-                            Write-Host " - Instalando driver ($current de $total): $($inf.FullName)" -ForegroundColor Gray
-                            pnputil.exe /add-driver $inf.FullName /install
+                        $driverInfFiles = Get-ChildItem -Path $sourcePath -Filter "*.inf" -Recurse
+                        if ($driverInfFiles.Count -eq 0) {
+                            Write-Warning "No se encontraron archivos de driver (.inf) en la ruta especificada."
+                        } else {
+                            $total = $driverInfFiles.Count
+                            $current = 0
+                            foreach ($inf in $driverInfFiles) {
+                                $current++
+                                Write-Host " - Instalando driver ($current de $total): $($inf.FullName)" -ForegroundColor Gray
+                                pnputil.exe /add-driver $inf.FullName /install
+                            }
+                            Write-Host "`n[OK] Proceso de restauracion de drivers completado." -ForegroundColor Green
+						    Write-Log -LogLevel ACTION -Message "Proceso de restauracion de drivers desde '$sourcePath' completado."
                         }
-                        Write-Host "`n[OK] Proceso de restauracion de drivers completado." -ForegroundColor Green
-						Write-Log -LogLevel ACTION -Message "Proceso de restauracion de drivers desde '$sourcePath' completado."
                     }
+                } else {
+                    Write-Warning "Operacion cancelada."
                 }
             }
             'V' {
@@ -2170,7 +2940,7 @@ function Show-DriverMenu {
             default {
                 Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
             }
-        } # Fin del switch
+        }
 
         if ($driverChoice -ne 'V') {
             Read-Host "`nPresiona Enter para continuar..."
@@ -2264,17 +3034,14 @@ function Manage-ScheduledTasks {
 	
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Tareas Programadas de Terceros."
 
-    # --- Funcion Auxiliar con el metodo de manipulacion de objetos corregido ---
     function Get-ThirdPartyTasks {
         Write-Host "`n[+] Actualizando lista de tareas (usando filtro avanzado)..." -ForegroundColor Gray
         
-        # El filtro avanzado sigue siendo el mismo y es correcto.
         $tasks = Get-ScheduledTask | Where-Object {
             ($_.TaskPath -notlike '\Microsoft\*') -or 
             ($_.TaskPath -like '\Microsoft\*' -and $_.Author -notlike 'Microsoft*')
         }
 
-        # --- CAMBIO CRiTICO: En lugar de crear un objeto nuevo, AÑADIMOS la propiedad 'Selected' al objeto original ---
         # Esto conserva el tipo de objeto original (CimInstance), lo que es crucial para que las acciones funcionen.
         $tasks | ForEach-Object {
             Add-Member -InputObject $_ -MemberType NoteProperty -Name 'Selected' -Value $false -Force
@@ -2824,15 +3591,19 @@ function Install-Software {
 }
 
 function Invoke-BatchInstallation {
-    $filePath = Read-Host "Introduce la ruta completa al archivo .txt con la lista de software"
+    $filePaths = Select-PathDialog -DialogType 'File' -Title "Selecciona el archivo .txt con la lista de software" -Filter "Archivos de texto (*.txt)|*.txt"
     
-    if (-not (Test-Path $filePath)) {
-        Write-Host "El archivo no existe." -ForegroundColor Red
-        Read-Host "Presiona Enter para continuar"
-        return
+    # 1. Comprobamos primero si el usuario presiono "Cancelar" o no selecciono nada.
+    if (-not $filePaths) {
+        Write-Warning "No se selecciono un archivo. Operacion cancelada."
+        Start-Sleep -Seconds 2
+        return # Salimos de la funcion de forma segura
     }
 
-    # Verificar si el motor seleccionado esta disponible
+    # 2. Para esta funcion, solo nos interesa el primer archivo seleccionado, incluso si el usuario selecciono varios.
+    $filePath = $filePaths[0] 
+
+    # El resto de la funcion continua sin cambios, ya que ahora sabemos que $filePath es una ruta valida.
     if ($script:SoftwareEngine -eq 'Chocolatey' -and -not (Ensure-ChocolateyIsInstalled)) {
         Write-Host "No se puede continuar sin Chocolatey." -ForegroundColor Red
         Read-Host "`nPresiona Enter para continuar"
@@ -2935,7 +3706,6 @@ function Get-TweakState {
 }
 
 # --- FUNCIoN 2: El Ejecutor ---
-# Aplica el estado 'Enable' o 'Disable' a un ajuste. No requiere cambios, ya era robusta.
 function Set-TweakState {
     param(
         [Parameter(Mandatory=$true)]
@@ -2987,7 +3757,6 @@ function Show-TweakManagerMenu {
     $Category = $null
 	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Ajustes del Sistema (Tweaks)."
     
-    # --- IMPLEMENTACIoN MEJORADA: Bandera para controlar la necesidad de reiniciar el explorador ---
     [bool]$explorerRestartNeeded = $false
 
     while ($true) {
@@ -3185,6 +3954,9 @@ function Show-MaintenanceMenu {
 	Write-Host "";
     Write-Host "   [5] Purgar Memoria RAM en Cache (Standby List)" -ForegroundColor Yellow
     Write-Host "       (Libera la memoria 'En espera'. Para usos muy especificos)" -ForegroundColor Gray
+	Write-Host ""
+    Write-Host "   [6] Diagnostico y Reparacion de Red"
+    Write-Host "       (Soluciona problemas de conectividad a internet)" -ForegroundColor Gray
 	Write-Host "";
 	Write-Host "-------------------------------------------------------";
 	Write-Host "";
@@ -3196,6 +3968,7 @@ function Show-MaintenanceMenu {
 		'3' { Optimize-Drives }
 		'4' { Generate-SystemReport }
 		'5' { Clear-RAMCache }
+		'6' { Show-NetworkDiagnosticsMenu }
 		'V' { continue };
 		default {
 			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
@@ -3226,6 +3999,12 @@ function Show-AdvancedMenu {
         Write-Host ""
         Write-Host "   [5] Administracion de Sistema"
         Write-Host "       (Limpia registros de eventos y gestiona tareas programadas)" -ForegroundColor Gray
+		Write-Host ""
+        Write-Host "   [6] Analizador Rapido de Registros de Eventos"
+        Write-Host "       (Encuentra errores criticos del sistema y aplicaciones)" -ForegroundColor Gray
+		Write-Host ""
+        Write-Host "   [7] Herramienta de Respaldo de Datos de Usuario (Robocopy)"
+        Write-Host "       (Crea copias de seguridad de tus archivos personales)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "-------------------------------------------------------"
         Write-Host ""
@@ -3241,6 +4020,8 @@ function Show-AdvancedMenu {
             '3' { Show-DriverMenu }
             '4' { Show-SoftwareMenu }
             '5' { Show-AdminMenu }
+			'6' { Show-EventLogAnalyzerMenu }
+			'7' { Show-UserDataBackupMenu }
             'V' { continue }
             default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host }
         }
@@ -3273,16 +4054,30 @@ do {
     Write-Host ""
     Write-Host "-------------------------------------------------------"
     Write-Host ""
+	Write-Host "   [L] Ver Registro de Actividad (Log)" -ForegroundColor Gray
+	Write-Host ""
     Write-Host "   [S] Salir del script" -ForegroundColor Red
     Write-Host ""
 
     $mainChoice = Read-Host "Selecciona una opcion y presiona Enter"
+	Write-Log -LogLevel INFO -Message "MAIN_MENU: Usuario seleccionó la opción '$($mainChoice.ToUpper())'."
 
     switch ($mainChoice.ToUpper()) {
         '1' { Create-RestorePoint }
         '2' { Show-OptimizationMenu }
         '3' { Show-MaintenanceMenu }
         '4' { Show-AdvancedMenu }
+		'L' {
+        $parentDir = Split-Path -Parent $PSScriptRoot
+        $logFile = Join-Path -Path $parentDir -ChildPath "Logs\Registro.log"
+        if (Test-Path $logFile) {
+            Write-Host "`n[+] Abriendo archivo de registro..." -ForegroundColor Green
+            Start-Process notepad.exe -ArgumentList $logFile
+        } else {
+            Write-Warning "El archivo de registro aún no ha sido creado. Realiza alguna acción primero."
+            Read-Host "`nPresiona Enter para continuar..."
+        }
+    }
         'S' { Write-Host "`nGracias por usar Aegis Phoenix Suite by SOFTMAXTER!" }
         default {
             Write-Host "`n[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
