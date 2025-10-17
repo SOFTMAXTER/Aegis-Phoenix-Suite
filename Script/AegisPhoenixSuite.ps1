@@ -1,18 +1,18 @@
 <#
 .SYNOPSIS
-    Suite definitiva de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
+    Suite de optimizacion, gestion, seguridad y diagnostico para Windows 11 y 10.
 .DESCRIPTION
-    Aegis Phoenix Suite v4 by SOFTMAXTER es la herramienta PowerShell definitiva. Con una estructura de submenus y una
+    Aegis Phoenix Suite v4 by SOFTMAXTER es la herramienta PowerShell. Con una estructura de submenus y una
     logica de verificacion inteligente, permite maximizar el rendimiento, reforzar la seguridad, gestionar
     software y drivers, y personalizar la experiencia de usuario.
     Requiere ejecucion como Administrador.
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.7.0
+    4.7.1
 #>
 
-$script:Version = "4.7.0"
+$script:Version = "4.7.1"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -1619,26 +1619,43 @@ function Clear-RAMCache {
 }
 
 function Clear-SystemCaches {
-	Write-Log -LogLevel INFO -Message "Usuario inicio la limpieza de caches del sistema (DNS, Tienda)."
-    try {
-        ipconfig /flushdns | Out-Null
-        Write-Host "[OK] Cache DNS limpiada." -ForegroundColor Green
-		Write-Log -LogLevel ACTION -Message "Cache DNS limpiada."
-    }
-    catch {
-		Write-Warning "Error limpiando DNS: $_"
-		Write-Log -LogLevel ERROR -Message "Error limpiando DNS: $_"
-	}
+    Clear-Host
+	Write-Log -LogLevel INFO -Message "CACHES: Usuario inicio la limpieza de caches del sistema."
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host "                  Limpiando Caches del Sistema" -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor Cyan
 
+    Invoke-FlushDnsCache -Force
+	Write-Log -LogLevel ACTION -Message "CACHES: Cache de DNS limpiada."
+
+    Write-Host "`n[+] Limpiando cache de la Tienda de Windows..." -ForegroundColor Cyan
+    wsreset.exe -q
+    if ($LASTEXITCODE -eq 0) {
+		Write-Host "   [OK] Cache de la Tienda limpiada." -ForegroundColor Green
+		Write-Log -LogLevel ACTION -Message "CACHES: Cache de la Tienda de Windows limpiada."
+		} else {
+			Write-Error "   [FALLO] No se pudo limpiar la cache de la Tienda."
+		}
+
+    Write-Host "`n[+] Limpiando cache de iconos..." -ForegroundColor Cyan
     try {
-        Start-Process "wsreset.exe" -ArgumentList "-q" -Wait -NoNewWindow
-        Write-Host "[OK] Cache de Tienda Windows limpiada." -ForegroundColor Green
-		Write-Log -LogLevel ACTION -Message "Cache de Tienda Windows limpiada."
+        Stop-Process -Name explorer -Force -ErrorAction Stop
+        $iconCachePath = "$env:LOCALAPPDATA\IconCache.db"
+        if (Test-Path $iconCachePath) {
+            Remove-Item $iconCachePath -Force -ErrorAction Stop
+            Write-Host "   [OK] Cache de iconos eliminada." -ForegroundColor Green
+			Write-Log -LogLevel ACTION -Message "CACHES: Cache de iconos eliminada."
+        } else {
+            Write-Host "   [INFO] No se encontro el archivo de cache de iconos." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Error "   [FALLO] No se pudo limpiar la cache de iconos. Error: $($_.Exception.Message)"
+    } finally {
+        Start-Process explorer.exe
     }
-    catch {
-		Write-Warning "Error en wsreset: $_"
-		Write-Log -LogLevel ERROR -Message "Error en wsreset: $_"
-	}
+
+    Write-Host "`n[EXITO] Proceso de limpieza de caches finalizado." -ForegroundColor Green
+	Read-Host "`nPresiona Enter para volver al menu..."
 }
 
 function Optimize-Drives {
@@ -1681,216 +1698,157 @@ function Generate-SystemReport {
 # --- Funciones de Accion (Herramientas del modulo) ---
 
 function Invoke-ShowIpConfig {
-    [CmdletBinding()]
-    param()
-    
-    try {
-        Write-Host "`n[+] Mostrando configuracion de red detallada (ipconfig /all)..." -ForegroundColor Cyan
-        ipconfig.exe /all
-    }
-    catch {
-        Write-Error "No se pudo obtener la configuracion de red. Error: $($_.Exception.Message)"
-    }
+    Write-Host "`n[+] Mostrando configuracion de red detallada (ipconfig /all)..." -ForegroundColor Cyan
+    ipconfig.exe /all
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 function Invoke-PingTest {
-    [CmdletBinding()]
-    param()
-
-    try {
-        Write-Host "`n[+] Realizando prueba de conectividad a Internet (8.8.8.8)..." -ForegroundColor Cyan
-        Test-NetConnection -ComputerName "8.8.8.8" -WarningAction SilentlyContinue
-    }
-    catch {
-    Write-Error "La prueba de conexion fallo. Error: $($_.Exception.Message)"
-    }
+    Write-Host "`n[+] Realizando prueba de conectividad a los servidores DNS de Google (8.8.8.8)..." -ForegroundColor Cyan
+    Test-NetConnection -ComputerName "8.8.8.8" -WarningAction SilentlyContinue
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 function Invoke-DnsResolutionTest {
-    [CmdletBinding()]
-    param()
-
-    try {
-        Write-Host "`n[+] Realizando prueba de resolucion de nombres de dominio (google.com)..." -ForegroundColor Cyan
-        Resolve-DnsName -Name "google.com" -ErrorAction Stop | Format-Table
-    }
-    catch {
-        Write-Error "No se pudo resolver el nombre de dominio. Error: $($_.Exception.Message)"
-    }
+    Write-Host "`n[+] Realizando prueba de resolucion de nombres de dominio (google.com)..." -ForegroundColor Cyan
+    Resolve-DnsName -Name "google.com" -ErrorAction SilentlyContinue | Format-Table
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 function Invoke-TraceRoute {
-    [CmdletBinding()]
-    param()
-
-    try {
-        Write-Host "`n[+] Trazando la ruta de red hacia 8.8.8.8 (puede tardar un momento)..." -ForegroundColor Cyan
-        Test-NetConnection -ComputerName "8.8.8.8" -TraceRoute -WarningAction Stop
-    }
-    catch {
-        Write-Error "El trazado de ruta fallo. Error: $($_.Exception.Message)"
-    }
+    Write-Host "`n[+] Trazando la ruta de red hacia 8.8.8.8 (puede tardar un momento)..." -ForegroundColor Cyan
+    Test-NetConnection -ComputerName "8.8.8.8" -TraceRoute -WarningAction SilentlyContinue
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 function Invoke-FlushDnsCache {
-    [CmdletBinding()]
-    param()
+    param([switch]$Force) # Anadimos el parametro -Force
 
-    try {
-        Write-Host "`n[+] Limpiando la cache de resolucion de DNS..." -ForegroundColor Cyan
-        Clear-DnsClientCache
-        Write-Host "[OK] Cache de DNS limpiada exitosamente." -ForegroundColor Green
+    Write-Host "`n[+] Limpiando la cache de resolucion de DNS..." -ForegroundColor Cyan
+    
+    # Si se usa -Force O el usuario confirma, procedemos.
+    if ($Force -or (Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
+        ipconfig.exe /flushdns
+        # --- VERIFICACION DE EXITO ---
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] Cache de DNS limpiada exitosamente." -ForegroundColor Green
+        } else {
+            Write-Error "FALLO: El comando para limpiar la cache de DNS no se completo correctamente."
+        }
+    } else {
+        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
     }
-    catch {
-        Write-Error "No se pudo limpiar la cache de DNS. Error: $($_.Exception.Message)"
+
+    # Si no se usa -Force, pausamos. Si se usa, continuamos sin pausa.
+    if (-not $Force) {
+        Read-Host "`nPresiona Enter para continuar..."
     }
 }
 
 function Invoke-RenewIpAddress {
-    [CmdletBinding()]
-    param()
-    
-    try {
-        Write-Host "`n[+] Liberando y renovando la direccion IP..." -ForegroundColor Cyan
+    Write-Host "`n[+] Liberando y renovando la direccion IP..." -ForegroundColor Cyan
+    if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
+        $releaseSuccess = $false
+        $renewSuccess = $false
+        
         Write-Host " - Liberando IP actual (ipconfig /release)..." -ForegroundColor Gray
-        ipconfig.exe /release | Out-Null
+        ipconfig.exe /release
+        # --- VERIFICACION DE EXITO ---
+        if ($LASTEXITCODE -eq 0) { $releaseSuccess = $true }
+
         Write-Host " - Solicitando nueva IP (ipconfig /renew)..." -ForegroundColor Gray
-        ipconfig.exe /renew | Out-Null
-        Write-Host "[OK] Proceso de renovacion de IP completado." -ForegroundColor Green
+        ipconfig.exe /renew
+        # --- VERIFICACION DE EXITO ---
+        if ($LASTEXITCODE -eq 0) { $renewSuccess = $true }
+
+        if ($releaseSuccess -and $renewSuccess) {
+            Write-Host "[OK] Proceso de renovacion de IP completado." -ForegroundColor Green
+        } else {
+            Write-Error "FALLO: Una o mas operaciones de renovacion de IP no se completaron correctamente."
+        }
+    } else {
+        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
     }
-    catch {
-        Write-Error "No se pudo renovar la direccion IP. Error: $($_.Exception.Message)"
-    }
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 function Invoke-ResetNetworkStacks {
-    [CmdletBinding()]
-    param()
-    
-    try {
-        Write-Warning "¡ADVERTENCIA! Esta accion requiere reiniciar el equipo para completarse."
-        Write-Host "`n[+] Restableciendo la Pila de Red (Winsock y TCP/IP)..." -ForegroundColor Red
+    Write-Host "`n[+] Restableciendo la Pila de Red (Winsock y TCP/IP)..." -ForegroundColor Red
+    Write-Warning "ADVERTENCIA! Esta accion requiere reiniciar el equipo para completarse."
+    if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
+        $winsockSuccess = $false
+        $tcpSuccess = $false
+
         Write-Host " - Restableciendo el catalogo de Winsock..." -ForegroundColor Gray
-        netsh.exe winsock reset | Out-Null
+        netsh.exe winsock reset
+        # --- VERIFICACION DE EXITO ---
+        if ($LASTEXITCODE -eq 0) { $winsockSuccess = $true }
+
         Write-Host " - Restableciendo la pila TCP/IP..." -ForegroundColor Gray
-        netsh.exe int ip reset | Out-Null
-        Write-Host "[OK] Pila de red restablecida. Por favor, reinicia tu equipo para aplicar los cambios." -ForegroundColor Green
+        netsh.exe int ip reset
+        # --- VERIFICACION DE EXITO ---
+        if ($LASTEXITCODE -eq 0) { $tcpSuccess = $true }
+
+        if ($winsockSuccess -and $tcpSuccess) {
+            Write-Host "[OK] Pila de red restablecida. Por favor, reinicia tu equipo." -ForegroundColor Green
+        } else {
+            Write-Error "FALLO: Uno o mas comandos de restablecimiento de red no se completaron correctamente."
+        }
+    } else {
+        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
     }
-    catch {
-        Write-Error "No se pudo restablecer la pila de red. Error: $($_.Exception.Message)"
-    }
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
-# --- Funcion Principal del Menu (Controlador del modulo) ---
 
+# --- Funcion del Menu Principal del Modulo de Red ---
 function Show-NetworkDiagnosticsMenu {
-    # Menu definido como un array de objetos para mayor flexibilidad y mantenibilidad.
-    $menuItems = @(
-        [PSCustomObject]@{
-            Text   = "Ver configuracion IP detallada (ipconfig /all)"
-            Type   = "Diagnostico"
-            Action = { Invoke-ShowIpConfig }
-            NeedsConfirmation = $false
-        },
-        [PSCustomObject]@{
-            Text   = "Probar conectividad a Internet (ping)"
-            Type   = "Diagnostico"
-            Action = { Invoke-PingTest }
-            NeedsConfirmation = $false
-        },
-        [PSCustomObject]@{
-            Text   = "Probar resolucion de DNS (nslookup)"
-            Type   = "Diagnostico"
-            Action = { Invoke-DnsResolutionTest }
-            NeedsConfirmation = $false
-        },
-        [PSCustomObject]@{
-            Text   = "Trazar ruta de red (tracert)"
-            Type   = "Diagnostico"
-            Action = { Invoke-TraceRoute }
-            NeedsConfirmation = $false
-        },
-        [PSCustomObject]@{
-            Text   = "Limpiar cache de DNS"
-            Type   = "Reparacion"
-            Action = { Invoke-FlushDnsCache }
-            NeedsConfirmation = $true
-        },
-        [PSCustomObject]@{
-            Text   = "Renovar concesion de IP"
-            Type   = "Reparacion"
-            Action = { Invoke-RenewIpAddress }
-            NeedsConfirmation = $true
-        },
-        [PSCustomObject]@{
-            Text   = "Restablecer la Pila de Red (Requiere Reinicio)"
-            Type   = "Reparacion"
-            Action = { Invoke-ResetNetworkStacks }
-            NeedsConfirmation = $true
-        }
-    )
-
     $netChoice = ''
     do {
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "      Modulo de Diagnostico y Reparacion de Red        " -ForegroundColor Cyan
+        Write-Host "          Modulo de Diagnostico y Reparacion de Red    " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         
-        $isConnected = Test-NetConnection -ComputerName "1.1.1.1" -InformationLevel Quiet -WarningAction SilentlyContinue
-        Write-Host "Estado de la Conexion: " -NoNewline
-        if ($isConnected) {
-            Write-Host "CONECTADO A INTERNET" -ForegroundColor Green
+        Write-Host "Comprobando estado de la conexion..." -ForegroundColor Gray
+        if (Test-NetConnection -ComputerName "1.1.1.1" -InformationLevel Quiet -WarningAction SilentlyContinue) {
+            Write-Host "Estado de la Conexion: " -NoNewline
+			Write-Host "CONECTADO A INTERNET" -ForegroundColor Green
         } else {
-            Write-Host "SIN CONEXIoN A INTERNET" -ForegroundColor Red
+            Write-Host "Estado de la Conexion: " -NoNewline
+			Write-Host "SIN CONEXION A INTERNET" -ForegroundColor Red
         }
-        Write-Host ""
 
-        # Generacion dinamica del menu
-        $itemIndex = 1
-        $menuItems | Group-Object -Property Type | ForEach-Object {
-            $categoryColor = if ($_.Name -eq "Reparacion") { "Red" } else { "Yellow" }
-            Write-Host "--- Acciones de $($_.Name) ---" -ForegroundColor $categoryColor
-            foreach ($item in $_.Group) {
-                Write-Host "   [$itemIndex] $($item.Text)"
-                $itemIndex++
-            }
-            Write-Host ""
-        }
-        
+        Write-Host ""
+        Write-Host "--- Acciones de Diagnostico ---" -ForegroundColor Yellow
+        Write-Host "   [1] Ver configuracion IP detallada (ipconfig /all)"
+        Write-Host "   [2] Probar conectividad a Internet (ping)"
+        Write-Host "   [3] Probar resolucion de DNS (nslookup)"
+        Write-Host "   [4] Trazar ruta de red (tracert)"
+        Write-Host ""
+        Write-Host "--- Acciones de Reparacion ---" -ForegroundColor Red
+        Write-Host "   [5] Limpiar cache de DNS"
+        Write-Host "   [6] Renovar concesion de IP"
+        Write-Host "   [7] Restablecer la Pila de Red (Requiere Reinicio)"
+        Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         
-        $rawChoice = Read-Host "Selecciona una opcion"
-
-        if ($rawChoice.ToUpper() -eq 'V') { continue }
-
-        if (($rawChoice -match '^\d+$') -and ([int]$rawChoice -ge 1 -and [int]$rawChoice -le $menuItems.Count)) {
-            $selectedOption = $menuItems[[int]$rawChoice - 1]
-            $proceed = $true
-
-            if ($selectedOption.NeedsConfirmation) {
-                $confirm = Read-Host "`n¿Estas seguro de que deseas ejecutar '$($selectedOption.Text)'? (S/N)"
-                if ($confirm.ToUpper() -ne 'S') {
-                    $proceed = $false
-                    Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
-                }
-            }
-
-            if ($proceed) {
-				Write-Log -LogLevel INFO -Message "NETWORK: Ejecutando la acción '$($selectedOption.Text)'."
-                # Invocar el bloque de accion asociado a la opcion del menu
-                & $selectedOption.Action
-            }
-
-            Read-Host "`nPresiona Enter para continuar..."
+        $netChoice = Read-Host "Selecciona una opcion"
+        Write-Log -LogLevel INFO -Message "NETWORK: Usuario selecciono la opcion '$netChoice'."
+		
+        switch ($netChoice.ToUpper()) {
+            '1' { Invoke-ShowIpConfig }
+            '2' { Invoke-PingTest }
+            '3' { Invoke-DnsResolutionTest }
+            '4' { Invoke-TraceRoute }
+            '5' { Invoke-FlushDnsCache }
+            '6' { Invoke-RenewIpAddress }
+            '7' { Invoke-ResetNetworkStacks }
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
         }
-        else {
-            Write-Warning "Opcion no valida."
-            Start-Sleep -Seconds 2
-        }
-        
-    } while ($rawChoice.ToUpper() -ne 'V')
+    } while ($netChoice.ToUpper() -ne 'V')
 }
 
 # ===================================================================
@@ -2135,6 +2093,141 @@ function Select-PathDialog {
     return $null # Devuelve nulo si el usuario cancela
 }
 
+function Invoke-BackupRobocopyVerification {
+    [CmdletBinding()]
+    param(
+        $logFile, $baseRoboCopyArgs, $backupType, $sourcePaths, $destinationPath, $Mode
+    )
+
+    Write-Host "`n[+] Iniciando comprobacion de integridad (modo de solo listado)..." -ForegroundColor Yellow
+    Write-Output "`r`n`r`n================================================`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
+    Write-Output "   INICIO DE LA COMPROBACION DE INTEGRIDAD (RAPIDA)`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
+    Write-Output "================================================`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
+
+    $verifyBaseArgs = $baseRoboCopyArgs + "/L"
+    $logArg = "/LOG+:`"$logFile`""
+
+    if ($backupType -eq 'Files') {
+        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
+        foreach ($group in $filesByDirectory) {
+            $sourceDir = $group.Name
+            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
+            Write-Host " - Verificando lote desde '$sourceDir'..." -ForegroundColor Gray
+            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $verifyBaseArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    } else {
+        $folderArgs = $verifyBaseArgs + "/E"
+        if ($Mode -eq 'Mirror') { $folderArgs = $verifyBaseArgs + "/MIR" }
+        foreach ($sourceFolder in $sourcePaths) {
+            $folderName = Split-Path $sourceFolder -Leaf
+            $destinationFolder = Join-Path $destinationPath $folderName
+            Write-Host "`n[+] Verificando '$folderName' en '$destinationFolder'..." -ForegroundColor Gray
+            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    }
+    
+    Write-Host "[OK] Comprobacion de integridad finalizada. Revisa el registro para ver los detalles." -ForegroundColor Green
+    Write-Host "   Si no aparecen archivos listados en la seccion de verificacion, la copia es integra." -ForegroundColor Gray
+}
+
+function Invoke-BackupHashVerification {
+    [CmdletBinding()]
+    param(
+        $sourcePaths, $destinationPath, $backupType, $logFile
+    )
+    
+    Write-Host "`n[+] Iniciando comprobacion profunda por Hash (SHA256). Esto puede ser MUY LENTO." -ForegroundColor Yellow
+    
+    $sourceFiles = @()
+    if ($backupType -eq 'Files') {
+        $sourceFiles = $sourcePaths | Get-Item
+    } else {
+        $sourcePaths | ForEach-Object { $sourceFiles += Get-ChildItem $_ -Recurse -File -ErrorAction SilentlyContinue }
+    }
+
+    if ($sourceFiles.Count -eq 0) { Write-Warning "No se encontraron archivos de origen para verificar."; return }
+
+    $totalFiles = $sourceFiles.Count
+    $checkedFiles = 0
+    $mismatchedFiles = 0
+    $missingFiles = 0
+    $mismatchedFileList = [System.Collections.Generic.List[string]]::new()
+    $missingFileList = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($sourceFile in $sourceFiles) {
+        $checkedFiles++
+        Write-Progress -Activity "Verificando hashes de archivos" -Status "Procesando: $($sourceFile.Name)" -PercentComplete (($checkedFiles / $totalFiles) * 100)
+        
+        $destinationFile = ""
+        if ($backupType -eq 'Folders') {
+             $baseSourceFolder = ($sourcePaths | Where-Object { $sourceFile.FullName.StartsWith($_) })[0]
+             $relativePath = $sourceFile.FullName.Substring($baseSourceFolder.Length)
+             $destinationFile = Join-Path (Join-Path $destinationPath (Split-Path $baseSourceFolder -Leaf)) $relativePath
+        } else {
+             $destinationFile = Join-Path $destinationPath $sourceFile.Name
+        }
+        
+        if (Test-Path $destinationFile) {
+            try {
+                $sourceHash = (Get-FileHash $sourceFile.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                $destHash = (Get-FileHash $destinationFile -Algorithm SHA256 -ErrorAction Stop).Hash
+                if ($sourceHash -ne $destHash) {
+                    $mismatchedFiles++
+                    $message = "DISCREPANCIA DE HASH: $($sourceFile.FullName)"
+                    Write-Warning $message
+                    $mismatchedFileList.Add($message)
+                }
+            } catch {
+                $message = "ERROR DE LECTURA: No se pudo calcular el hash de '$($sourceFile.Name)' o su par. Puede estar en uso."
+                Write-Warning $message
+                $mismatchedFileList.Add($message)
+            }
+        } else {
+            $missingFiles++
+            $message = "ARCHIVO FALTANTE en el destino: $($sourceFile.FullName)"
+            Write-Warning $message
+            $missingFileList.Add($message)
+        }
+    }
+
+    Write-Progress -Activity "Verificacion por Hash" -Completed
+    Write-Host "`n--- RESUMEN DE LA COMPROBACION PROFUNDA ---" -ForegroundColor Cyan
+    Write-Host "Archivos totales verificados: $totalFiles"
+    $mismatchColor = if ($mismatchedFiles -gt 0) { 'Red' } else { 'Green' }
+    Write-Host "Archivos con discrepancias  : $mismatchedFiles" -ForegroundColor $mismatchColor
+    $missingColor = if ($missingFiles -gt 0) { 'Red' } else { 'Green' }
+    Write-Host "Archivos faltantes en destino: $missingFiles" -ForegroundColor $missingColor
+    
+    # --- INICIO DE LA NUEVA LOGICA DE REGISTRO ---
+    $logSummary = @"
+
+-------------------------------------------------
+   RESUMEN DE LA COMPROBACION PROFUNDA POR HASH
+-------------------------------------------------
+Archivos totales verificados: $totalFiles
+Archivos con discrepancias  : $mismatchedFiles
+Archivos faltantes en destino: $missingFiles
+"@
+    if ($mismatchedFileList.Count -gt 0) {
+        $logSummary += "`r`n`r`n--- LISTA DE DISCREPANCIAS ---`r`n"
+        $logSummary += ($mismatchedFileList | Out-String)
+    }
+    if ($missingFileList.Count -gt 0) {
+        $logSummary += "`r`n`r`n--- LISTA DE ARCHIVOS FALTANTES ---`r`n"
+        $logSummary += ($missingFileList | Out-String)
+    }
+    $logSummary | Out-File -FilePath $logFile -Append -Encoding UTF8
+    # --- FIN DE LA NUEVA LOGICA DE REGISTRO ---
+    
+    if ($mismatchedFiles -eq 0 -and $missingFiles -eq 0) {
+        Write-Host "[OK] La integridad de todos los archivos ha sido verificada con exito." -ForegroundColor Green
+    } else {
+        Write-Error "Se encontraron problemas de integridad en la copia de seguridad."
+    }
+}
+
 # --- FUNCION 2: LOGICA PRINCIPAL DEL RESPALDO (ROBOCOPY) ---
 function Invoke-UserDataBackup {
     [CmdletBinding()]
@@ -2236,10 +2329,24 @@ function Invoke-UserDataBackup {
         Write-Warning "El Modo Espejo eliminara cualquier archivo en el destino que no exista en el origen."
     }
     Write-Host "Se generara un registro detallado en: $logFile"
-    Write-Log -LogLevel INFO -Message "BACKUP: Resumen de la operación. Modo: '$Mode'. Origen: $($sourcePaths -join ', '). Destino: '$destinationPath'."
+    
+	Write-Log -LogLevel ACTION -Message "BACKUP: Iniciando operacion. Modo: '$Mode'. Origen: $($sourcePaths -join ', '). Destino: '$destinationPath'."
 	
-    if ((Read-Host "`nEstas listo para iniciar el respaldo? (S/N)").ToUpper() -ne 'S') {
-        Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return
+    Write-Host ""
+    Write-Host "--- CONFIRMACION FINAL ---" -ForegroundColor Yellow
+    Write-Host "   [S] Si, iniciar solo el respaldo"
+    Write-Host "   [V] Si, respaldar Y verificar (Comprobacion Rapida)"
+    Write-Host "   [H] Si, respaldar Y verificar (Comprobacion Profunda por Hash - MUY LENTO)"
+    Write-Host "   [N] No, cancelar operacion"
+    $confirmChoice = Read-Host "`nElige una opcion"
+
+    $verificationType = 'None' # Valor por defecto
+    switch ($confirmChoice.ToUpper()) {
+        'S' { $verificationType = 'None' }
+        'V' { $verificationType = 'Fast' }
+        'H' { $verificationType = 'Deep' }
+        'N' { Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return }
+        default { Write-Warning "Opcion no valida. Operacion cancelada."; Start-Sleep -Seconds 2; return }
     }
 
     # 5. Ejecutamos el respaldo
@@ -2271,6 +2378,17 @@ function Invoke-UserDataBackup {
     }
 
     Write-Host "`n[EXITO] Operacion de respaldo completada." -ForegroundColor Green
+	switch ($verificationType) {
+        'Fast' {
+			Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion rapida (Robocopy /L)."
+            Invoke-BackupRobocopyVerification -logFile $logFile -baseRoboCopyArgs $baseRoboCopyArgs -backupType $backupType -sourcePaths $sourcePaths -destinationPath $destinationPath -Mode $Mode
+        }
+        'Deep' {
+			Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion profunda (Hash SHA256)."
+            Invoke-BackupHashVerification -sourcePaths $sourcePaths -destinationPath $destinationPath -backupType $backupType -logFile $logFile
+        }
+        # Si es 'None', no hacemos nada
+    }
     Write-Host "Se ha guardado un registro detallado en '$logFile'"
     if ((Read-Host "Deseas abrir el archivo de registro ahora? (S/N)").ToUpper() -eq 'S') {
         Start-Process "notepad.exe" -ArgumentList $logFile
@@ -2285,7 +2403,7 @@ function Show-UserDataBackupMenu {
     function Get-BackupMode {
         Write-Host ""
         Write-Host "--- Elige un modo de respaldo ---" -ForegroundColor Yellow
-        Write-Host "   [1] Simple (Anadir y Actualizar)"
+        Write-Host "   [1] Simple (Copiar y Actualizar)"
         Write-Host "       Copia archivos nuevos o modificados. No borra nada en el destino." -ForegroundColor Gray
         Write-Host "   [2] Sincronizacion (Espejo)"
         Write-Host "       Hace que el destino sea identico al origen. Borra archivos en el destino." -ForegroundColor Red
@@ -2459,8 +2577,6 @@ function Get-SystemInventoryData {
             throw "El archivo DxDiag.txt no se pudo crear."
         }
     } catch {
-        # MeTODO DE RESPALDO: WMI Antiguo
-        # ---------------------------------
         # Esto solo se ejecutara si el bloque 'try' (DxDiag) falla por cualquier motivo.
         Write-Warning "El metodo principal con DxDiag.txt fallo. Usando WMI como ultimo recurso (la VRAM puede ser imprecisa). Error: $($_.Exception.Message)"
         
@@ -2557,7 +2673,7 @@ function Get-SystemInventoryData {
         Where-Object { $_.DisplayName } | 
         Sort-Object DisplayName
 
-    # --- NUEVO: Recopilamos el estado de salud de los discos físicos ---
+    # --- Recopilamos el estado de salud de los discos físicos ---
     $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='EstadoSalud'; E={
     switch ($_.HealthStatus) {
         'Healthy'   { 'Saludable' }
@@ -2568,11 +2684,29 @@ function Get-SystemInventoryData {
     }
 }
 
+    # Informacion detallada de cada modulo de RAM
+   $ramDetails = Get-CimInstance -ClassName Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, PartNumber, Capacity, Speed
+
+    # Cuentas de usuario locales y sus grupos
+    $localUsers = Get-LocalUser | Select-Object Name, Enabled, LastLogon
+    $adminUsers = Get-LocalGroupMember -Group "Administradores" | Select-Object Name, PrincipalSource
+
+    # Puertos de red en estado de "escucha" (Listening)
+    $listeningPorts = Get-NetTCPConnection -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess | Sort-Object LocalPort
+    
+    # Plan de energia activo
+    $powerPlan = if ((powercfg /getactivescheme) -match '\((.*?)\)') { $matches[1] } else { (powercfg /getactivescheme) }
+
     # -- Objeto final --
     return [PSCustomObject]@{
         System = $systemData; Hardware = $hardwareData; Security = $securityData; Disks = $diskData
         Network = $networkData; OSConfig = $osConfigData; Software = $softwareData
 		PhysicalDisks = $physicalDiskData
+		RAMDetails = $ramDetails
+        LocalUsers = $localUsers
+        AdminUsers = $adminUsers
+        ListeningPorts = $listeningPorts
+        PowerPlan = $powerPlan
         ReportDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     }
 }
@@ -2650,6 +2784,32 @@ function Build-FullInventoryHtmlReport {
     }
     $body += "</div></div>"
 
+    # --- MODULOS DE RAM ---
+    $body += "<div class='section'><h2><i class='fas fa-memory'></i>Modulos de Memoria RAM</h2><table id='ramTable'><thead><tr><th>Ranura (Slot)</th><th>Fabricante</th><th>No. de Serie</th><th>Capacidad (GB)</th><th>Velocidad (MHz)</th></tr></thead><tbody>"
+        foreach ($ram in $InventoryData.RAMDetails) {
+    $body += "<tr><td>$($ram.DeviceLocator)</td><td>$($ram.Manufacturer)</td><td>$($ram.PartNumber)</td><td>$([math]::Round($ram.Capacity / 1GB, 2))</td><td>$($ram.Speed)</td></tr>"
+    }
+    $body += "</tbody></table></div>"
+
+    # --- CUENTAS DE USUARIO Y ADMINS ---
+    $body += "<div class='section'><h2><i class='fas fa-users-cog'></i>Cuentas de Usuario y Administradores</h2><div class='grid-container'>"
+    $body += "<div><h3>Cuentas Locales</h3><div class='search-box'><input type='text' id='userSearch' onkeyup=`"searchTable('userSearch', 'userTable')`" placeholder='Buscar usuario...'></div><table id='userTable'><thead><tr><th>Nombre</th><th>Habilitado</th><th>Ultimo Inicio de Sesion</th></tr></thead><tbody>"
+        foreach($user in $InventoryData.LocalUsers){ $body += "<tr><td>$($user.Name)</td><td>$($user.Enabled)</td><td>$($user.LastLogon)</td></tr>" }
+    $body += "</tbody></table></div>"
+    $body += "<div><h3>Miembros del Grupo de Administradores</h3><div class='search-box'><input type='text' id='adminSearch' onkeyup=`"searchTable('adminSearch', 'adminTable')`" placeholder='Buscar administrador...'></div><table id='adminTable'><thead><tr><th>Nombre</th><th>Origen</th></tr></thead><tbody>"
+        foreach($admin in $InventoryData.AdminUsers){ $body += "<tr><td>$($admin.Name)</td><td>$($admin.PrincipalSource)</td></tr>" }
+    $body += "</tbody></table></div></div></div>"
+
+    # --- PLAN DE ENERGIA ---
+    $body += "<div class='section'><h2><i class='fas fa-bolt'></i>Plan de Energia Activo</h2><p>$($InventoryData.PowerPlan)</p></div>"
+
+    # --- PUERTOS ABIERTOS ---
+    $body += "<div class='section'><h2><i class='fas fa-network-wired'></i>Puertos de Red Abiertos (Escuchando)</h2><div class='search-box'><input type='text' id='portSearch' onkeyup=`"searchTable('portSearch', 'portTable')`" placeholder='Buscar por puerto o proceso...'></div><table id='portTable'><thead><tr><th>Direccion Local</th><th>Puerto</th><th>ID de Proceso</th></tr></thead><tbody>"
+        foreach ($port in $InventoryData.ListeningPorts) {
+    $body += "<tr><td>$($port.LocalAddress)</td><td>$($port.LocalPort)</td><td>$($port.OwningProcess)</td></tr>"
+    }
+    $body += "</tbody></table></div>"
+
     $body += "<div class='section'><h2><i class='fas fa-lock'></i>Estado de Seguridad</h2><div class='grid-container'>"
     $avNames = if ($InventoryData.Security.Antivirus) { ($InventoryData.Security.Antivirus.displayName -join ', ') } else { 'No Detectado' }
     $body += "<div><span class='info-label'>Antivirus Registrado:</span> $avNames</div>"
@@ -2664,7 +2824,7 @@ function Build-FullInventoryHtmlReport {
     }
     $body += "</tbody></table></div>"
 	
-	# --- NUEVO: Añadimos la tabla de salud de discos físicos ---
+	# ---salud de discos físicos ---
     $body += "<div class='section'><h2><i class='fas fa-heartbeat'></i>Diagnostico de Salud de Discos (S.M.A.R.T.)</h2><table><thead><tr><th>Nombre</th><th>Tipo</th><th>No. de Serie</th><th>Estado de Salud</th></tr></thead><tbody>"
     foreach ($pdisk in $InventoryData.PhysicalDisks) {
         $body += "<tr><td>$($pdisk.FriendlyName)</td><td>$($pdisk.MediaType)</td><td>$($pdisk.SerialNumber)</td><td>$($pdisk.EstadoSalud)</td></tr>"
@@ -2691,7 +2851,7 @@ function Build-FullInventoryHtmlReport {
     }
     $body += "</tbody></table></div>"
 
-    # --- INICIO: Añadida columna de Fecha de Instalacion al HTML ---
+    # --- Instalacion al HTML ---
     $body += "<div class='section'><h2><i class='fas fa-box-open'></i>Software Instalado ($($InventoryData.Software.Count))</h2>"
     $body += "<div class='search-box'><input type='text' id='softwareSearch' onkeyup='searchSoftware()' placeholder='Buscar software por nombre...'></div>"
     $body += "<table id='softwareTable'><thead><tr><th>Nombre</th><th>Version</th><th>Editor</th><th>Fecha de Instalacion</th></tr></thead><tbody>"
@@ -2699,7 +2859,6 @@ function Build-FullInventoryHtmlReport {
         $body += "<tr><td>$($app.DisplayName)</td><td>$($app.DisplayVersion)</td><td>$($app.Publisher)</td><td>$($app.InstallDate)</td></tr>"
     }
     $body += "</tbody></table></div>"
-    # --- FIN: Añadida columna de Fecha de Instalacion al HTML ---
     
     $body += @"
         <script>
@@ -2749,6 +2908,7 @@ function Show-InventoryMenu {
             # --- SECCIoN: SISTEMA Y CPU (Formato manual para mejor claridad) ---
             $reportContent += ""
             $reportContent += "=== SISTEMA OPERATIVO Y CPU ==="
+			$reportContent += ""
             $reportContent += "WindowsVersion   : $($inventoryData.System.WindowsVersion)"
             $reportContent += "Hostname         : $($inventoryData.System.Hostname)"
             $reportContent += "Procesador       : $($inventoryData.System.Procesador)"
@@ -2760,6 +2920,7 @@ function Show-InventoryMenu {
             # --- SECCIoN: HARDWARE (Formato manual) ---
             $reportContent += ""
             $reportContent += "=== HARDWARE DETALLADO ==="
+			$reportContent += ""
             $reportContent += "Placa Base       : $($inventoryData.Hardware.PlacaBase.Manufacturer) $($inventoryData.Hardware.PlacaBase.Product)"
             $reportContent += "BIOS             : $($inventoryData.Hardware.BIOS)"
                 foreach ($gpu in $inventoryData.Hardware.GPU) {
@@ -2767,9 +2928,39 @@ function Show-InventoryMenu {
                 $reportContent += "Driver de Video  : $($gpu.DriverVersion)"
             }
 
+            $reportContent += ""
+            $reportContent += "=== MODULOS DE MEMORIA RAM ==="
+            $ramTable = $inventoryData.RAMDetails | ForEach-Object {
+            [PSCustomObject]@{
+                Ranura = $_.DeviceLocator
+                Fabricante = $_.Manufacturer
+                'No. de Serie' = $_.PartNumber
+                'Capacidad (GB)' = [math]::Round($_.Capacity / 1GB, 2)
+                'Velocidad (MHz)' = $_.Speed
+                }
+            }
+            $reportContent += ($ramTable | Format-Table -Wrap | Out-String).TrimEnd()
+
+            $reportContent += ""
+            $reportContent += "=== CUENTAS DE USUARIO LOCALES ==="
+            $reportContent += ($inventoryData.LocalUsers | Format-Table -Wrap | Out-String).TrimEnd()
+
+            $reportContent += ""
+            $reportContent += "=== MIEMBROS DEL GRUPO DE ADMINISTRADORES ==="
+            $reportContent += ($inventoryData.AdminUsers | Format-Table -Wrap | Out-String).TrimEnd()
+
+            $reportContent += ""
+            $reportContent += "=== PLAN DE ENERGIA ACTIVO ==="
+            $reportContent += $inventoryData.PowerPlan
+
+            $reportContent += ""
+            $reportContent += "=== PUERTOS DE RED ABIERTOS (ESCUCHANDO) ==="
+            $reportContent += ($inventoryData.ListeningPorts | Format-Table -Wrap | Out-String).TrimEnd()
+
             # --- SECCIoN: SEGURIDAD
             $reportContent += ""
             $reportContent += "=== ESTADO DE SEGURIDAD ==="
+			$reportContent += ""
             $reportContent += "Antivirus : $(if ($inventoryData.Security.Antivirus) { ($inventoryData.Security.Antivirus.displayName -join ', ') } else { 'No Detectado' })"
             $reportContent += "Firewall  : $(($inventoryData.Security.Firewall | ForEach-Object { "$($_.Name): $(if($_.Enabled){'Activado'}else{'Desactivado'})" }) -join ' | ')"
             $reportContent += "BitLocker : $($inventoryData.Security.BitLocker)"
