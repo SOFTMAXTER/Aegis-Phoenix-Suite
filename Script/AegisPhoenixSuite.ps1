@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.7.1
+    4.7.2
 #>
 
-$script:Version = "4.7.1"
+$script:Version = "4.7.2"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -39,7 +39,10 @@ function Invoke-FullRepoUpdater {
                 $installPath = (Split-Path -Path $PSScriptRoot -Parent)
                 $batchPath = Join-Path $installPath "Run.bat"
 
+                # --- MODIFICADO: El script interno ahora acepta un parámetro y tiene 6 pasos ---
                 $updaterScriptContent = @"
+param(`$parentPID) # <--- AÑADIDO: Recibe el ID del proceso principal
+
 `$ErrorActionPreference = 'Stop'
 `$Host.UI.RawUI.WindowTitle = 'PROCESO DE ACTUALIZACION DE AEGIS - NO CERRAR'
 try {
@@ -47,23 +50,33 @@ try {
     `$tempZip_updater = Join-Path "`$tempDir_updater" "update.zip"
     `$tempExtract_updater = Join-Path "`$tempDir_updater" "extracted"
 
-    Write-Host "[PASO 1/5] Descargando la nueva version..." -ForegroundColor Yellow
+    Write-Host "[PASO 1/6] Descargando la nueva version..." -ForegroundColor Yellow
     Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip_updater"
 
-    Write-Host "[PASO 2/5] Descomprimiendo archivos..." -ForegroundColor Yellow
+    Write-Host "[PASO 2/6] Descomprimiendo archivos..." -ForegroundColor Yellow
     Expand-Archive -Path "`$tempZip_updater" -DestinationPath "`$tempExtract_updater" -Force
     `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract_updater" -Directory).FullName
 
-    Write-Host "[PASO 3/5] Eliminando archivos antiguos..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 4
+    # --- AÑADIDO: Paso de espera explícito ---
+    Write-Host "[PASO 3/6] Esperando a que el proceso principal de Aegis finalice..." -ForegroundColor Yellow
+    try {
+        # Espera a que el PID que le pasamos termine antes de continuar
+        Get-Process -Id `$parentPID -ErrorAction Stop | Wait-Process -ErrorAction Stop
+    } catch {
+        # Si el proceso ya cerro (fue muy rapido), no es un error.
+        Write-Host "   - El proceso principal ya ha finalizado." -ForegroundColor Gray
+    }
+    # --- FIN DE LA MODIFICACIÓN ---
+
+    Write-Host "[PASO 4/6] Eliminando archivos antiguos (excluyendo datos de usuario)..." -ForegroundColor Yellow # <--- MODIFICADO: Paso 4/6
     `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
     if (`$null -ne `$itemsToRemove) { Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force }
 
-    Write-Host "[PASO 4/5] Instalando nuevos archivos..." -ForegroundColor Yellow
+    Write-Host "[PASO 5/6] Instalando nuevos archivos..." -ForegroundColor Yellow # <--- MODIFICADO: Paso 5/6
     Move-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Force
     Get-ChildItem -Path "$installPath" -Recurse | Unblock-File
 
-    Write-Host "[PASO 5/5] ¡Actualizacion completada! Reiniciando la suite en 5 segundos..." -ForegroundColor Green
+    Write-Host "[PASO 6/6] ¡Actualizacion completada! Reiniciando la suite en 5 segundos..." -ForegroundColor Green # <--- MODIFICADO: Paso 6/6
     Start-Sleep -Seconds 5
     
     Remove-Item -Path "`$tempDir_updater" -Recurse -Force
@@ -76,16 +89,19 @@ catch {
 }
 "@
                 Set-Content -Path $updaterScriptPath -Value $updaterScriptContent -Encoding utf8
-                $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`""
+                
+                # --- MODIFICADO: Se pasa el $PID actual como argumento al nuevo proceso ---
+                $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`" -parentPID $PID"
+                
                 Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Hidden
-                exit
+                exit # El script principal se cierra inmediatamente
             } else {
 				Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1
         	}
         } 
     }
     catch {
-		
+		# Silencioso si no hay conexion, no es un error.
         return
     }
 }
@@ -98,10 +114,11 @@ Write-Host "Cargando catalogos..."
 try {
     . "$PSScriptRoot\Catalogos\Ajustes.ps1"
     . "$PSScriptRoot\Catalogos\Servicios.ps1"
+	. "$PSScriptRoot\Catalogos\Bloatware.ps1"
 }
 catch {
     Write-Error "Error critico: No se pudieron cargar los archivos de catalogo."
-    Write-Error "Asegurate de que 'Ajustes.ps1' y 'Servicios.ps1' existen en la subcarpeta 'Catalogos'."
+    Write-Error "Asegurate de que 'Ajustes.ps1', 'Servicios.ps1' y 'Bloatware.ps1' existen en la subcarpeta 'Catalogos'."
     Read-Host "Presiona Enter para salir."
     exit
 }
@@ -1057,15 +1074,15 @@ function Get-RemovableApps {
     }
 
     if ($Type -eq 'Microsoft') {
-        # Esta logica no cambia, ya que el bloqueo de apps esenciales es mas importante aqui.
-        $essentialAppsBlocklist = @( "Microsoft.WindowsStore", "Microsoft.WindowsCalculator", "Microsoft.Windows.Photos", "Microsoft.Windows.Camera", "Microsoft.SecHealthUI", "Microsoft.UI.Xaml", "Microsoft.VCLibs", "Microsoft.NET.Native", "Microsoft.WebpImageExtension", "Microsoft.HEIFImageExtension", "Microsoft.VP9VideoExtensions", "Microsoft.ScreenSketch", "Microsoft.WindowsTerminal", "Microsoft.Paint", "Microsoft.WindowsNotepad" )
         $allApps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.NonRemovable -eq $false -and (& $baseFilter) }
         foreach ($app in $allApps) {
             $isEssential = $false
-            foreach ($essential in $essentialAppsBlocklist) { if ($app.Name -like "*$essential*") { $isEssential = $true; break } }
+            foreach ($essential in $script:ProtectedAppList) { 
+                if ($app.Name -like "*$essential*") { $isEssential = $true; break } 
+            }
             if (-not $isEssential) { $apps += (& $objectBuilder $app) }
         }
-    } 
+    }
     elseif ($Type -eq 'ThirdParty_AllUsers') {
         # Ahora solo busca apps no-Microsoft que esten firmadas como parte del SISTEMA (tipico del bloatware de fabricante).
         $apps = Get-AppxPackage -AllUsers | Where-Object { 
@@ -2486,6 +2503,8 @@ function Get-DetailedWindowsVersion {
     # Obtenemos los datos clave del registro en una sola llamada para mayor eficiencia
     $winVerInfo = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 
+    $osArch = (Get-ComputerInfo).OsArchitecture
+
     $buildNumber = [int]$winVerInfo.CurrentBuildNumber
 	$ubrNumber = $winVerInfo.UBR
     $fullBuildString = "$buildNumber.$ubrNumber"  
@@ -2511,7 +2530,7 @@ function Get-DetailedWindowsVersion {
     }
 
     # Devolvemos la cadena de texto combinada y detallada
-    return "$baseProductName $friendlyEdition (Build: $fullBuildString)"
+    return "$baseProductName $friendlyEdition $osArch (Build: $fullBuildString)"
 }
 
 # --- FUNCIoN AUXILIAR 1: Recopilador de Datos Exhaustivo ---
@@ -2527,7 +2546,7 @@ function Get-SystemInventoryData {
         WindowsVersion = Get-DetailedWindowsVersion
         Hostname = $csInfo.CsName
         Procesador = ($csInfo.CsProcessors | Select-Object -First 1).Name
-        Nucleos = "fisicos $physicalCores logicos $($csInfo.CsNumberOfLogicalProcessors)"
+        Nucleos = "$physicalCores fisicos. $($csInfo.CsNumberOfLogicalProcessors) logicos."
         MemoriaTotalGB = [math]::Round((Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
         MemoriaEnUsoPorc = [math]::Round((($osInfo.TotalVisibleMemorySize - $osInfo.FreePhysicalMemory) / $osInfo.TotalVisibleMemorySize) * 100, 2)
         Uptime = "$($uptime.Days) dias, $($uptime.Hours) horas, $($uptime.Minutes) minutos"
@@ -2674,7 +2693,7 @@ function Get-SystemInventoryData {
         Sort-Object DisplayName
 
     # --- Recopilamos el estado de salud de los discos físicos ---
-    $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='EstadoSalud'; E={
+    $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='HealthStatus'; E={
     switch ($_.HealthStatus) {
         'Healthy'   { 'Saludable' }
         'Warning'   { 'Advertencia' }
@@ -2751,12 +2770,58 @@ function Build-FullInventoryHtmlReport {
         .progress-bar { height: 100%; }
         .search-box input { width: 98%; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 5px; margin-bottom: 15px; font-size: 1em; }
         .footer { text-align: center; margin-top: 40px; color: #6c757d; font-size: 0.8em; }
+		/* --- Estilos para la Barra de Navegacion --- */
+        .navbar {
+            background-color: var(--secondary-color);
+            overflow: visible; /* Permitimos que las sombras se vean */
+            position: sticky;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 8px 5px; /* <-- Añadimos padding para espaciar los botones de la barra */
+        }
+        .navbar a {
+            color: var(--header-text-color);
+            background-color: var(--primary-color); /* <-- Color de fondo del botón (azul) */
+            text-align: center;
+            padding: 10px 15px; /* <-- Hacemos el padding un poco más compacto */
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 600; /* <-- Hacemos el texto más grueso */
+            border-radius: 5px; /* <-- ¡Esquinas redondeadas! */
+            margin: 4px; /* <-- Espacio entre cada botón */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* <-- Sombra para dar profundidad */
+            transition: all 0.2s ease-out; /* <-- Transición suave para todo */
+        }
+        .navbar a:hover {
+            background-color: var(--primary-color);
+            color: #ffffff;
+        }
     </style>
 </head>
 "@
     # --- FIN: Paleta de colores y CSS rediseñados ---
     
     $body = "<body>"
+	$body += @"
+    <div class="navbar">
+        <a href="#sistema">Sistema</a>
+        <a href="#hardware">Hardware</a>
+        <a href="#ram">RAM</a>
+        <a href="#usuarios">Usuarios</a>
+        <a href="#seguridad">Seguridad</a>
+        <a href="#discos">Discos</a>
+        <a href="#salud-discos">Salud Discos</a>
+        <a href="#procesos">Procesos</a>
+        <a href="#updates">Updates</a>
+        <a href="#software">Software</a>
+    </div>
+"@
     $body += "<h1><i class='fas fa-shield-alt'></i>Aegis Phoenix Suite - Reporte de Inventario</h1>"
     $body += "<p class='timestamp'>Generado el: $($InventoryData.ReportDate) para el equipo $($InventoryData.System.Hostname)</p>"
 
@@ -2767,7 +2832,7 @@ function Build-FullInventoryHtmlReport {
     }
 
     # -- Secciones --
-    $body += "<div class='section'><h2><i class='fas fa-desktop'></i>Sistema Operativo y CPU</h2><div class='grid-container'>"
+    $body += "<div class='section' id='sistema'><h2><i class='fas fa-desktop'></i>Sistema Operativo y CPU</h2><div class='grid-container'>"
     $body += "<div><span class='info-label'>Sistema:</span> $($InventoryData.System.WindowsVersion)</div>"
     $body += "<div><span class='info-label'>Procesador:</span> $($InventoryData.System.Procesador)</div>"
     $body += "<div><span class='info-label'>Nucleos:</span> $($InventoryData.System.Nucleos)</div>"
@@ -2775,7 +2840,7 @@ function Build-FullInventoryHtmlReport {
     $body += "<div><span class='info-label'>Memoria RAM:</span> $($InventoryData.System.MemoriaTotalGB) GB $($InventoryData.System.MemoriaEnUsoPorc)% Usado" + (Get-ProgressBarHtml($InventoryData.System.MemoriaEnUsoPorc)) + "</div>"
     $body += "</div></div>"
 
-    $body += "<div class='section'><h2><i class='fas fa-microchip'></i>Hardware Detallado</h2><div class='grid-container'>"
+    $body += "<div class='section' id='hardware'><h2><i class='fas fa-microchip'></i>Hardware Detallado</h2><div class='grid-container'>"
     $body += "<div><span class='info-label'>Placa Base:</span> $($InventoryData.Hardware.PlacaBase.Manufacturer) $($InventoryData.Hardware.PlacaBase.Product)</div>"
     $body += "<div><span class='info-label'>BIOS:</span> $($InventoryData.Hardware.BIOS)</div>"
         foreach ($gpu in $InventoryData.Hardware.GPU) {
@@ -2785,14 +2850,14 @@ function Build-FullInventoryHtmlReport {
     $body += "</div></div>"
 
     # --- MODULOS DE RAM ---
-    $body += "<div class='section'><h2><i class='fas fa-memory'></i>Modulos de Memoria RAM</h2><table id='ramTable'><thead><tr><th>Ranura (Slot)</th><th>Fabricante</th><th>No. de Serie</th><th>Capacidad (GB)</th><th>Velocidad (MHz)</th></tr></thead><tbody>"
+    $body += "<div class='section' id='ram'><h2><i class='fas fa-memory'></i>Modulos de Memoria RAM</h2><table id='ramTable'><thead><tr><th>Ranura (Slot)</th><th>Fabricante</th><th>No. de Serie</th><th>Capacidad (GB)</th><th>Velocidad (MHz)</th></tr></thead><tbody>"
         foreach ($ram in $InventoryData.RAMDetails) {
     $body += "<tr><td>$($ram.DeviceLocator)</td><td>$($ram.Manufacturer)</td><td>$($ram.PartNumber)</td><td>$([math]::Round($ram.Capacity / 1GB, 2))</td><td>$($ram.Speed)</td></tr>"
     }
     $body += "</tbody></table></div>"
 
     # --- CUENTAS DE USUARIO Y ADMINS ---
-    $body += "<div class='section'><h2><i class='fas fa-users-cog'></i>Cuentas de Usuario y Administradores</h2><div class='grid-container'>"
+    $body += "<div class='section' id='usuarios'><h2><i class='fas fa-users-cog'></i>Cuentas de Usuario y Administradores</h2><div class='grid-container'>"
     $body += "<div><h3>Cuentas Locales</h3><div class='search-box'><input type='text' id='userSearch' onkeyup=`"searchTable('userSearch', 'userTable')`" placeholder='Buscar usuario...'></div><table id='userTable'><thead><tr><th>Nombre</th><th>Habilitado</th><th>Ultimo Inicio de Sesion</th></tr></thead><tbody>"
         foreach($user in $InventoryData.LocalUsers){ $body += "<tr><td>$($user.Name)</td><td>$($user.Enabled)</td><td>$($user.LastLogon)</td></tr>" }
     $body += "</tbody></table></div>"
@@ -2801,16 +2866,16 @@ function Build-FullInventoryHtmlReport {
     $body += "</tbody></table></div></div></div>"
 
     # --- PLAN DE ENERGIA ---
-    $body += "<div class='section'><h2><i class='fas fa-bolt'></i>Plan de Energia Activo</h2><p>$($InventoryData.PowerPlan)</p></div>"
+    $body += "<div class='section' id='energia'><h2><i class='fas fa-bolt'></i>Plan de Energia Activo</h2><p>$($InventoryData.PowerPlan)</p></div>"
 
     # --- PUERTOS ABIERTOS ---
-    $body += "<div class='section'><h2><i class='fas fa-network-wired'></i>Puertos de Red Abiertos (Escuchando)</h2><div class='search-box'><input type='text' id='portSearch' onkeyup=`"searchTable('portSearch', 'portTable')`" placeholder='Buscar por puerto o proceso...'></div><table id='portTable'><thead><tr><th>Direccion Local</th><th>Puerto</th><th>ID de Proceso</th></tr></thead><tbody>"
+    $body += "<div class='section' id='puertos'><h2><i class='fas fa-network-wired'></i>Puertos de Red Abiertos (Escuchando)</h2><div class='search-box'><input type='text' id='portSearch' onkeyup=`"searchTable('portSearch', 'portTable')`" placeholder='Buscar por puerto o proceso...'></div><table id='portTable'><thead><tr><th>Direccion Local</th><th>Puerto</th><th>ID de Proceso</th></tr></thead><tbody>"
         foreach ($port in $InventoryData.ListeningPorts) {
     $body += "<tr><td>$($port.LocalAddress)</td><td>$($port.LocalPort)</td><td>$($port.OwningProcess)</td></tr>"
     }
     $body += "</tbody></table></div>"
 
-    $body += "<div class='section'><h2><i class='fas fa-lock'></i>Estado de Seguridad</h2><div class='grid-container'>"
+    $body += "<div class='section' id='seguridad'><h2><i class='fas fa-lock'></i>Estado de Seguridad</h2><div class='grid-container'>"
     $avNames = if ($InventoryData.Security.Antivirus) { ($InventoryData.Security.Antivirus.displayName -join ', ') } else { 'No Detectado' }
     $body += "<div><span class='info-label'>Antivirus Registrado:</span> $avNames</div>"
     $firewallStatus = ($InventoryData.Security.Firewall | ForEach-Object { "$($_.Name): $(if($_.Enabled){'Activado'}else{'Desactivado'})" }) -join ' | '
@@ -2818,26 +2883,24 @@ function Build-FullInventoryHtmlReport {
     $body += "<div><span class='info-label'>Cifrado de Disco (BitLocker):</span> $($InventoryData.Security.BitLocker)</div>"
     $body += "</div></div>"
 
-    $body += "<div class='section'><h2><i class='fas fa-hdd'></i>Discos</h2><table><thead><tr><th>Dispositivo</th><th>Tamano (GB)</th><th>Libre (GB)</th><th>Uso</th></tr></thead><tbody>"
-    foreach ($disk in $InventoryData.Disks) {
-        $body += "<tr><td>$($disk.Dispositivo) ($($disk.Nombre))</td><td>$($disk.TamanoTotalGB)</td><td>$($disk.EspacioLibreGB)</td><td>$($disk.UsoPorc)%" + (Get-ProgressBarHtml($disk.UsoPorc)) + "</td></tr>"
-    }
+    $body += "<div class='section' id='discos'><h2><i class='fas fa-hdd'></i>Discos</h2><div class='search-box'><input type='text' id='disksSearch' onkeyup=`"searchTable('disksSearch', 'disksTable')`" placeholder='Buscar en discos...'></div><table id='disksTable'><thead><tr><th>Dispositivo</th><th>Tipo</th><th>Tamano (GB)</th><th>Libre (GB)</th><th>Uso</th></tr></thead><tbody>"
+        foreach ($disk in $InventoryData.Disks) { $body += "<tr><td>$($disk.Dispositivo) ($($disk.Nombre))</td><td>$($disk.Tipo)</td><td>$($disk.TamanoTotalGB)</td><td>$($disk.EspacioLibreGB)</td><td>$($disk.UsoPorc)%" + (Get-ProgressBarHtml($disk.UsoPorc)) + "</td></tr>" }
     $body += "</tbody></table></div>"
 	
 	# ---salud de discos físicos ---
-    $body += "<div class='section'><h2><i class='fas fa-heartbeat'></i>Diagnostico de Salud de Discos (S.M.A.R.T.)</h2><table><thead><tr><th>Nombre</th><th>Tipo</th><th>No. de Serie</th><th>Estado de Salud</th></tr></thead><tbody>"
+    $body += "<div class='section' id='salud-discos'><h2><i class='fas fa-heartbeat'></i>Diagnostico de Salud de Discos (S.M.A.R.T.)</h2><div class='search-box'><input type='text' id='smartSearch' onkeyup=`"searchTable('smartSearch', 'smartTable')`" placeholder='Buscar por nombre o estado...'></div><table id='smartTable'><thead><tr><th>Nombre</th><th>Tipo</th><th>No. de Serie</th><th>Estado de Salud</th></tr></thead><tbody>"
     foreach ($pdisk in $InventoryData.PhysicalDisks) {
-        $body += "<tr><td>$($pdisk.FriendlyName)</td><td>$($pdisk.MediaType)</td><td>$($pdisk.SerialNumber)</td><td>$($pdisk.EstadoSalud)</td></tr>"
-    }
-    $body += "</tbody></table></div>"
-
-    $body += "<div class='section'><h2><i class='fas fa-network-wired'></i>Red</h2><table><thead><tr><th>Nombre</th><th>Descripcion</th><th>Estado</th><th>MAC</th></tr></thead><tbody>"
-    foreach ($adapter in $InventoryData.Network) {
-        $body += "<tr><td>$($adapter.Name)</td><td>$($adapter.InterfaceDescription)</td><td>$($adapter.Status)</td><td>$($adapter.MacAddress)</td></tr>"
+        $healthColor = switch ($pdisk.EstadoSalud) {
+            'Saludable'   { 'var(--success-color)' }
+            'Advertencia' { 'var(--warning-color)' }
+            'No saludable' { 'var(--danger-color)' }
+            default       { 'var(--main-text-color)' }
+        }
+        $body += "<tr><td>$($pdisk.FriendlyName)</td><td>$($pdisk.MediaType)</td><td>$($pdisk.SerialNumber)</td><td style='color: $healthColor;'><strong>$($pdisk.HealthStatus)</strong></td></tr>"
     }
     $body += "</tbody></table></div>"
     
-    $body += "<div class='section'><h2><i class='fas fa-chart-line'></i>Procesos de Mayor Consumo</h2><div class='grid-container'>"
+    $body += "<div class='section' id='procesos'><h2><i class='fas fa-chart-line'></i>Procesos de Mayor Consumo</h2><div class='grid-container'>"
     $body += "<div><h3>Top 5 por CPU</h3><table><thead><tr><th>Nombre</th><th>CPU</th></tr></thead><tbody>"
     foreach($p in $InventoryData.OSConfig.TopCPU){ $body += "<tr><td>$($p.Name)</td><td>$($p.CPU)</td></tr>" }
     $body += "</tbody></table></div>"
@@ -2845,14 +2908,14 @@ function Build-FullInventoryHtmlReport {
     foreach($p in $InventoryData.OSConfig.TopMemory){ $body += "<tr><td>$($p.Name)</td><td>$($p.Memoria_MB)</td></tr>" }
     $body += "</tbody></table></div></div></div>"
     
-    $body += "<div class='section'><h2><i class='fas fa-history'></i>Ultimas 15 Actualizaciones Instaladas</h2><table><thead><tr><th>ID</th><th>Descripcion</th><th>Fecha</th></tr></thead><tbody>"
+    $body += "<div class='section' id='updates'><h2><i class='fas fa-history'></i>Ultimas Actualizaciones Instaladas</h2><table><thead><tr><th>ID</th><th>Descripcion</th><th>Fecha</th></tr></thead><tbody>"
     foreach ($hotfix in $InventoryData.OSConfig.Hotfixes) {
         $body += "<tr><td>$($hotfix.HotFixID)</td><td>$($hotfix.Description)</td><td>$($hotfix.InstalledOn.ToString('yyyy-MM-dd'))</td></tr>"
     }
     $body += "</tbody></table></div>"
 
     # --- Instalacion al HTML ---
-    $body += "<div class='section'><h2><i class='fas fa-box-open'></i>Software Instalado ($($InventoryData.Software.Count))</h2>"
+    $body += "<div class='section' id='software'><h2><i class='fas fa-box-open'></i>Software Instalado ($($InventoryData.Software.Count))</h2>"
     $body += "<div class='search-box'><input type='text' id='softwareSearch' onkeyup='searchSoftware()' placeholder='Buscar software por nombre...'></div>"
     $body += "<table id='softwareTable'><thead><tr><th>Nombre</th><th>Version</th><th>Editor</th><th>Fecha de Instalacion</th></tr></thead><tbody>"
     foreach ($app in $InventoryData.Software) {
@@ -2951,6 +3014,7 @@ function Show-InventoryMenu {
 
             $reportContent += ""
             $reportContent += "=== PLAN DE ENERGIA ACTIVO ==="
+			$reportContent += ""
             $reportContent += $inventoryData.PowerPlan
 
             $reportContent += ""
@@ -3386,6 +3450,121 @@ function Show-SoftwareMenu {
     } while ($softwareChoice.ToUpper() -ne 'V')
 }
 
+# --- ADAPTADOR 1: Obtener actualizaciones de Winget ---
+function Get-AegisWingetUpdates {
+    Write-Host "Buscando en Winget..." -ForegroundColor Gray
+    $updates = @()
+    try {
+        $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
+        $lines = $output -split "`r?`n"
+        $inTable = $false
+        
+        foreach ($line in $lines) {
+            $trimmedLine = $line.Trim()
+            
+            if ($trimmedLine -match "^[-\\s]{20,}") {
+                $inTable = $true
+                continue
+            }
+            
+            if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
+                $columns = $trimmedLine -split "\s{2,}"
+                if ($columns.Count -ge 3) {
+                    $updates += [PSCustomObject]@{
+                        Name = $columns[0].Trim()
+                        Id = $columns[1].Trim()
+                        Version = $columns[2].Trim()
+                        Available = if ($columns.Count -ge 4) { $columns[3].Trim() } else { "Unknown" }
+                        Engine = 'Winget'
+                    }
+                }
+            }
+        }
+    } catch {
+        Write-Warning "Fallo al obtener actualizaciones de Winget: $($_.Exception.Message)"
+    }
+    return $updates
+}
+
+# --- ADAPTADOR 2: Obtener actualizaciones de Chocolatey ---
+function Get-AegisChocoUpdates {
+    Write-Host "Buscando en Chocolatey..." -ForegroundColor Gray
+    $updates = @()
+    try {
+        $output = choco outdated -r
+        $updates = $output | ForEach-Object {
+            if ($_ -match "^(.*?)\|(.*?)\|(.*?)\|") {
+                [PSCustomObject]@{
+                    Name = $matches[1].Trim()
+                    Id = $matches[1].Trim()
+                    Version = $matches[2].Trim()
+                    Available = $matches[3].Trim()
+                    Engine = 'Chocolatey'
+                }
+            }
+        }
+    } catch {
+        Write-Warning "Fallo al obtener actualizaciones de Chocolatey: $($_.Exception.Message)"
+    }
+    return $updates
+}
+
+# --- ADAPTADOR 3: Buscar paquetes en Winget ---
+function Search-AegisWingetPackage {
+    param([string]$SearchTerm)
+    
+    $results = @()
+    try {
+        $rawOutput = winget search $SearchTerm --source winget --accept-source-agreements 2>&1
+        $lines = $rawOutput -split "`r?`n"
+        $inTable = $false
+        
+        foreach ($line in $lines) {
+            $trimmedLine = $line.Trim()
+            if ($trimmedLine -match "^[-\\s]{20,}") {
+                $inTable = $true
+                continue
+            }
+            
+            if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
+                $columns = $trimmedLine -split "\s{2,}"
+                if ($columns.Count -ge 3) {
+                    $results += [PSCustomObject]@{
+                        Name = $columns[0].Trim()
+                        Id = $columns[1].Trim()
+                        Version = $columns[2].Trim()
+                    }
+                }
+            }
+        }
+    } catch {
+        Write-Warning "Fallo al buscar en Winget: $($_.Exception.Message)"
+    }
+    return $results
+}
+
+# --- ADAPTADOR 4: Buscar paquetes en Chocolatey ---
+function Search-AegisChocoPackage {
+     param([string]$SearchTerm)
+
+    $results = @()
+    try {
+        $rawOutput = choco search $SearchTerm -r 2>&1
+        $results = $rawOutput | ForEach-Object {
+            if ($_ -match "^(.*?)\|(.*)$") {
+                [PSCustomObject]@{
+                    Name = $matches[1].Trim()
+                    Id = $matches[1].Trim()
+                    Version = $matches[2].Trim()
+                }
+            }
+        }
+    } catch {
+         Write-Warning "Fallo al buscar en Chocolatey: $($_.Exception.Message)"
+    }
+    return $results
+}
+
 function Invoke-SoftwareUpdates {
     try {
         Write-Host "`nBuscando actualizaciones disponibles..." -ForegroundColor Yellow
@@ -3407,7 +3586,7 @@ function Invoke-SoftwareUpdates {
             } else {
                 Write-Host "Motor $engine no esta disponible." -ForegroundColor Yellow
                 if ($engine -eq 'Winget') {
-                    Write-Host "Nota: Winget debe instalarse manualmente desde Microsoft Store." -ForegroundColor Yellow
+                    Write-Host "Nota: Winget debe instalarse manually desde Microsoft Store." -ForegroundColor Yellow
                 }
             }
         }
@@ -3421,57 +3600,15 @@ function Invoke-SoftwareUpdates {
             return
         }
 
-        # Buscar actualizaciones en los motores activos
+        # --- INICIO DE LA REFACTORIZACION ---
+        # La logica de parseo se ha movido a los adaptadores.
         foreach ($engine in $activeEngines) {
-            Write-Host "Buscando en $engine..." -ForegroundColor Gray
-            $updates = @()
-            
             switch ($engine) {
-                'Winget' {
-                    $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
-                    $lines = $output -split "`r?`n"
-                    $inTable = $false
-                    
-                    foreach ($line in $lines) {
-                        $trimmedLine = $line.Trim()
-                        
-                        if ($trimmedLine -match "^[-\\s]{20,}") {
-                            $inTable = $true
-                            continue
-                        }
-                        
-                        if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
-                            $columns = $trimmedLine -split "\s{2,}"
-                            if ($columns.Count -ge 3) {
-                                $updates += [PSCustomObject]@{
-                                    Name = $columns[0].Trim()
-                                    Id = $columns[1].Trim()
-                                    Version = $columns[2].Trim()
-                                    Available = if ($columns.Count -ge 4) { $columns[3].Trim() } else { "Unknown" }
-                                    Engine = 'Winget'
-                                }
-                            }
-                        }
-                    }
-                }
-                'Chocolatey' {
-                    $output = choco outdated -r
-                    $updates = $output | ForEach-Object {
-                        if ($_ -match "^(.*?)\|(.*?)\|(.*?)\|") {
-                            [PSCustomObject]@{
-                                Name = $matches[1].Trim()
-                                Id = $matches[1].Trim()
-                                Version = $matches[2].Trim()
-                                Available = $matches[3].Trim()
-                                Engine = 'Chocolatey'
-                            }
-                        }
-                    }
-                }
+                'Winget'     { $allUpdates += Get-AegisWingetUpdates }
+                'Chocolatey' { $allUpdates += Get-AegisChocoUpdates }
             }
-            
-            $allUpdates += $updates
         }
+        # --- FIN DE LA REFACTORIZACION ---
 
         if ($allUpdates.Count -eq 0) {
             Write-Host "No se encontraron actualizaciones pendientes." -ForegroundColor Green
@@ -3479,7 +3616,7 @@ function Invoke-SoftwareUpdates {
             return
         }
 
-        # Seleccion interactiva
+        # Seleccion interactiva (Esta parte no cambia)
         $allUpdates | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
         
         $choice = ''
@@ -3636,51 +3773,18 @@ function Invoke-SoftwareSearchAndInstall {
         }
         
         $results = @()
+        
+        # --- INICIO DE LA REFACTORIZACION ---
+        # La logica de parseo se ha movido a los adaptadores.
         switch ($script:SoftwareEngine) {
              'Winget' {
-                # Ejecutar winget y capturar salida
-                $rawOutput = winget search $searchTerm --source winget --accept-source-agreements 2>&1
-                
-                # Procesar la salida linea por linea
-                $lines = $rawOutput -split "`r?`n"
-                $inTable = $false
-                
-                foreach ($line in $lines) {
-                    $trimmedLine = $line.Trim()
-                    
-                    # Detectar el inicio de la tabla (linea con muchos guiones)
-                    if ($trimmedLine -match "^[-\\s]{20,}") {
-                        $inTable = $true
-                        continue
-                    }
-                    
-                    # Si estamos en la tabla y la linea tiene contenido
-                    if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
-                        # Dividir por multiples espacios
-                        $columns = $trimmedLine -split "\s{2,}"
-                        if ($columns.Count -ge 3) {
-                            $results += [PSCustomObject]@{
-                                Name = $columns[0].Trim()
-                                Id = $columns[1].Trim()
-                                Version = $columns[2].Trim()
-                            }
-                        }
-                    }
-                }
+                $results = Search-AegisWingetPackage -SearchTerm $searchTerm
             }
             'Chocolatey' {
-                $rawOutput = choco search $searchTerm -r 2>&1
-                $results = $rawOutput | ForEach-Object {
-                    if ($_ -match "^(.*?)\|(.*)$") {
-                        [PSCustomObject]@{
-                            Name = $matches[1].Trim()
-                            Id = $matches[1].Trim()
-                            Version = $matches[2].Trim()
-                        }
-                    }
-                }
+                $results = Search-AegisChocoPackage -SearchTerm $searchTerm
             }
         }
+        # --- FIN DE LA REFACTORIZACION ---
 
         if ($results.Count -eq 0) {
             Write-Host "No se encontraron resultados." -ForegroundColor Yellow
@@ -3688,7 +3792,7 @@ function Invoke-SoftwareSearchAndInstall {
             return
         }
 
-        # Seleccion interactiva
+        # Seleccion interactiva (Esta parte no cambia)
         $results | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
         
         $choice = ''
