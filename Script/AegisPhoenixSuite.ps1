@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.7.2
+    4.7.3
 #>
 
-$script:Version = "4.7.2"
+$script:Version = "4.7.3"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -278,7 +278,6 @@ function Create-RestorePoint {
         }
     }
 
-    # --- NUEVO: Anadimos una pausa final antes de volver al menu ---
     Read-Host "`nProceso finalizado. Presiona Enter para volver al menu principal..."
 }
 
@@ -1289,11 +1288,11 @@ function Manage-StartupApps {
 
     #region Funciones Auxiliares
     
-    # --- AÑADIDO: Valores binarios exactos que usa el Administrador de Tareas ---
+    # --- Valores binarios exactos que usa el Administrador de Tareas ---
     $script:EnabledValue  = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
     $script:DisabledValue = [byte[]](0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
 
-    # --- NUEVA FUNCIoN: Escribe el estado (Habilitado/Deshabilitado) de la misma forma que el Administrador de Tareas ---
+    # --- Escribe el estado (Habilitado/Deshabilitado) de la misma forma que el Administrador de Tareas ---
     function Set-StartupApprovedStatus {
         param(
             [string]$ItemName,
@@ -1709,7 +1708,7 @@ function Generate-SystemReport {
 }
 
 # ===================================================================
-# --- INICIO DEL MoDULO DE DIAGNoSTICO Y REPARACIoN DE RED (REFACTORIZADO) ---
+# --- MoDULO DE DIAGNoSTICO Y REPARACIoN DE RED ---
 # ===================================================================
 
 # --- Funciones de Accion (Herramientas del modulo) ---
@@ -1869,7 +1868,7 @@ function Show-NetworkDiagnosticsMenu {
 }
 
 # ===================================================================
-# --- INICIO DEL MODULO DE ANALIZADOR DE REGISTROS DE EVENTOS ---
+# --- MODULO DE ANALIZADOR DE REGISTROS DE EVENTOS ---
 # ===================================================================
 
 # --- Funcion auxiliar principal para obtener eventos ---
@@ -1936,7 +1935,6 @@ function Build-EventLogHtmlReport {
 
     Add-Type -AssemblyName System.Web
 
-    # --- CSS (sin cambios) ---
     $head = @"
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2064,13 +2062,16 @@ function Show-EventLogAnalyzerMenu {
                 Read-Host "`nPresiona Enter para continuar..."
             }
             'V' { continue }
-            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
+            default {
+				Write-Warning "Opcion no valida."
+				Start-Sleep -Seconds 2
+			}
         }
     } while ($logChoice.ToUpper() -ne 'V')
 }
 
 # ===================================================================
-# --- INICIO DEL MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
+# --- MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
 # ===================================================================
 
 function Select-PathDialog {
@@ -2217,7 +2218,6 @@ function Invoke-BackupHashVerification {
     $missingColor = if ($missingFiles -gt 0) { 'Red' } else { 'Green' }
     Write-Host "Archivos faltantes en destino: $missingFiles" -ForegroundColor $missingColor
     
-    # --- INICIO DE LA NUEVA LOGICA DE REGISTRO ---
     $logSummary = @"
 
 -------------------------------------------------
@@ -2236,7 +2236,6 @@ Archivos faltantes en destino: $missingFiles
         $logSummary += ($missingFileList | Out-String)
     }
     $logSummary | Out-File -FilePath $logFile -Append -Encoding UTF8
-    # --- FIN DE LA NUEVA LOGICA DE REGISTRO ---
     
     if ($mismatchedFiles -eq 0 -and $missingFiles -eq 0) {
         Write-Host "[OK] La integridad de todos los archivos ha sido verificada con exito." -ForegroundColor Green
@@ -2496,7 +2495,7 @@ function Show-UserDataBackupMenu {
 }
 
 # ===================================================================
-# --- INICIO DEL MoDULO DE INVENTARIO PROFESIONAL ---
+# --- MoDULO DE INVENTARIO PROFESIONAL ---
 # ===================================================================
 
 function Get-DetailedWindowsVersion {
@@ -2734,7 +2733,7 @@ function Get-SystemInventoryData {
 function Build-FullInventoryHtmlReport {
     param ([Parameter(Mandatory=$true)] $InventoryData)
 
-    # --- INICIO: Paleta de colores y CSS rediseñados ---
+    # --- Paleta de colores y CSS rediseñados ---
     $head = @"
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2805,8 +2804,7 @@ function Build-FullInventoryHtmlReport {
     </style>
 </head>
 "@
-    # --- FIN: Paleta de colores y CSS rediseñados ---
-    
+  
     $body = "<body>"
 	$body += @"
     <div class="navbar">
@@ -3034,7 +3032,7 @@ function Show-InventoryMenu {
             $reportContent += "=== DISCOS ==="
             $reportContent += ($inventoryData.Disks | Format-Table | Out-String).TrimEnd()
 			
-			# --- NUEVO: Añadimos la seccion de salud de discos físicos ---
+			# --- Añadimos la seccion de salud de discos físicos ---
             $reportContent += ""
             $reportContent += "=== DIAGNOSTICO DE SALUD DE DISCOS (S.M.A.R.T.) ==="
             $reportContent += ($inventoryData.PhysicalDisks | Format-Table | Out-String).TrimEnd()
@@ -3203,6 +3201,280 @@ function Show-DriverMenu {
     } while ($driverChoice.ToUpper() -ne 'V')
 }
 
+# ===================================================================
+# --- MoDULO DE REUBICACIoN DE CARPETAS DE USUARIO ---
+# ===================================================================
+
+function Move-UserProfileFolders {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+    param()
+
+    Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Reubicacion de Carpetas de Usuario."
+
+    $folderMappings = @{
+        'Escritorio' = @{ RegValue = 'Desktop'; DefaultName = 'Desktop' }
+        'Documentos' = @{ RegValue = 'Personal'; DefaultName = 'Documents' }
+        'Descargas'  = @{ RegValue = '{374DE290-123F-4565-9164-39C4925E467B}'; DefaultName = 'Downloads' }
+        'Musica'     = @{ RegValue = 'My Music'; DefaultName = 'Music' }
+        'Imagenes'   = @{ RegValue = 'My Pictures'; DefaultName = 'Pictures' }
+        'Videos'     = @{ RegValue = 'My Video'; DefaultName = 'Videos' }
+    }
+    $registryPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+
+    Write-Host "`n[+] Paso 1: Selecciona la carpeta RAIZ donde se crearan las nuevas carpetas de usuario." -ForegroundColor Yellow
+    Write-Host "    (Ejemplo: Si seleccionas 'D:\MisDatos', se crearan 'D:\MisDatos\Escritorio', 'D:\MisDatos\Documentos', etc.)" -ForegroundColor Gray
+    $newBasePath = Select-PathDialog -DialogType Folder -Title "Selecciona la NUEVA UBICACION BASE para tus carpetas"
+    
+    if ([string]::IsNullOrWhiteSpace($newBasePath)) {
+        Write-Warning "Operacion cancelada. No se selecciono una ruta de destino."
+        Start-Sleep -Seconds 2
+        return
+    }
+    
+    $currentUserProfilePath = $env:USERPROFILE
+    if ($newBasePath.StartsWith($currentUserProfilePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+         Write-Error "La nueva ubicacion base no puede estar dentro de tu perfil de usuario actual ('$currentUserProfilePath')."
+         Read-Host "`nOperacion abortada. Presiona Enter para volver..."
+         return
+    }
+
+    $selectableFolders = $folderMappings.Keys | Sort-Object
+    $folderItems = @()
+    foreach ($folderName in $selectableFolders) {
+        $folderItems += [PSCustomObject]@{
+            Name     = $folderName
+            Selected = $false
+        }
+    }
+
+    $choice = ''
+    while ($choice.ToUpper() -ne 'C' -and $choice.ToUpper() -ne 'V') {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "      Selecciona las Carpetas de Usuario a Reubicar    " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "Nueva Ubicacion Base: $newBasePath" -ForegroundColor Yellow
+        Write-Host "Marca las carpetas que deseas mover a esta nueva ubicacion."
+        Write-Host ""
+        
+        for ($i = 0; $i -lt $folderItems.Count; $i++) {
+            $item = $folderItems[$i]
+            $status = if ($item.Selected) { "[X]" } else { "[ ]" }
+            $currentPath = (Get-ItemProperty -Path $registryPath -Name $folderMappings[$item.Name].RegValue -ErrorAction SilentlyContinue).($folderMappings[$item.Name].RegValue)
+            $currentPathExpanded = try { [Environment]::ExpandEnvironmentVariables($currentPath) } catch { $currentPath }
+            Write-Host ("   [{0}] {1} {2,-12} -> Actual: {3}" -f ($i + 1), $status, $item.Name, $currentPathExpanded)
+        }
+        
+        $selectedCount = $folderItems.Where({$_.Selected}).Count
+        if ($selectedCount -gt 0) {
+            Write-Host ""
+            Write-Host "   ($selectedCount carpeta(s) seleccionada(s))" -ForegroundColor Cyan
+        }
+
+        Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
+        Write-Host "   [Numero] Marcar/Desmarcar        [T] Marcar Todas"
+        Write-Host "   [C] Continuar con la Reubicacion [N] Desmarcar Todas"
+        Write-Host ""
+        Write-Host "   [V] Cancelar y Volver" -ForegroundColor Red
+        Write-Host ""
+        $choice = Read-Host "Selecciona una opcion"
+
+        if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $folderItems.Count) {
+            $index = [int]$choice - 1
+            $folderItems[$index].Selected = -not $folderItems[$index].Selected
+        } elseif ($choice.ToUpper() -eq 'T') { $folderItems.ForEach({$_.Selected = $true}) }
+        elseif ($choice.ToUpper() -eq 'N') { $folderItems.ForEach({$_.Selected = $false}) }
+        elseif ($choice.ToUpper() -notin @('C', 'V')) {
+             Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 1
+        }
+    }
+
+    if ($choice.ToUpper() -eq 'V') {
+        Write-Host "Operacion cancelada por el usuario." -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+        return
+    }
+
+    $foldersToProcess = $folderItems | Where-Object { $_.Selected }
+    if ($foldersToProcess.Count -eq 0) {
+        Write-Warning "No se selecciono ninguna carpeta para mover."
+        Start-Sleep -Seconds 2
+        return
+    }
+
+    Clear-Host
+    Write-Host "--- RESUMEN DE LA REUBICACION ---" -ForegroundColor Cyan
+    Write-Host "Nueva Ubicacion Base: $newBasePath"
+    Write-Host "Se modificaran las siguientes carpetas:" -ForegroundColor Yellow
+    
+    $operations = @()
+    foreach ($folder in $foldersToProcess) {
+        $regValueName = $folderMappings[$folder.Name].RegValue
+        $currentPathReg = (Get-ItemProperty -Path $registryPath -Name $regValueName -ErrorAction SilentlyContinue).($regValueName)
+        $currentPathExpanded = try { [Environment]::ExpandEnvironmentVariables($currentPathReg) } catch { $currentPathReg }
+        $newFolderName = $folderMappings[$folder.Name].DefaultName
+        $newFullPath = Join-Path -Path $newBasePath -ChildPath $newFolderName
+
+        Write-Host " - $($folder.Name)"
+        Write-Host "     Ruta Actual Registrada: $currentPathExpanded" -ForegroundColor Gray
+        Write-Host "     NUEVA Ruta a Registrar: $newFullPath" -ForegroundColor Green
+        
+        $operations += [PSCustomObject]@{
+            Name = $folder.Name
+            RegValueName = $regValueName
+            CurrentPath = $currentPathExpanded
+            NewPath = $newFullPath
+        }
+    }
+
+    Write-Warning "`n¡ADVERTENCIA MUY IMPORTANTE!"
+    Write-Warning "- Cierra TODAS las aplicaciones que puedan estar usando archivos de estas carpetas."
+    Write-Warning "- Si eliges 'Mover y Registrar', el proceso puede tardar MUCHO tiempo."
+    Write-Warning "- NO interrumpas el proceso una vez iniciado."
+
+    Write-Host ""
+    Write-Host "--- TIPO DE ACCION ---" -ForegroundColor Yellow
+    Write-Host "   [M] Mover Archivos Y Actualizar Registro (Accion Completa, Lenta)"
+    Write-Host "   [R] Solo Actualizar Registro (Rapido - ¡ASEGURATE de que los archivos ya estan en el destino" -ForegroundColor Red
+    Write-Host "       o el destino esta vacio!)" -ForegroundColor Red
+    Write-Host "   [N] Cancelar"
+    
+    $actionChoice = Read-Host "`nElige el tipo de accion a realizar"
+    $actionType = ''
+
+    switch ($actionChoice.ToUpper()) {
+        'M' { $actionType = 'MoveAndRegister' }
+        'R' { $actionType = 'RegisterOnly' }
+        default {
+            Write-Host "Operacion cancelada por el usuario." -ForegroundColor Yellow
+            Start-Sleep -Seconds 2
+            return
+        }
+    }
+
+    Write-Warning "`nConfirmacion Final:"
+    $confirmation = Read-Host "¿Estas COMPLETAMENTE SEGURO de continuar con la accion '$actionType'? (Escribe 'SI' para confirmar)"
+    if ($confirmation -ne 'SI') {
+        Write-Host "Operacion cancelada por el usuario." -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+        return
+    }
+
+    Write-Host "`n[+] Iniciando proceso. NO CIERRES ESTA VENTANA..." -ForegroundColor Yellow
+    Write-Log -LogLevel INFO -Message "REUBICACION: Iniciando proceso con accion '$actionType' para $($operations.Count) carpetas hacia '$newBasePath'."
+    $globalSuccess = $true
+    $explorerRestartNeeded = $false
+
+    foreach ($op in $operations) {
+        Write-Host "`n--- Procesando Carpeta: $($op.Name) ---" -ForegroundColor Cyan
+        
+        # 1. Crear directorio de destino (Siempre necesario)
+        Write-Host "  [1/3] Asegurando directorio de destino '$($op.NewPath)'..." -ForegroundColor Gray
+        $destinationDirCreated = $false
+        try {
+            if (-not (Test-Path $op.NewPath)) {
+                New-Item -Path $op.NewPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+                 Write-Host "  -> Directorio creado." -ForegroundColor Green
+            } else {
+                 Write-Host "  -> Directorio ya existe." -ForegroundColor Gray
+            }
+            $destinationDirCreated = $true
+        } catch {
+            Write-Error "  -> FALLO al crear el directorio de destino. Omitiendo carpeta '$($op.Name)'. Error: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "REUBICACION: Fallo al crear directorio '$($op.NewPath)'. Carpeta '$($op.Name)' omitida. Error: $($_.Exception.Message)"
+            $globalSuccess = $false
+            continue
+        }
+
+        # 2. Mover contenido (Solo si se eligio la accion completa)
+        $robocopySucceeded = $true # Asumimos exito si no se mueve nada
+        if ($actionType -eq 'MoveAndRegister') {
+            Write-Host "  [2/3] Moviendo contenido desde '$($op.CurrentPath)'..." -ForegroundColor Gray
+            Write-Warning "      (Esto puede tardar. Se abrira una ventana de Robocopy por cada carpeta)"
+            
+            $robocopyLogDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
+            $robocopyLogFile = Join-Path $robocopyLogDir "Robocopy_Move_$($op.Name)_$(Get-Date -Format 'yyyyMMddHHmmss').log"
+            $robocopyArgs = @(
+                "`"$($op.CurrentPath)`"" # Origen
+                "`"$($op.NewPath)`""    # Destino
+                "/MOVE"                 # Mueve archivos Y directorios (los elimina del origen)
+                "/E"                    # Copia subdirectorios, incluidos los vacios
+                "/COPY:DAT"             # Copia Datos, Atributos, Timestamps
+                "/DCOPY:T"              # Copia Timestamps de directorios
+                "/R:2"                  # Numero de reintentos en caso de fallo
+                "/W:5"                  # Tiempo de espera entre reintentos
+                "/MT:8"                 # Usa 8 hilos para copiar (puede acelerar en discos rapidos)
+                "/NJH"                  # No Job Header
+                "/NJS"                  # No Job Summary
+                "/NP"                   # No Progress
+                "/TEE"                  # Muestra en consola Y en log
+                "/LOG:`"$robocopyLogFile`"" # Guarda el log detallado
+            )
+            
+            Write-Log -LogLevel ACTION -Message "REUBICACION: Iniciando Robocopy /MOVE para '$($op.Name)' de '$($op.CurrentPath)' a '$($op.NewPath)'."
+            
+            $processInfo = Start-Process "robocopy.exe" -ArgumentList $robocopyArgs -Wait -PassThru -WindowStyle Minimized
+            
+            if ($processInfo.ExitCode -ge 8) {
+                Write-Error "  -> FALLO Robocopy al mover '$($op.Name)' (Codigo de salida: $($processInfo.ExitCode))."
+                Write-Error "     Los archivos pueden estar parcialmente movidos. Revisa el log: $robocopyLogFile"
+                Write-Log -LogLevel ERROR -Message "REUBICACION: Robocopy fallo para '$($op.Name)' (Codigo: $($processInfo.ExitCode)). Log: $robocopyLogFile"
+                $globalSuccess = $false
+                $robocopySucceeded = $false 
+                # NO continuamos con el cambio de registro si el movimiento fallo
+                continue 
+            } else {
+                 Write-Host "  -> Movimiento completado (Codigo Robocopy: $($processInfo.ExitCode))." -ForegroundColor Green
+                 Write-Log -LogLevel ACTION -Message "REUBICACION: Robocopy completado para '$($op.Name)' (Codigo: $($processInfo.ExitCode)). Log: $robocopyLogFile"
+            }
+        } else { # Si $actionType es 'RegisterOnly'
+             Write-Host "  [2/3] Omitiendo movimiento de archivos (Modo 'Solo Registrar')." -ForegroundColor Gray
+        }
+
+        # 3. Actualizar el Registro (Si la creacion del dir fue exitosa Y (Robocopy fue exitoso O se eligio 'Solo Registrar'))
+        if ($destinationDirCreated -and $robocopySucceeded) {
+            Write-Host "  [3/3] Actualizando la ruta en el Registro..." -ForegroundColor Gray
+            try {
+                Set-ItemProperty -Path $registryPath -Name $op.RegValueName -Value $op.NewPath -Type String -Force -ErrorAction Stop
+                Write-Host "  -> Registro actualizado exitosamente." -ForegroundColor Green
+                Write-Log -LogLevel ACTION -Message "REUBICACION: Registro actualizado para '$($op.Name)' a '$($op.NewPath)'."
+                $explorerRestartNeeded = $true
+            } catch {
+                Write-Error "  -> FALLO CRITICO al actualizar el registro para '$($op.Name)'. Error: $($_.Exception.Message)"
+                # Distinguir el mensaje de error segun la accion
+                if ($actionType -eq 'MoveAndRegister') {
+                    Write-Error "     La carpeta se movio, pero Windows aun apunta a la ubicacion antigua."
+                } else {
+                    Write-Error "     Windows no pudo ser actualizado para apuntar a la nueva ubicacion."
+                }
+                Write-Log -LogLevel ERROR -Message "REUBICACION CRITICO: Fallo al actualizar registro para '$($op.Name)' a '$($op.NewPath)'. Error: $($_.Exception.Message)"
+                $globalSuccess = $false
+            }
+        } else {
+             Write-Warning "  [3/3] Omitiendo actualizacion de registro debido a error previo en este paso."
+        }
+    }
+
+    Write-Host "`n--- PROCESO DE REUBICACION FINALIZADO ---" -ForegroundColor Cyan
+    if ($globalSuccess) {
+        Write-Host "[EXITO] Todas las carpetas seleccionadas se han procesado." -ForegroundColor Green
+        Write-Log -LogLevel INFO -Message "REUBICACION: Proceso finalizado con exito aparente para las carpetas seleccionadas (Accion: $actionType)."
+    } else {
+        Write-Error "[FALLO PARCIAL] Ocurrieron errores durante el proceso. Revisa los mensajes anteriores y los logs."
+        Write-Log -LogLevel ERROR -Message "REUBICACION: Proceso finalizado con uno o mas errores (Accion: $actionType)."
+    }
+
+    if ($explorerRestartNeeded) {
+        Write-Host "\nEs necesario reiniciar el Explorador de Windows (o cerrar sesion y volver a iniciar) para que los cambios surtan efecto." -ForegroundColor Yellow
+        $restartChoice = Read-Host "¿Deseas reiniciar el Explorador ahora? (S/N)"
+        if ($restartChoice.ToUpper() -eq 'S') {
+            Invoke-ExplorerRestart
+        }
+    }
+
+    Read-Host "`nPresiona Enter para volver al menu..."
+}
+
 function Show-AdminMenu {
     $adminChoice = ''
     do {
@@ -3217,6 +3489,9 @@ function Show-AdminMenu {
         Write-Host ""
         Write-Host "   [2] Gestionar Tareas Programadas de Terceros"
         Write-Host "       (Activa o desactiva tareas que no son de Microsoft)" -ForegroundColor Gray
+        Write-Host ""
+		Write-Host "   [3] Reubicar Carpetas de Usuario (Escritorio, Documentos, etc.)" -ForegroundColor Yellow
+        Write-Host "       (Mueve tus carpetas personales a otra unidad o ubicacion)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
@@ -3272,6 +3547,7 @@ function Show-AdminMenu {
                 }
             }
             '2' { Manage-ScheduledTasks }
+			'3' { Move-UserProfileFolders }
             'V' { continue }
             default {
                 Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
@@ -3600,7 +3876,6 @@ function Invoke-SoftwareUpdates {
             return
         }
 
-        # --- INICIO DE LA REFACTORIZACION ---
         # La logica de parseo se ha movido a los adaptadores.
         foreach ($engine in $activeEngines) {
             switch ($engine) {
@@ -3608,7 +3883,6 @@ function Invoke-SoftwareUpdates {
                 'Chocolatey' { $allUpdates += Get-AegisChocoUpdates }
             }
         }
-        # --- FIN DE LA REFACTORIZACION ---
 
         if ($allUpdates.Count -eq 0) {
             Write-Host "No se encontraron actualizaciones pendientes." -ForegroundColor Green
@@ -4188,30 +4462,31 @@ function Show-TweakManagerMenu {
 
 function Show-OptimizationMenu {
 	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Optimizacion y Limpieza."
-    $optimChoice = '';
-	do { Clear-Host;
+    $optimChoice = ''
+	do {
+	Clear-Host
 	Write-Host "=======================================================" -ForegroundColor Cyan;
 	Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan;
 	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host "";
-    Write-Host "   [1] Gestor de Servicios No Esenciales de Windows";
-    Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray;
-	Write-Host "";
+	Write-Host ""
+    Write-Host "   [1] Gestor de Servicios No Esenciales de Windows"
+    Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray
+	Write-Host ""
     Write-Host "   [2] Optimizar Servicios de Programas Instalados"
     Write-Host "       (Activa o desactiva servicios de tus aplicaciones)" -ForegroundColor Gray
     Write-Host ""
-	Write-Host "   [3] Modulo de Limpieza Profunda";
-	Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "   [4] Eliminar Apps Preinstaladas";
-	Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "   [5] Gestionar Programas de Inicio";
-	Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray;
-	Write-Host "";
-	Write-Host "-------------------------------------------------------";
-	Write-Host "";
-	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
+	Write-Host "   [3] Modulo de Limpieza Profunda"
+	Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray
+	Write-Host ""
+	Write-Host "   [4] Eliminar Apps Preinstaladas"
+	Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray
+	Write-Host ""
+	Write-Host "   [5] Gestionar Programas de Inicio"
+	Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray
+	Write-Host ""
+	Write-Host "-------------------------------------------------------"
+	Write-Host ""
+	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
 	Write-Host ""
 	$optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
         '1' { Manage-SystemServices }
@@ -4234,28 +4509,28 @@ function Show-MaintenanceMenu {
 	Write-Host "=======================================================" -ForegroundColor Cyan;
 	Write-Host "           Modulo de Mantenimiento y Reparacion        " -ForegroundColor Cyan;
 	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host "";
+	Write-Host ""
 	Write-Host "   [1] Verificar y Reparar Archivos del Sistema (SFC/DISM)";
 	Write-Host "       (Soluciona errores de sistema, cuelgues y pantallas azules)" -ForegroundColor Gray;
-	Write-Host "";
+	Write-Host ""
 	Write-Host "   [2] Limpiar Caches de Sistema (DNS, Tienda, etc.)";
 	Write-Host "       (Resuelve problemas de conexion a internet y de la Tienda Windows)" -ForegroundColor Gray;
-	Write-Host "";
+	Write-Host ""
 	Write-Host "   [3] Optimizar Unidades (Desfragmentar/TRIM)";
 	Write-Host "       (Mejora la velocidad de lectura y la vida util de tus discos)" -ForegroundColor Gray;
-	Write-Host "";
+	Write-Host ""
 	Write-Host "   [4] Generar Reporte de Salud del Sistema (Energia)";
 	Write-Host "       (Diagnostica problemas de bateria y consumo de energia)" -ForegroundColor Gray;
-	Write-Host "";
+	Write-Host ""
     Write-Host "   [5] Purgar Memoria RAM en Cache (Standby List)" -ForegroundColor Yellow
     Write-Host "       (Libera la memoria 'En espera'. Para usos muy especificos)" -ForegroundColor Gray
 	Write-Host ""
     Write-Host "   [6] Diagnostico y Reparacion de Red"
     Write-Host "       (Soluciona problemas de conectividad a internet)" -ForegroundColor Gray
-	Write-Host "";
-	Write-Host "-------------------------------------------------------";
-	Write-Host "";
-	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red;
+	Write-Host ""
+	Write-Host "-------------------------------------------------------"
+	Write-Host ""
+	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
 	Write-Host ""
 	$maintChoice = Read-Host "Selecciona una opcion"; switch ($maintChoice.ToUpper()) {
 		'1' { Repair-SystemFiles }
@@ -4264,7 +4539,7 @@ function Show-MaintenanceMenu {
 		'4' { Generate-SystemReport }
 		'5' { Clear-RAMCache }
 		'6' { Show-NetworkDiagnosticsMenu }
-		'V' { continue };
+		'V' { continue }
 		default {
 			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
 			Read-Host }
@@ -4293,7 +4568,7 @@ function Show-AdvancedMenu {
         Write-Host "       (Actualiza e instala todas tus aplicaciones con Winget o Chocolatey)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "   [5] Administracion de Sistema"
-        Write-Host "       (Limpia registros de eventos y gestiona tareas programadas)" -ForegroundColor Gray
+        Write-Host "       (Limpia logs, gestiona tareas y reubica carpetas de usuario)" -ForegroundColor Gray
 		Write-Host ""
         Write-Host "   [6] Analizador Rapido de Registros de Eventos"
         Write-Host "       (Encuentra errores criticos del sistema y aplicaciones)" -ForegroundColor Gray
