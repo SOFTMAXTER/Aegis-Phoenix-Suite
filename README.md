@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v4.7 by SOFTMAXTER
+# Aegis Phoenix Suite v4.8.0 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="unnamed" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
@@ -24,6 +24,8 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 * **Diagnóstico de Salud de Discos (S.M.A.R.T.)**: Los reportes de inventario incluyen el estado de salud de los discos físicos.
 * **Módulos de Diagnóstico y Respaldo Avanzados**: Incluye herramientas profesionales para diagnóstico de red, análisis de logs de eventos y respaldo de datos con `Robocopy`.
 * **Reubicación de Carpetas de Usuario**: Permite mover carpetas clave (Escritorio, Documentos, etc.) a otra ubicación, con opción de mover los archivos o solo actualizar el registro.
+* **Base de Conocimientos de Errores**: Identifica errores comunes (disco, drivers, red) en los registros de eventos y ofrece soluciones integradas.
+* **Monitoreo en Tiempo Real**: Observa los registros de eventos en vivo para detectar problemas mientras ocurren.
 
 ---
 
@@ -73,18 +75,18 @@ Al iniciar, se presentan las categorías principales de la suite.
 
 * `1. Gestor de Servicios No Esenciales de Windows`: Muestra una lista interactiva de servicios del sistema (definidos en `Servicios.ps1`) para optimizarlos. Permite activarlos, desactivarlos o restaurarlos a su configuración por defecto individualmente.
 * `2. Optimizar Servicios de Programas Instalados`: Detecta y muestra servicios instalados por aplicaciones de terceros, permitiendo activarlos, desactivarlos o restaurarlos a su estado original (guardado en un respaldo `JSON`) para reducir el consumo de recursos.
-* `3. Módulo de Limpieza Profunda`: Abre un submenú con opciones para eliminar archivos temporales, vaciar la papelera, limpiar cachés de sistema (miniaturas, DirectX) y una limpieza avanzada de componentes de Windows (`Windows.old`).
+* `3. Módulo de Limpieza Profunda`: Abre un submenú con opciones para eliminar archivos temporales, vaciar la papelera, limpiar cachés de sistema (miniaturas, DirectX) y una limpieza avanzada de componentes de Windows. Utiliza `DISM /StartComponentCleanup /ResetBase` para una limpieza profunda y real de Windows Update y `Windows.old`.
 * `4. Eliminar Apps Preinstaladas`: Abre un submenú para elegir entre eliminar bloatware de Microsoft, de terceros (fabricante) o aplicaciones instaladas por el usuario desde la Tienda, protegiendo las apps esenciales listadas en `Bloatware.ps1`.
 * `5. Gestionar Programas de Inicio`: Abre una interfaz interactiva que detecta programas en el registro, carpetas de inicio y tareas programadas. Es **100% compatible con el Administrador de Tareas de Windows**, leyendo y escribiendo los mismos valores binarios del registro para habilitar o deshabilitar lo que arranca con Windows.
 
 ### 3. Módulo de Mantenimiento y Reparación
 
 * **1. Verificar y Reparar Archivos del Sistema**: Ejecuta la secuencia profesional **inteligente**: `DISM /ScanHealth`, luego `DISM /RestoreHealth` **solo si es necesario**, y finalmente `sfc /scannow` para reparar la integridad del sistema.
-* `2. Limpiar Caches de Sistema`: Ejecuta comandos para limpiar la cache de DNS (`ipconfig /flushdns`), de la Tienda de Windows (`wsreset.exe`) y de iconos.
-* `3. Optimizar Unidades`: Ejecuta `Optimize-Volume -DriveLetter C` para realizar desfragmentación (HDD) o TRIM (SSD) de forma segura.
-* `4. Generar Reporte de Salud del Sistema`: Utiliza `powercfg /energy` para generar un informe HTML que diagnostica problemas de consumo de energía y batería.
-* `5. Purgar Memoria RAM en Cache`: Descarga y utiliza `EmptyStandbyList.exe` para liberar la memoria marcada como "En espera". Útil para escenarios específicos.
-* `6. Diagnostico y Reparacion de Red`: Abre un submenú completo para diagnosticar problemas de conexión (`ping`, `tracert`, `nslookup`) y herramientas de reparación (limpiar DNS, renovar IP, restablecer pila de red).
+* **2. Limpiar Caches de Sistema`: Ejecuta comandos para limpiar la cache de DNS (`ipconfig /flushdns`), de la Tienda de Windows (`wsreset.exe`) y de iconos.
+* **3. Optimizar Unidades**: Ejecuta `Optimize-Volume -DriveLetter C` para realizar desfragmentación (HDD) o TRIM (SSD) de forma segura.
+* **4. Generar Reporte de Salud del Sistema**: Utiliza `powercfg /energy` para generar un informe HTML que diagnostica problemas de consumo de energía y batería.
+* **5. Purgar Memoria RAM en Cache**: Descarga y utiliza `EmptyStandbyList.exe` para liberar la memoria marcada como "En espera". Útil para escenarios específicos.
+* **6. Diagnostico y Reparacion de Red**: Abre un submenú completo para diagnosticar problemas de conexión (`ping`, `tracert`, `nslookup`) y herramientas de reparación (limpiar DNS, renovar IP, restablecer pila de red).
 
 ### 4. Herramientas Avanzadas
 
@@ -127,10 +129,13 @@ Este menú da acceso a todos los módulos de nivel experto.
     * **Mover y Registrar**: Utiliza `Robocopy` para mover todo el contenido de forma robusta y luego actualiza las rutas en el registro.
     * **Solo Registrar**: Útil si los archivos ya se movieron manualmente o si se apunta a una ubicación vacía. Solo actualiza las rutas en el registro.
 
-#### → Analizador Rápido de Registros de Eventos
+#### → Analizador Inteligente de Registros de Eventos
 
-* Genera reportes HTML interactivos (con buscador) de los eventos más importantes.
-* Permite generar un reporte completo (eventos Críticos, Errores de Sistema/Aplicación, Auditorías Fallidas) o buscar eventos por un origen específico (ej. "Disk", "nvlddmkm").
+* **Escaneo Rápido**: Detecta automáticamente patrones de problemas comunes (Disco, Drivers, Memoria, Red, etc.) en las últimas 24 horas.
+* **Análisis Profundo**: Permite filtrar eventos por severidad, origen, fecha y palabras clave.
+* **Reporte HTML Completo**: Genera informes interactivos con búsqueda y filtrado.
+* **Buscar Soluciones**: Base de conocimientos integrada que ofrece soluciones probadas para códigos de error comunes.
+* **Monitoreo en Tiempo Real**: Modo experimental para observar eventos críticos y errores a medida que ocurren en el sistema.
 
 #### → Herramienta de Respaldo de Datos de Usuario (Robocopy)
 
