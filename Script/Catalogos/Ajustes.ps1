@@ -276,6 +276,100 @@ $script:SystemTweaks = @(
         DefaultValue   = 2
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
+    },	
+	[PSCustomObject]@{
+        Name           = "Habilitar Descarga de Checksum (TCP/UDP)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Fuerza a la tarjeta de red a calcular los checksums de paquetes TCP/UDP, reduciendo la carga de la CPU. (Generalmente activado por defecto)."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $prop) { return 'NotApplicable' }
+            return ($prop.RegistryValue -eq '1')
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Descarga de Envio Grande (LSO)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Permite al sistema enviar paquetes grandes a la NIC, y que sea la tarjeta de red (y no la CPU) quien los segmente. Mejora el rendimiento de envio."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '1' -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '0' -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $prop) { return 'NotApplicable' }
+            return ($prop.RegistryValue -eq '1')
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Escalado de Recepcion (RSS)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Distribuye el procesamiento de los paquetes de red recibidos entre multiples nucleos de la CPU, evitando cuellos de botella en un solo nucleo."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Enable-NetAdapterRss
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Disable-NetAdapterRss
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $rss = Get-NetAdapterRss -Name '*' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notlike '*Virtual*' -and $_.InterfaceDescription -notlike '*Loopback*' } | Select-Object -First 1
+            if ($null -eq $rss) { return 'NotApplicable' }
+            return ($rss.Enabled -eq $true)
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Coalescencia de Segmentos (RSC)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Permite a la NIC agrupar multiples paquetes recibidos en uno solo antes de enviarlo a la CPU, reduciendo interrupciones y mejorando la latencia."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Enable-NetAdapterRsc -IPv4 -IPv6
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Disable-NetAdapterRsc -IPv4 -IPv6
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $rsc = Get-NetAdapterRsc -Name '*' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notlike '*Virtual*' -and $_.InterfaceDescription -notlike '*Loopback*' } | Select-Object -First 1
+            if ($null -eq $rsc) { return 'NotApplicable' }
+            return ($rsc.IPv4Enabled -eq $true -and $rsc.IPv6Enabled -eq $true)
+        }
+        RestartNeeded  = "None"
     },
 
     # --- Categoria: Seguridad ---
@@ -327,7 +421,7 @@ $script:SystemTweaks = @(
                 Disable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
             }
             catch {
-                Write-Warning "No se pudo deshabilitar PowerShell v2.0. Es muy probable que esta característica ya no exista en tu version de Windows, lo cual es bueno para la seguridad."
+                Write-Warning "No se pudo deshabilitar PowerShell v2.0. Es muy probable que esta caracteristica ya no exista en tu version de Windows, lo cual es bueno para la seguridad."
             }
         }
         DisableCommand = {
@@ -336,7 +430,7 @@ $script:SystemTweaks = @(
                 Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop
             }
             catch {
-                Write-Warning "No se pudo habilitar PowerShell v2.0. Es probable que esta característica no esté disponible en tu version de Windows."
+                Write-Warning "No se pudo habilitar PowerShell v2.0. Es probable que esta caracteristica no este disponible en tu version de Windows."
             }
         }
         CheckCommand   = {
@@ -496,7 +590,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Desactivar Recopilacion de Datos de Microsoft"
         Category       = "Privacidad y Telemetria"
-        Description    = "Deshabilita el servicio 'DiagTrack' y las tareas del 'Programa para la mejora de la experiencia del cliente' para minimizar el envío de datos de uso a Microsoft."
+        Description    = "Deshabilita el servicio 'DiagTrack' y las tareas del 'Programa para la mejora de la experiencia del cliente' para minimizar el envio de datos de uso a Microsoft."
         Method         = "Command"
         EnableCommand  = {
             Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Disable-ScheduledTask
@@ -575,7 +669,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Bloquear Ejecucion de Apps en Segundo Plano"
         Category       = "Privacidad y Telemetria"
-        Description    = "Aplica una directiva de sistema que impide que las aplicaciones de la Tienda se ejecuten en segundo plano, ahorrando batería y recursos. (Mas efectivo en W10)."
+        Description    = "Aplica una directiva de sistema que impide que las aplicaciones de la Tienda se ejecuten en segundo plano, ahorrando bateria y recursos. (Mas efectivo en W10)."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy"
         RegistryKey    = "LetAppsRunInBackground"
