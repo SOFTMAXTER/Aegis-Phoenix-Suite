@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.7.3
+    4.8.0
 #>
 
-$script:Version = "4.7.3"
+$script:Version = "4.8.0"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -39,7 +39,7 @@ function Invoke-FullRepoUpdater {
                 $installPath = (Split-Path -Path $PSScriptRoot -Parent)
                 $batchPath = Join-Path $installPath "Run.bat"
 
-                # --- MODIFICADO: El script interno ahora acepta un parámetro y tiene 6 pasos ---
+                # --- MODIFICADO: El script interno ahora acepta un parametro y tiene 6 pasos ---
                 $updaterScriptContent = @"
 param(`$parentPID) # <--- AÑADIDO: Recibe el ID del proceso principal
 
@@ -57,7 +57,7 @@ try {
     Expand-Archive -Path "`$tempZip_updater" -DestinationPath "`$tempExtract_updater" -Force
     `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract_updater" -Directory).FullName
 
-    # --- AÑADIDO: Paso de espera explícito ---
+    # --- AÑADIDO: Paso de espera explicito ---
     Write-Host "[PASO 3/6] Esperando a que el proceso principal de Aegis finalice..." -ForegroundColor Yellow
     try {
         # Espera a que el PID que le pasamos termine antes de continuar
@@ -66,7 +66,7 @@ try {
         # Si el proceso ya cerro (fue muy rapido), no es un error.
         Write-Host "   - El proceso principal ya ha finalizado." -ForegroundColor Gray
     }
-    # --- FIN DE LA MODIFICACIÓN ---
+    # --- FIN DE LA MODIFICACIoN ---
 
     Write-Host "[PASO 4/6] Eliminando archivos antiguos (excluyendo datos de usuario)..." -ForegroundColor Yellow # <--- MODIFICADO: Paso 4/6
     `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
@@ -210,7 +210,6 @@ function Format-WrappedText {
 }
 
 # --- FUNCIONES DE ACCION (Las herramientas que hacen el trabajo) ---
-
 function Create-RestorePoint {
     # 1. Verificamos y aseguramos que la Proteccion del Sistema este habilitada en C:
     try {
@@ -764,130 +763,351 @@ function Manage-ThirdPartyServices {
 # =================================================================================
 # --- INICIO DEL MoDULO DE LIMPIEZA ---
 # =================================================================================
-
-# --- FUNCIoN AUXILIAR 1: Calcula el tamaño recuperable de forma silenciosa ---
+# --- Calcula el tamaño recuperable con mejor manejo de errores ---
 function Get-CleanableSize {
     param([string[]]$Paths)
     $totalSize = 0
     foreach ($path in $Paths) {
-        if (Test-Path $path) {
-            $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue -File
-            if ($null -ne $items) {
-                $size = ($items | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                $totalSize += $size
+        try {
+            if (Test-Path $path) {
+                $items = Get-ChildItem -Path $path -Recurse -Force -ErrorAction Stop -File
+                if ($null -ne $items) {
+                    $size = ($items | Measure-Object -Property Length -Sum).Sum
+                    $totalSize += $size
+                }
             }
         }
+        catch {
+            Write-Warning "No se pudo calcular el tamaño de '$path': $($_.Exception.Message)"
+        }
     }
-    return $totalSize # Devuelve el tamaño en bytes
+    return $totalSize
 }
 
-# --- FUNCIoN AUXILIAR 2: Limpieza Avanzada de Componentes del Sistema ---
-# (Esta funcion no necesita cambios)
+# --- FUNCIoN AUXILIAR NUEVA: Elimina archivos de forma robusta ---
+function Remove-FilesSafely {
+    param(
+        [string]$Path,
+        [switch]$ForceSystemFiles = $false
+    )
+    
+    Write-Host "   - Limpiando: $Path" -ForegroundColor Gray
+    
+    try {
+        # Verificar si la ruta existe y es accesible
+        if (-not (Test-Path $Path)) {
+            Write-Host "     [INFO] La ruta '$Path' no existe." -ForegroundColor Gray
+            return 0L
+        }
+
+        # Obtener todos los archivos (ignorar errores de acceso)
+        $files = Get-ChildItem -Path "$Path\*" -Recurse -Force -File -ErrorAction SilentlyContinue
+        
+        $deletedCount = 0
+        $totalCount = 0
+        $originalSize = 0L
+        
+        if ($null -ne $files) {
+            # Asegurar que $files sea siempre un array, incluso si solo hay un archivo
+            if ($files -isnot [array]) {
+                $files = @($files)
+            }
+            $totalCount = $files.Count
+            # Calcular el tamaño original de manera segura
+            if ($totalCount -gt 0) {
+                $originalSizeObj = $files | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue
+                # Manejo robusto para obtener el valor Sum
+                if ($null -ne $originalSizeObj -and $originalSizeObj.PSObject.Properties.Match('Sum').Count -gt 0) {
+                    $originalSize = [long]$originalSizeObj.Sum
+                }
+            }
+        }
+        
+        if ($totalCount -eq 0) {
+            Write-Host "     [INFO] No hay archivos para eliminar en esta ubicacion." -ForegroundColor Gray
+            return 0L
+        }
+
+        foreach ($file in $files) {
+            try {
+                # Intentar eliminar con permisos elevados
+                $acl = Get-Acl -Path $file.FullName -ErrorAction SilentlyContinue
+                if ($acl) {
+                    $acl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+                    $acl.SetAccessRuleProtection($true, $false)
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")
+                    $acl.AddAccessRule($rule)
+                    Set-Acl -Path $file.FullName -AclObject $acl -ErrorAction SilentlyContinue
+                }
+                
+                Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                $deletedCount++
+            }
+            catch {
+                # Intento alternativo para archivos bloqueados
+                try {
+                    $shortPath = Get-ShortPathName -Path $file.FullName
+                    & cmd.exe /c "del /f /q `"$shortPath`"" 2>$null
+                    $deletedCount++
+                }
+                catch {
+                    # No registrar cada error individual para no saturar el log
+                    continue
+                }
+            }
+        }
+        
+        # Intentar eliminar directorios vacios
+        try {
+            $emptyDirs = Get-ChildItem -Path $Path -Directory -Force -Recurse | 
+                Where-Object { $null -eq (Get-ChildItem -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue -File) -and
+                               $null -eq (Get-ChildItem -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue -Directory) }
+                
+            if ($null -ne $emptyDirs) {
+                if ($emptyDirs -isnot [array]) {
+                    $emptyDirs = @($emptyDirs)
+                }
+                foreach ($dir in $emptyDirs) {
+                    try {
+                        Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    catch {
+                        # No es critico si falla la eliminacion de algunos directorios vacios
+                    }
+                }
+            }
+        }
+        catch {
+            # No es critico si falla la eliminacion de directorios vacios
+        }
+        
+        $percent = if ($totalCount -gt 0) { [math]::Round(($deletedCount / $totalCount) * 100, 1) } else { 0 }
+        Write-Host "     [OK] Eliminados $deletedCount de $totalCount archivos ($percent%)" -ForegroundColor Green
+        
+        # Calcular espacio liberado de manera segura
+        $currentSize = 0L
+        try {
+            $remainingFiles = Get-ChildItem -Path "$Path\*" -Recurse -Force -File -ErrorAction SilentlyContinue
+            if ($null -ne $remainingFiles) {
+                # Asegurar que $remainingFiles sea siempre un array
+                if ($remainingFiles -isnot [array]) {
+                    $remainingFiles = @($remainingFiles)
+                }
+                if ($remainingFiles.Count -gt 0) {
+                    $remainingSizeObj = $remainingFiles | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue
+                    # Manejo robusto para obtener el valor Sum
+                    if ($null -ne $remainingSizeObj -and $remainingSizeObj.PSObject.Properties.Match('Sum').Count -gt 0) {
+                        $currentSize = [long]$remainingSizeObj.Sum
+                    }
+                }
+            }
+        }
+        catch {
+            # Si hay un error al calcular el tamaño actual, asumimos que es 0
+            $currentSize = 0L
+        }
+        
+        $liberatedSpace = $originalSize - $currentSize
+        if ($liberatedSpace -lt 0) { $liberatedSpace = 0L } # Prevenir valores negativos
+        
+        # Asegurar que siempre devuelva un valor numerico de tipo largo
+        return [long]$liberatedSpace
+    }
+    catch {
+        Write-Warning "Error al limpiar '$Path': $($_.Exception.Message)"
+        return 0L
+    }
+}
+
+# --- FUNCIoN AUXILIAR NUEVA: Obtener ruta corta de archivo (8.3 format) ---
+function Get-ShortPathName {
+    param([string]$Path)
+    
+    $shortPathBuffer = New-Object System.Text.StringBuilder 255
+    $retVal = [Kernel32]::GetShortPathName($Path, $shortPathBuffer, $shortPathBuffer.Capacity)
+    
+    if ($retVal -eq 0) { return $Path }
+    return $shortPathBuffer.ToString()
+}
+
+# Añadir tipos necesarios para GetShortPathName
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class Kernel32 {
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, int cchBuffer);
+}
+"@ -ErrorAction SilentlyContinue
+
+# --- FUNCIoN MEJORADA: Limpieza Avanzada de Componentes del Sistema ---
 function Invoke-AdvancedSystemClean {
     [CmdletBinding(SupportsShouldProcess=$true)]
     param()
-	Write-Log -LogLevel INFO -Message "Usuario inicio la Limpieza Avanzada de Componentes de Windows."
+    
+    Write-Log -LogLevel INFO -Message "Usuario inicio la Limpieza Avanzada de Componentes de Windows."
     Write-Host "`n[+] Iniciando Limpieza Avanzada de Componentes del Sistema..." -ForegroundColor Cyan
-	Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Avanzada del Sistema."; Invoke-AdvancedSystemClean
+    Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Avanzada del Sistema."
+    
     Write-Warning "Esta operacion eliminara archivos de instalaciones anteriores de Windows (Windows.old) y restos de actualizaciones."
     Write-Warning "Despues de esta limpieza, NO podras volver a la version anterior de Windows."
+    
     if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
-		Write-Log -LogLevel WARN -Message "Usuario cancelo la Limpieza Avanzada de Componentes."
+        Write-Log -LogLevel WARN -Message "Usuario cancelo la Limpieza Avanzada de Componentes."
         Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
         return
     }
-    if ($PSCmdlet.ShouldProcess("Componentes del Sistema", "Limpieza Profunda via cleanmgr.exe")) {
+    
+    if ($PSCmdlet.ShouldProcess("Componentes del Sistema", "Limpieza Profunda")) {
         try {
-            Write-Host "[+] Configurando el Liberador de Espacio en Disco para una limpieza maxima..." -ForegroundColor Yellow
-            $sagesetNum = 65535
-            $handlers = Get-ChildItem -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
-            foreach ($handler in $handlers) {
-                try {
-                    Set-ItemProperty -Path $handler.PSPath -Name "StateFlags0000" -Value 2 -Type DWord -Force
-                } catch {}
+            $totalFreed = 0
+            $startSize = (Get-PSDrive C).Used
+            
+            # Paso 1: Ejecutar DISM para limpiar componentes de Windows
+            Write-Host "[+] Paso 1 de 3: Limpiando cache de componentes de Windows con DISM..." -ForegroundColor Yellow
+            DISM.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "DISM no completo correctamente, pero continuaremos con otros metodos."
             }
-            Write-Host "[+] Ejecutando el Liberador de Espacio en Disco. Por favor, espera..." -ForegroundColor Yellow
-            Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:$sagesetNum" -Wait -Verb RunAs
-            Write-Host "`n[OK] Limpieza avanzada completada." -ForegroundColor Green
-        } catch {
-            Write-Error "Ocurrio un error durante la limpieza avanzada: $($_.Exception.Message)"
-			Write-Log -LogLevel ERROR -Message "Error en Invoke-AdvancedSystemClean: $($_.Exception.Message)"
-        }
-    }
-}
-
-# --- FUNCIoN DE MENu PRINCIPAL ---
-function Show-CleaningMenu {
-	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Limpieza."
-    # Funcion auxiliar para medir y limpiar rutas de forma segura.
-    function Invoke-SafeClean {
-        param(
-            [string[]]$Paths,
-            [string]$Description
-        )
-        $totalSize = Get-CleanableSize -Paths $Paths
-        if ($totalSize -gt 0) {
-            $sizeInMB = [math]::Round($totalSize / 1MB, 2)
-            Write-Host "[INFO] Se pueden liberar aproximadamente $($sizeInMB) MB en '$Description'." -ForegroundColor Cyan
-            if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -eq 'S') {
-                Write-Host "[+] Limpiando..."
-                foreach ($path in $Paths) {
-                    if (Test-Path $path) {
-                        try {
-                            Remove-Item -Path "$path\*" -Recurse -Force -ErrorAction Stop
-                        } catch {
-                            Write-Warning "No se pudo limpiar por completo '$path'. Puede que algunos archivos esten en uso."
-                        }
+            
+            # Paso 2: Usar cleanmgr con configuracion correcta
+            Write-Host "[+] Paso 2 de 3: Configurando Liberador de Espacio en Disco..." -ForegroundColor Yellow
+            
+            # Crear todas las claves necesarias y establecer los valores correctos (0x1 = ejecutar, 0x2 = no ejecutar)
+            $handlers = @(
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Active Setup Temp Folders",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\BranchCache",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Downloaded Program Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Internet Cache Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Memory Dump Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Old ChkDsk Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Previous Installations",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Recycle Bin",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Setup Log Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error memory dump files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\System error minidump files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Setup Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Temporary Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Thumbnail Cache",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Update Cleanup",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Upgrade Discarded Files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\User file versions",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Defender",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows ESD installation files",
+                "Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\Windows Upgrade Log Files"
+            )
+            
+            foreach ($handler in $handlers) {
+                $regPath = "HKLM:\SOFTWARE\$handler"
+                try {
+                    if (-not (Test-Path $regPath)) {
+                        New-Item -Path $regPath -Force | Out-Null
+                    }
+                    Set-ItemProperty -Path $regPath -Name "StateFlags0099" -Value 2 -Type DWord -Force
+                }
+                catch {
+                    Write-Warning "No se pudo configurar '$handler' para la limpieza"
+                }
+            }
+            
+            # Ejecutar cleanmgr con el flag correcto
+            Write-Host "[+] Paso 3 de 3: Ejecutando Liberador de Espacio en Disco..." -ForegroundColor Yellow
+            Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:99" -Wait
+            
+            # Paso 4: Limpiar Windows.old manualmente (si existe)
+            $winOldPath = "C:\Windows.old"
+            if (Test-Path $winOldPath) {
+                Write-Host "[+] Verificando y limpiando Windows.old..." -ForegroundColor Yellow
+                
+                try {
+                    # Tomar posesion de la carpeta
+                    $takeOwnOutput = & takeown.exe /F $winOldPath /R /D Y 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "No se pudo tomar posesion de Windows.old: $($takeOwnOutput | Out-String)"
+                    }
+                    
+                    # Otorgar permisos completos
+                    $icaclsOutput = & icacls.exe $winOldPath /grant Administrators:F /T /C /Q 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "No se pudieron establecer permisos en Windows.old: $($icaclsOutput | Out-String)"
+                    }
+                    
+                    # Intentar eliminar (puede requerir multiples intentos)
+                    Write-Host "   - Intentando eliminar Windows.old. Esto puede tardar mucho tiempo..." -ForegroundColor Gray
+                    Remove-Item -Path $winOldPath -Recurse -Force -ErrorAction SilentlyContinue
+                    
+                    # Si no se elimino completamente, usar metodo alternativo
+                    if (Test-Path $winOldPath) {
+                        Write-Host "   - Usando metodo alternativo para eliminar Windows.old..." -ForegroundColor Gray
+                        & cmd.exe /c "rd /s /q `"$winOldPath`"" 2>$null
                     }
                 }
-                Write-Host "[OK] Limpieza de '$Description' completada." -ForegroundColor Green
-				Write-Log -LogLevel ACTION -Message "Limpieza de '$Description' completada. Se liberaron $($sizeInMB) MB."
-                return $totalSize
+                catch {
+                    Write-Warning "No se pudo eliminar Windows.old completamente: $($_.Exception.Message)"
+                }
             }
-        } else {
-            Write-Host "[OK] No se encontraron archivos para limpiar en '$Description'." -ForegroundColor Green
+            
+            # Calcular espacio liberado
+            $endSize = (Get-PSDrive C).Used
+            $totalFreed = $startSize - $endSize
+            
+            $freedGB = [math]::Round($totalFreed / 1GB, 2)
+            Write-Host "`n[OK] Limpieza avanzada completada." -ForegroundColor Green
+            Write-Host "    ¡Se han liberado aproximadamente $freedGB GB de espacio!" -ForegroundColor Magenta
+            Write-Log -LogLevel ACTION -Message "Limpieza avanzada completada. Espacio liberado: $freedGB GB."
+            
+        } catch {
+            Write-Error "Ocurrio un error durante la limpieza avanzada: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "Error en Invoke-AdvancedSystemClean: $($_.Exception.Message)"
         }
-        return 0
     }
+    Read-Host "`nPresiona Enter para continuar..."
+}
 
+# --- FUNCIoN MEJORADA: Menu Principal de Limpieza ---
+function Show-CleaningMenu {
+    Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Limpieza."
+    
     $cleanChoice = ''
     do {
-        # --- Calculo de datos en CADA iteracion del bucle ---
-        Write-Host "Refrescando datos, por favor espera..." -ForegroundColor Gray
+        # --- Precalcular tamaños antes de mostrar el menu ---
+        Write-Host "Refrescando datos de espacio, por favor espera..." -ForegroundColor Gray
+        
         $tempPaths = @(
-	    	"$env:TEMP",
+            "$env:TEMP",
             "$env:windir\Temp",
             "$env:windir\Minidump",
             "$env:LOCALAPPDATA\CrashDumps",
             "$env:windir\Prefetch",
             "$env:windir\SoftwareDistribution\Download",
             "$env:windir\LiveKernelReports"
-		)
+        )
         
-		$cachePaths = @(
-		     "$env:LOCALAPPDATA\D3DSCache",
-			 "$env:LOCALAPPDATA\NVIDIA\GLCache",
-			 "$env:windir\SoftwareDistribution\DeliveryOptimization"
-		)
+        $cachePaths = @(
+            "$env:LOCALAPPDATA\D3DSCache",
+            "$env:LOCALAPPDATA\NVIDIA\GLCache",
+            "$env:windir\SoftwareDistribution\DeliveryOptimization"
+        )
         
         $sizeTempBytes = Get-CleanableSize -Paths $tempPaths
         $sizeCachesBytes = Get-CleanableSize -Paths $cachePaths
         
-        # --- LoGICA MEJORADA PARA LA PAPELERA DE RECICLAJE ---
+        # --- Calcular tamaño de la Papelera de Reciclaje ---
         $recycleBinSize = 0
         $recycleBinItemCount = 0
         try {
             $shell = New-Object -ComObject Shell.Application
-            $recycleBinItems = $shell.NameSpace(10).Items()
+            $recycleBinItems = $shell.NameSpace(0x0a).Items()  # 0x0a es el codigo para Recycle Bin
             $recycleBinItemCount = $recycleBinItems.Count
             foreach ($item in $recycleBinItems) {
                 $recycleBinSize += $item.Size
             }
         } catch {
-             # Si falla el COM, los valores se quedan en 0, lo que es seguro.
+            # Si falla el COM, los valores se mantienen en 0
         }
         
-        # Convertimos a MB para la visualizacion
+        # Convertir a MB para visualizacion
         $sizeTempMB = [math]::Round($sizeTempBytes / 1MB, 2)
         $sizeCachesMB = [math]::Round($sizeCachesBytes / 1MB, 2)
         $sizeBinMB = [math]::Round($recycleBinSize / 1MB, 2)
@@ -900,80 +1120,166 @@ function Show-CleaningMenu {
         Write-Host ""
         Write-Host "--- Limpieza Rapida (Archivos de Usuario) ---" -ForegroundColor Yellow
         Write-Host ""
-		Write-Host "   [1] Limpieza Estandar (Temporales y Dumps de Errores)" -NoNewline; Write-Host " ($($sizeTempMB) MB)" -ForegroundColor Cyan
+        Write-Host "   [1] Limpieza Estandar (Temporales y Dumps de Errores)" -NoNewline
+        Write-Host " ($sizeTempMB MB)" -ForegroundColor Cyan
         Write-Host ""
-		Write-Host "   [2] Limpieza de Caches (Sistema, Drivers y Miniaturas)" -NoNewline; Write-Host " ($($sizeCachesMB) MB)" -ForegroundColor Cyan
+        Write-Host "   [2] Limpieza de Caches (Sistema, Drivers y Miniaturas)" -NoNewline
+        Write-Host " ($sizeCachesMB MB)" -ForegroundColor Cyan
         Write-Host ""
-		Write-Host "   [3] Vaciar Papelera de Reciclaje" -NoNewline; Write-Host " ($($sizeBinMB) MB)" -ForegroundColor Cyan
+        Write-Host "   [3] Vaciar Papelera de Reciclaje" -NoNewline
+        Write-Host " ($sizeBinMB MB)" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "--- Limpieza Profunda (Archivos de Sistema) ---" -ForegroundColor Yellow
         Write-Host ""
-		Write-Host "   [4] Limpieza de Componentes de Windows (Windows.old, etc.)" -ForegroundColor Red
+        Write-Host "   [4] Limpieza de Componentes de Windows (Windows.old, etc.)" -ForegroundColor Red
         Write-Host ""
         Write-Host "   [T] TODO (Ejecutar todas las limpiezas rapidas [1-3])"
         Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
-		$cleanChoice = Read-Host "`nSelecciona una opcion"
-		
-		Write-Log -LogLevel INFO -Message "Usuario selecciono la opcion de limpieza '$($cleanChoice.ToUpper())'"
+        
+        $cleanChoice = Read-Host "`nSelecciona una opcion"
+        Write-Log -LogLevel INFO -Message "Usuario selecciono la opcion de limpieza '$($cleanChoice.ToUpper())'"
+        
+        $totalFreed = 0  # Asegurar que siempre es un numero
 
-        $totalFreed = 0
         switch ($cleanChoice.ToUpper()) {
-			
-            '1' { 
-                $freed = Invoke-SafeClean -Paths $tempPaths -Description "Archivos Temporales y Dumps de Errores"
-				Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Segura."; Invoke-SafeClean
-                $totalFreed += $freed
+           '1' {
+                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Estandar (Temporales y Dumps)."
+                Write-Host "`n[+] Limpiando archivos temporales y dumps de errores..." -ForegroundColor Yellow
+        
+                # Cerrar procesos comunes que bloquean archivos temporales
+                $processesToStop = @("explorer", "OneDrive", "Teams", "chrome", "firefox", "msedge")
+                foreach ($proc in $processesToStop) {
+                    Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
+                }
+        
+                foreach ($path in $tempPaths) {
+                    if (Test-Path $path) {
+                        $liberated = Remove-FilesSafely -Path $path
+                        # Asegurar que $liberated es un numero antes de sumar
+                        if ($liberated -is [long]) {
+                        $totalFreed += $liberated
+                    } else {
+                        # Si por alguna razon no es long, intentamos convertirlo
+                        try {
+                            $totalFreed += [long]$liberated
+                        }
+                        catch {
+                            # Si falla la conversion, ignoramos este valor
+                            Write-Warning "No se pudo convertir el espacio liberado en '$path' a un valor numerico."
+                            }
+                        }
+                    }
+                }
+        
+                # Reiniciar explorer
+                Start-Process "explorer.exe"
             }
             '2' {
-                $freed = Invoke-SafeClean -Paths $cachePaths -Description "Caches de Sistema y Drivers"
-				Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Profunda."; Invoke-DeepClean
-                $totalFreed += $freed
-                # Limpieza de miniaturas no devuelve tamaño, pero se ejecuta
-                Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue; try { Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction Stop; Write-Host "[OK] Cache de miniaturas limpiada." -ForegroundColor Green } catch { Write-Warning "No se pudo limpiar la cache de miniaturas." } finally { Start-Process "explorer" }
+                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza de Caches (Sistema y Drivers)."
+                Write-Host "`n[+] Limpiando caches del sistema..." -ForegroundColor Yellow
+                
+                foreach ($path in $cachePaths) {
+                    if (Test-Path $path) {
+                        $liberated = Remove-FilesSafely -Path $path
+                        $totalFreed += $liberated
+                    }
+                }
+                
+                # Limpiar cache de miniaturas
+                Write-Host "   - Limpiando cache de miniaturas..." -ForegroundColor Gray
+                Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+                try {
+                    $thumbPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
+                    if (Test-Path "$thumbPath\thumbcache_*.db") {
+                        Remove-Item -Path "$thumbPath\thumbcache_*.db" -Force -ErrorAction Stop
+                        Write-Host "     [OK] Cache de miniaturas limpiada." -ForegroundColor Green
+                    } else {
+                        Write-Host "     [INFO] No se encontraron archivos de cache de miniaturas." -ForegroundColor Gray
+                    }
+                } catch {
+                    Write-Warning "No se pudo limpiar la cache de miniaturas: $($_.Exception.Message)"
+                } finally {
+                    Start-Process "explorer"
+                }
             }
             '3' {
                 if ($recycleBinItemCount -gt 0) {
-                    Write-Host "[+] Vaciando la Papelera de Reciclaje..."
-                    Clear-RecycleBin -Force -Confirm:$false -ErrorAction SilentlyContinue
-                    Start-Sleep -Seconds 1 # Pequeña pausa
-                    $totalFreed += $recycleBinSize 
-                    Write-Host "[OK] Operacion de vaciado completada." -ForegroundColor Green
-					Write-Log -LogLevel ACTION -Message "Papelera de Reciclaje vaciada exitosamente."
+                    Write-Host "`n[+] Vaciando la Papelera de Reciclaje..." -ForegroundColor Yellow
+                    try {
+                        Clear-RecycleBin -Force -Confirm:$false -ErrorAction Stop
+                        $totalFreed += $recycleBinSize 
+                        Write-Host "[OK] Papelera de Reciclaje vaciada correctamente." -ForegroundColor Green
+                        Write-Log -LogLevel ACTION -Message "Papelera de Reciclaje vaciada exitosamente."
+                    } catch {
+                        Write-Warning "No se pudo vaciar la Papelera de Reciclaje: $($_.Exception.Message)"
+                        Write-Log -LogLevel ERROR -Message "Error al vaciar Papelera de Reciclaje: $($_.Exception.Message)"
+                    }
                 } else {
                     Write-Host "[OK] La Papelera de Reciclaje ya estaba vacia." -ForegroundColor Green
                 }
             }
-            '4' { Invoke-AdvancedSystemClean }
+            '4' { 
+                Invoke-AdvancedSystemClean
+            }
             'T' {
-                $totalFreed += Invoke-SafeClean -Paths $tempPaths -Description "Archivos Temporales y Dumps de Errores"
-                $totalFreed += Invoke-SafeClean -Paths $cachePaths -Description "Caches de Sistema y Drivers"
-                Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue; try { Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction Stop;
-				Write-Host "[OK] Cache de miniaturas limpiada." -ForegroundColor Green
-				} catch {
-					Write-Warning "No se pudo limpiar la cache de miniaturas."
-					Write-Log -LogLevel ERROR -Message "Fallo la limpieza de cache de miniaturas: $($_.Exception.Message)"
-					} finally {
-						Start-Process "explorer"
-						}
+                # Ejecutar todas las opciones 1-3
+                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Completa (Opcion TODO)."
+                
+                Write-Host "`n[+] Ejecutando limpieza completa..." -ForegroundColor Yellow
+                
+                # Detener procesos que bloquean archivos temporales
+                $processesToStop = @("explorer", "OneDrive", "Teams")
+                foreach ($proc in $processesToStop) {
+                    Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
+                }
+                
+                # Limpieza de archivos temporales
+                foreach ($path in $tempPaths) {
+                    if (Test-Path $path) {
+                        $liberated = Remove-FilesSafely -Path $path
+                        $totalFreed += $liberated
+                    }
+                }
+                
+                # Limpieza de caches
+                foreach ($path in $cachePaths) {
+                    if (Test-Path $path) {
+                        $liberated = Remove-FilesSafely -Path $path
+                        $totalFreed += $liberated
+                    }
+                }
+                
+                # Limpieza de cache de miniaturas
+                $thumbPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
+                if (Test-Path "$thumbPath\thumbcache_*.db") {
+                    Remove-Item -Path "$thumbPath\thumbcache_*.db" -Force -ErrorAction SilentlyContinue
+                }
+                
+                # Vaciar Papelera de Reciclaje
                 if ($recycleBinItemCount -gt 0) {
-                    Write-Host "[+] Vaciando la Papelera de Reciclaje..."
                     Clear-RecycleBin -Force -Confirm:$false -ErrorAction SilentlyContinue
-                    $totalFreed += $recycleBinSize
-                    Write-Host "[OK] Operacion de vaciado completada." -ForegroundColor Green
-                } else { Write-Host "[OK] La Papelera de Reciclaje ya estaba vacia." -ForegroundColor Green }
+                    $totalFreed += $recycleBinSize 
+                }
+                
+                # Reiniciar explorer
+                Start-Process "explorer.exe"
             }
             'V' { continue }
             default { Write-Warning "Opcion no valida." }
         }
-
-        if ($totalFreed -gt 0) {
+        
+        # Mostrar resumen de espacio liberado
+        if ($totalFreed -gt 0 -and $cleanChoice.ToUpper() -ne '4') {
             $freedMB = [math]::Round($totalFreed / 1MB, 2)
-            Write-Host "`n[EXITO] ¡Se han liberado aproximadamente $freedMB MB!" -ForegroundColor Magenta
+            Write-Host "`n[eXITO] ¡Se han liberado aproximadamente $freedMB MB!" -ForegroundColor Magenta
+            Write-Log -LogLevel ACTION -Message "Limpieza completada. Espacio liberado: $freedMB MB."
         }
-
-        if ($cleanChoice.ToUpper() -ne 'V') { Read-Host "`nPresiona Enter para continuar..." }
+        
+        if ($cleanChoice.ToUpper() -ne 'V' -and $cleanChoice.ToUpper() -ne '4') {
+            Read-Host "`nPresiona Enter para continuar..."
+        }
     } while ($cleanChoice.ToUpper() -ne 'V')
 }
 
@@ -1285,8 +1591,6 @@ function Manage-StartupApps {
     param()
 
     Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Programas de Inicio."
-
-    #region Funciones Auxiliares
     
     # --- Valores binarios exactos que usa el Administrador de Tareas ---
     $script:EnabledValue  = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
@@ -1688,21 +1992,23 @@ function Optimize-Drives {
 }
 
 function Generate-SystemReport {
-	$parentDir = Split-Path -Parent $PSScriptRoot;
-	$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos";
-	if (-not (Test-Path $diagDir))
-	{
-		New-Item -Path $diagDir -ItemType Directory | Out-Null };
-		$reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html";
-		Write-Log -LogLevel INFO -Message "Generando reporte de energia del sistema.";
-		powercfg /energy /output $reportPath /duration 60;
-		if (Test-Path $reportPath)
-		{
-			Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green;
-			Start-Process $reportPath
+	$parentDir = Split-Path -Parent $PSScriptRoot
+	$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+    
+	if (-not (Test-Path $diagDir)) {
+		New-Item -Path $diagDir -ItemType Directory | Out-Null
+    }
+    
+    $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
+    Write-Log -LogLevel INFO -Message "Generando reporte de energia del sistema."
+    powercfg /energy /output $reportPath /duration 60
+    
+    if (Test-Path $reportPath) {
+        Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green
+        Start-Process $reportPath
 	} else {
      	Write-Error "No se pudo generar el reporte."
-    };
+    }
 		
 	Read-Host "`nPresiona Enter para volver..."
 }
@@ -1710,9 +2016,6 @@ function Generate-SystemReport {
 # ===================================================================
 # --- MoDULO DE DIAGNoSTICO Y REPARACIoN DE RED ---
 # ===================================================================
-
-# --- Funciones de Accion (Herramientas del modulo) ---
-
 function Invoke-ShowIpConfig {
     Write-Host "`n[+] Mostrando configuracion de red detallada (ipconfig /all)..." -ForegroundColor Cyan
     ipconfig.exe /all
@@ -1794,28 +2097,38 @@ function Invoke-ResetNetworkStacks {
     if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
         $winsockSuccess = $false
         $tcpSuccess = $false
+        $errorStrings = @("Error", "Failed", "Acceso denegado", "Access denied")
 
         Write-Host " - Restableciendo el catalogo de Winsock..." -ForegroundColor Gray
-        netsh.exe winsock reset
-        # --- VERIFICACION DE EXITO ---
-        if ($LASTEXITCODE -eq 0) { $winsockSuccess = $true }
+        # Capturamos toda la salida (estandar y error)
+        $winsockOutput = netsh.exe winsock reset 2>&1
+        
+        # Verificamos el codigo de salida Y que no haya texto de error
+        if ($LASTEXITCODE -eq 0 -and ($winsockOutput -notmatch ($errorStrings -join '|'))) {
+            $winsockSuccess = $true
+        } else {
+            Write-Warning "  -> Salida de Winsock: $winsockOutput"
+        }
 
         Write-Host " - Restableciendo la pila TCP/IP..." -ForegroundColor Gray
-        netsh.exe int ip reset
-        # --- VERIFICACION DE EXITO ---
-        if ($LASTEXITCODE -eq 0) { $tcpSuccess = $true }
+        $tcpOutput = netsh.exe int ip reset 2>&1
+        
+        if ($LASTEXITCODE -eq 0 -and ($tcpOutput -notmatch ($errorStrings -join '|'))) {
+            $tcpSuccess = $true
+        } else {
+            Write-Warning "  -> Salida de TCP/IP: $tcpOutput"
+        }
 
         if ($winsockSuccess -and $tcpSuccess) {
             Write-Host "[OK] Pila de red restablecida. Por favor, reinicia tu equipo." -ForegroundColor Green
         } else {
-            Write-Error "FALLO: Uno o mas comandos de restablecimiento de red no se completaron correctamente."
+            Write-Error "FALLO: Uno o mas comandos de restablecimiento de red no se completaron correctamente. Revisa la salida."
         }
     } else {
         Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
     }
     Read-Host "`nPresiona Enter para continuar..."
 }
-
 
 # --- Funcion del Menu Principal del Modulo de Red ---
 function Show-NetworkDiagnosticsMenu {
@@ -1870,210 +2183,1628 @@ function Show-NetworkDiagnosticsMenu {
 # ===================================================================
 # --- MODULO DE ANALIZADOR DE REGISTROS DE EVENTOS ---
 # ===================================================================
-
-# --- Funcion auxiliar principal para obtener eventos ---
-
-function Generate-EventTable {
-        param($Title, $Icon, $Events)
-        $eventCount = if ($null -ne $Events) { @($Events).Count } else { 0 }
-        
-        $safeTitle = $Title -replace '[^a-zA-Z0-9]', ''
-        $tableId = "table-$safeTitle"
-        $inputId = "search-$safeTitle"
-
-        $html = "<div class='section'><h2><i class='fas fa-$Icon'></i>$Title ($eventCount)</h2>"
-        # Añadimos el buscador
-        $html += "<div class='search-box'><input type='text' id='$inputId' onkeyup=`"searchTable('$inputId', '$tableId')`" placeholder='Buscar en esta seccion...'></div>"
-        
-        if ($eventCount -gt 0) {
-            $html += "<table id='$tableId'><thead><tr><th>Fecha y Hora</th><th>Origen</th><th>Mensaje (Primera Linea)</th></tr></thead><tbody>"
-            foreach ($event in $Events) {
-                $message = [System.Web.HttpUtility]::HtmlEncode(($event.Message -split "[`r`n]")[0])
-                $html += "<tr><td>$($event.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss'))</td><td>$($event.ProviderName)</td><td>$message</td></tr>"
-            }
-            $html += "</tbody></table>"
-        } else {
-            $html += "<p>No se encontraron eventos recientes en esta categoria.</p>"
-        }
-        $html += "</div>"
-        return $html
-}
-
-function Get-EventLogReportData {
-    [CmdletBinding()]
-    param(
-        [int]$MaxEventsPerCategory = 30
-    )
-
-    Write-Host "`n[+] Recopilando los ultimos $MaxEventsPerCategory eventos importantes. Esto puede tardar un momento..." -ForegroundColor Yellow
-
-    # Categoria 1: Errores Criticos del Sistema (Nivel 1)
-    $criticalEvents = Get-WinEvent -FilterHashtable @{LogName='System'; Level=1} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
-
-    # Categoria 2: Errores del Sistema (Nivel 2)
-    $systemErrorEvents = Get-WinEvent -FilterHashtable @{LogName='System'; Level=2} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
-
-    # Categoria 3: Errores de Aplicaciones (Nivel 2)
-    $appErrorEvents = Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
-
-    # Categoria 4: Auditorias de Seguridad Fallidas
-    $auditFailEvents = Get-WinEvent -FilterHashtable @{LogName='Security'; Keywords=4503599627370496} -MaxEvents $MaxEventsPerCategory -ErrorAction SilentlyContinue
-
-    # Devolvemos un solo objeto con todas las colecciones de eventos
-    return [PSCustomObject]@{
-        CriticalSystemEvents   = $criticalEvents
-        SystemErrorEvents      = $systemErrorEvents
-        ApplicationErrorEvents = $appErrorEvents
-        FailedSecurityAudits   = $auditFailEvents
-        ReportDate             = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Hostname               = $env:COMPUTERNAME
-    }
-}
-
-function Build-EventLogHtmlReport {
-    param ([Parameter(Mandatory=$true)] $EventData)
-
-    Add-Type -AssemblyName System.Web
-
-    $head = @"
-<head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Analisis de Eventos - Aegis Phoenix Suite</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-    <style>
-        :root { --bg-color: #f4f7f9; --main-text-color: #2c3e50; --primary-color: #c0392b; --secondary-color: #34495e; --card-bg-color: #ffffff; --header-text-color: #ecf0f1; --border-color: #dfe6e9; --shadow: 0 5px 15px rgba(0,0,0,0.08); }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
-        h1, h2 { margin: 0; font-weight: 600; } h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; }
-        h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
-        .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; } .section { background-color: var(--card-bg-color); border-radius: 8px; padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
-        table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 15px; } th { background-color: var(--secondary-color); color: var(--header-text-color); text-align: left; padding: 12px 15px; font-weight: 600; }
-        td { padding: 10px 15px; border-bottom: 1px solid var(--border-color); } tr:nth-child(even) { background-color: #fdfdfd; } tr:hover { background-color: #f1f5f8; }
-        .search-box input { width: 98%; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 5px; margin-bottom: 15px; font-size: 1em; } /* Estilo del buscador */
-        .footer { text-align: center; margin-top: 40px; color: #6c757d; font-size: 0.8em; }
-    </style>
-</head>
-"@
-    
-    $body = "<body>"
-    $body += "<h1><i class='fas fa-shield-alt'></i>Aegis Phoenix Suite - Reporte de Analisis de Eventos</h1>"
-    $body += "<p class='timestamp'>Generado el: $($EventData.ReportDate) para el equipo $($EventData.Hostname)</p>"
-    $body += Generate-EventTable -Title "Errores Criticos del Sistema" -Icon "bomb" -Events $EventData.CriticalSystemEvents
-    $body += Generate-EventTable -Title "Errores del Sistema" -Icon "times-circle" -Events $EventData.SystemErrorEvents
-    $body += Generate-EventTable -Title "Errores de Aplicaciones" -Icon "cogs" -Events $EventData.ApplicationErrorEvents
-    $body += Generate-EventTable -Title "Auditorias de Seguridad Fallidas" -Icon "user-secret" -Events $EventData.FailedSecurityAudits
-    
-    $body += @"
-        <script>
-            function searchTable(inputId, tableId) {
-                const filter = document.getElementById(inputId).value.toUpperCase();
-                const table = document.getElementById(tableId);
-                const rows = table.getElementsByTagName('tbody')[0].rows;
-                for (let i = 0; i < rows.length; i++) {
-                    const cells = rows[i].getElementsByTagName('td');
-                    let found = false;
-                    for (let j = 0; j < cells.length; j++) {
-                        if (cells[j] && cells[j].textContent.toUpperCase().indexOf(filter) > -1) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    rows[i].style.display = found ? "" : "none";
-                }
-            }
-        </script>
-        <div class="footer"><p>Aegis Phoenix Suite by SOFTMAXTER</p></div>
-    </body>
-"@
-    
-    return "<!DOCTYPE html><html lang='es'>$($head)$($body)</html>"
-}
-
 function Show-EventLogAnalyzerMenu {
+    [CmdletBinding()]
+    param()
+    Write-Log -LogLevel INFO -Message "EVENTLOG: Usuario entro al Analizador Inteligente de Registros de Eventos."
+    
     $logChoice = ''
     do {
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "         Analizador Rapido de Registros de Eventos     " -ForegroundColor Cyan
+        Write-Host "      Analizador Inteligente de Registros de Eventos    " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "   [1] Generar reporte HTML completo (ultimos eventos)"
-        Write-Host "   [2] Buscar eventos por un origen especifico y generar reporte"
+        Write-Host "   [1] Escaneo Rapido de Eventos Criticos (ultimas 24h)"
+        Write-Host "       (Detecta automaticamente patrones de problemas comunes)" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   [2] Analisis Profundo Personalizado" -ForegroundColor Green
+        Write-Host "       (Filtra eventos por severidad, origen, fecha y palabras clave)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Generar Reporte HTML Completo" -ForegroundColor Cyan
+        Write-Host "       (Reporte interactivo con busqueda, filtrado y secciones organizadas)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [4] Buscar Soluciones para Errores Comunes"
+        Write-Host "       (Base de datos integrada de soluciones para errores frecuentes de Windows)" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   [5] Monitoreo en Tiempo Real (Experimental)"
+        Write-Host "       (Observa eventos mientras trabajas y alerta en problemas criticos)" -ForegroundColor Red
         Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
-        
         $logChoice = Read-Host "Selecciona una opcion"
-        
-        $parentDir = Split-Path -Parent $PSScriptRoot
-        $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
-        if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null }
-        
         switch ($logChoice.ToUpper()) {
-            '1' {
-				Write-Log -LogLevel INFO -Message "EVENTLOG: Usuario selecciono 'Generar reporte HTML completo'."
-                $eventData = Get-EventLogReportData
-                $htmlContent = Build-EventLogHtmlReport -EventData $eventData
-                $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Eventos_Completo_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
-                Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
-                
-                Write-Host "`n[OK] Reporte completo generado en: '$reportPath'" -ForegroundColor Green
-                Start-Process $reportPath
-                Read-Host "`nPresiona Enter para continuar..."
-            }
-            '2' {
-				Write-Log -LogLevel INFO -Message "EVENTLOG: Usuario seleccionó 'Buscar eventos por origen'."
-                $providerName = Read-Host "Introduce la palabra clave del origen a buscar (ej. Office, Disk, nvlddmkm)"
-                if ([string]::IsNullOrWhiteSpace($providerName)) {
-                    Write-Warning "La palabra clave no puede estar vacia." ; Start-Sleep -Seconds 2; continue
-                }
-                $maxEvents = Read-Host "Introduce el numero maximo de eventos a buscar (ej. 100)"
-                if (-not ($maxEvents -match '^\d+$') -or [int]$maxEvents -le 0) { $maxEvents = 100 }
-
-                Write-Host "`n[+] Buscando eventos que contengan '$providerName' en los registros de Sistema y Aplicacion..." -ForegroundColor Yellow
-                
-                $searchTerm = "*$providerName*"
-                $systemEvents = Get-WinEvent -LogName 'System' -MaxEvents 5000 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -like $searchTerm }
-                $appEvents = Get-WinEvent -LogName 'Application' -MaxEvents 5000 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -like $searchTerm }
-                
-                $searchedEvents = ($systemEvents + $appEvents) | Sort-Object TimeCreated -Descending | Select-Object -First ([int]$maxEvents)
-                
-                if ($searchedEvents.Count -eq 0) {
-                    Write-Host "`n[INFO] No se encontraron eventos que coincidan con la busqueda '$providerName'." -ForegroundColor Yellow
-                    Read-Host "`nPresiona Enter para continuar..."
-                    continue
-                }
-                Add-Type -AssemblyName System.Web
-                $head = (Get-Content (Join-Path $PSScriptRoot 'AegisPhoenixSuite.ps1') -Raw) -match '(?s)<head>.*?</head>' | ForEach-Object { $matches[0] }
-                $js = (Get-Content (Join-Path $PSScriptRoot 'AegisPhoenixSuite.ps1') -Raw) -match '(?s)<script>.*?</script>' | ForEach-Object { $matches[0] }
-                
-                $body = "<body><h1><i class='fas fa-shield-alt'></i>Aegis Phoenix Suite - Busqueda de Eventos</h1>"
-                $body += "<p class='timestamp'>Resultados para la busqueda '$providerName' el $(Get-Date -Format 'yyyy-MM-dd HH-mm:ss')</p>"
-                $body += Generate-EventTable -Title "Resultados de Busqueda para '$providerName'" -Icon "search" -Events $searchedEvents
-                $body += $js
-                $body += "<div class='footer'><p>Aegis Phoenix Suite by SOFTMAXTER</p></div></body>"
-                $htmlContent = "<!DOCTYPE html><html lang='es'>$head$body</html>"
-
-                $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Busqueda_Eventos_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
-                Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
-
-                Write-Host "`n[OK] Reporte de busqueda generado en: '$reportPath'" -ForegroundColor Green
-                Start-Process $reportPath
-                Read-Host "`nPresiona Enter para continuar..."
-            }
+            '1' { Invoke-QuickEventScan }
+            '2' { Invoke-AdvancedEventAnalysis }
+            '3' { Generate-ComprehensiveHtmlReport }
+            '4' { Search-EventSolutions }
+            '5' { Start-RealTimeMonitoring }
             'V' { continue }
-            default {
-				Write-Warning "Opcion no valida."
-				Start-Sleep -Seconds 2
-			}
+            default { 
+                Write-Warning "Opcion no valida." 
+                Start-Sleep -Seconds 1
+            }
         }
     } while ($logChoice.ToUpper() -ne 'V')
+}
+
+# --- FUNCIoN 1: Escaneo Rapido de Eventos Criticos ---
+function Invoke-QuickEventScan {
+    Clear-Host
+    Write-Host "`n[+] Ejecutando escaneo rapido de eventos criticos..." -ForegroundColor Yellow
+    
+    $startTime = (Get-Date).AddDays(-1)
+    $detectedIssues = @()
+    
+    $problemPatterns = @{
+        "Disk Errors" = @("disk", "harddisk", "volume", "bad block", "disk reset", "controller error", "disk failure", "disk corruption")
+        "Driver Issues" = @("driver_irql_not_less_or_equal", "driver_power_state_failure", "nvlddmkm", "atikmdag", "amdkmdag", "intelppm", "dxgkrnl", "nvlddm")
+        "Memory Problems" = @("memory_management", "page fault", "pool corruption", "memory leak", "bad_pool_header", "pool_nx_fault", "page_not_zero")
+        "Network Failures" = @("tcpip", "dns", "dhcp", "network adapter", "connection reset", "network link", "ip address", "gateway")
+        "Startup Failures" = @("service control manager", "group policy client", "logonui", "winlogon", "shell infrastructure", "appx deployment", "appx staging")
+        "Application Crashes" = @("application error", "application hang", "faulting module", "exception code", "stopped working", "exception information", "error code")
+        "System Freezes" = @("dpc watchdog violation", "whea_uncorrectable_error", "system thread exception", "critical process died", "system service exception")
+    }
+    
+    # Definir que logs y niveles de severidad analizar
+    $eventFilters = @(
+        @{LogName="System"; Level=@(1,2); Hours=24},
+        @{LogName="Application"; Level=@(1,2); Hours=24},
+        @{LogName="Security"; ProviderName="Microsoft-Windows-Security-Auditing"; Keywords=[uint64]"0x8020000000000000"} # Fallos de inicio de sesion
+    )
+    
+    foreach ($eventFilter in $eventFilters) {
+        try {
+            $filterHashtable = @{
+                LogName = $eventFilter.LogName
+                StartTime = $startTime
+            }
+            
+            if ($eventFilter.Level) {
+                $filterHashtable.Add("Level", $eventFilter.Level)
+            }
+            
+            $events = Get-WinEvent -FilterHashtable $filterHashtable -MaxEvents 100 -ErrorAction SilentlyContinue
+            
+            if ($events) {
+                foreach ($event in $events) {
+                    $eventText = $event.Message.ToLower()
+                    $eventTime = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+                    $eventId = $event.Id
+                    $eventSource = $event.ProviderName
+                    
+                    # Buscar patrones de problemas comunes
+                    foreach ($patternName in $problemPatterns.Keys) {
+                        foreach ($keyword in $problemPatterns[$patternName]) {
+                            if ($eventText -like "*$keyword*") {
+                                $detectedIssues += [PSCustomObject]@{
+                                    Time = $eventTime
+                                    Type = $patternName
+                                    Source = $eventSource
+                                    Id = $eventId
+                                    Message = ($event.Message -split "`r`n")[0]
+                                    Details = $event.Message
+                                    Log = $eventFilter.LogName
+                                    EventObject = $event
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            Write-Warning "No se pudieron obtener eventos del log $($eventFilter.LogName): $($_.Exception.Message)"
+        }
+    }
+    
+    # Mostrar resultados
+    Clear-Host
+    if ($detectedIssues.Count -gt 0) {
+        Write-Host "`n[!] PROBLEMAS DETECTADOS EN LAS uLTIMAS 24 HORAS:" -ForegroundColor Red
+        Write-Host "    Se encontraron $($detectedIssues.Count) eventos criticos que requieren atencion." -ForegroundColor Yellow
+        
+        $issuesByType = $detectedIssues | Group-Object Type | Sort-Object Count -Descending
+        foreach ($issueGroup in $issuesByType) {
+            $color = if ($issueGroup.Count -gt 5) { "Red" } elseif ($issueGroup.Count -gt 2) { "Yellow" } else { "Cyan" }
+            Write-Host "`n=== $($issueGroup.Name) ($($issueGroup.Count) eventos) ===" -ForegroundColor $color
+            
+            $relevantEvents = $issueGroup.Group | Select-Object -First 3
+            foreach ($event in $relevantEvents) {
+                Write-Host "   [$($event.Time)] $($event.Source) (ID: $($event.Id))" -ForegroundColor Gray
+                Write-Host "   $($event.Message)" -ForegroundColor White
+            }
+            
+            if ($issueGroup.Count -gt 3) {
+                Write-Host "   ... y $($issueGroup.Count - 3) eventos mas del mismo tipo." -ForegroundColor DarkGray
+            }
+        }
+        
+        Write-Host "`n[+] Recomendacion:" -ForegroundColor Yellow
+        $topIssue = $issuesByType[0].Name
+        switch ($topIssue) {
+            "Disk Errors" { Write-Host "   Ejecuta un analisis de disco con 'chkdsk /f' y revisa la salud del S.M.A.R.T." -ForegroundColor Cyan }
+            "Driver Issues" { Write-Host "   Actualiza los controladores, especialmente de video y chipset." -ForegroundColor Cyan }
+            "Memory Problems" { Write-Host "   Ejecuta Windows Memory Diagnostic para verificar problemas de RAM." -ForegroundColor Cyan }
+            "Network Failures" { Write-Host "   Reinicia tu router y actualiza los controladores de red." -ForegroundColor Cyan }
+            "Startup Failures" { Write-Host "   Ejecuta 'sfc /scannow' para reparar archivos del sistema." -ForegroundColor Cyan }
+            "Application Crashes" { Write-Host "   Actualiza las aplicaciones problematicas y busca actualizaciones de Windows." -ForegroundColor Cyan }
+            "System Freezes" { Write-Host "   Verifica la temperatura del hardware y actualiza BIOS/controladores." -ForegroundColor Cyan }
+            default { Write-Host "   Revisa los eventos detallados y considera buscar soluciones especificas." -ForegroundColor Cyan }
+        }
+    }
+    else {
+        Write-Host "`n[OK] No se detectaron problemas criticos en el ultimo dia." -ForegroundColor Green
+        Write-Host "    Tu sistema parece estar funcionando correctamente." -ForegroundColor Gray
+    }
+    
+    # Opcion para generar un reporte detallado
+    if ($detectedIssues.Count -gt 0) {
+        $exportChoice = Read-Host "`n¿Deseas exportar los resultados a un reporte detallado? (S/N)"
+        if ($exportChoice.ToUpper() -eq 'S') {
+            Export-DetailedEventReport -Events $detectedIssues
+        }
+    }
+    
+    Read-Host "`nPresiona Enter para continuar..."
+}
+
+# --- FUNCIoN 2: Analisis Profundo Personalizado ---
+function Invoke-AdvancedEventAnalysis {
+    Clear-Host
+    Write-Host "`n[+] Analisis Profundo Personalizado de Registros de Eventos" -ForegroundColor Cyan
+    Write-Host "-------------------------------------------------------"
+    
+    # Parametros de analisis
+    $params = @{
+        LogName = "System"  # Valor por defecto
+        Level = @(1,2,3)    # Critico, Error, Advertencia
+        Hours = 24
+        Keywords = "*"
+        ProviderName = "*"
+    }
+    
+    # Seleccionar log
+    Write-Host "`n[1/5] Selecciona el Log a analizar:"
+    Write-Host "   [1] System (eventos del sistema)"
+    Write-Host "   [2] Application (eventos de aplicaciones)"
+    Write-Host "   [3] Security (eventos de seguridad)"
+    Write-Host "   [4] Setup (eventos de instalacion)"
+    Write-Host "   [5] ForwardedEvents (eventos reenviados)"
+    $logChoice = Read-Host "Elige una opcion (por defecto: 1)"
+    $logChoice = if ([string]::IsNullOrWhiteSpace($logChoice)) { "1" } else { $logChoice }
+    
+    switch ($logChoice) {
+        "2" { $params.LogName = "Application" }
+        "3" { $params.LogName = "Security" }
+        "4" { $params.LogName = "Setup" }
+        "5" { $params.LogName = "ForwardedEvents" }
+        default { $params.LogName = "System" }
+    }
+    
+    # Seleccionar nivel de severidad
+    Write-Host "`n[2/5] Selecciona niveles de severidad:"
+    Write-Host "   [1] Solo Criticos (nivel 1)"
+    Write-Host "   [2] Criticos y Errores (niveles 1-2)"
+    Write-Host "   [3] Criticos, Errores y Advertencias (niveles 1-3)"
+    Write-Host "   [4] Todos los niveles"
+    $levelChoice = Read-Host "Elige una opcion (por defecto: 2)"
+    $levelChoice = if ([string]::IsNullOrWhiteSpace($levelChoice)) { "2" } else { $levelChoice }
+    
+    switch ($levelChoice) {
+        "1" { $params.Level = @(1) }
+        "3" { $params.Level = @(1,2,3) }
+        "4" { $params.Level = $null } # Todos los niveles
+        default { $params.Level = @(1,2) }
+    }
+    
+    # Seleccionar periodo de tiempo
+    Write-Host "`n[3/5] Selecciona el periodo de tiempo:"
+    Write-Host "   [1] ultima hora"
+    Write-Host "   [2] ultimas 24 horas (por defecto)"
+    Write-Host "   [3] ultimos 7 dias"
+    Write-Host "   [4] Personalizado (en horas)"
+    $timeChoice = Read-Host "Elige una opcion (por defecto: 2)"
+    $timeChoice = if ([string]::IsNullOrWhiteSpace($timeChoice)) { "2" } else { $timeChoice }
+    
+    switch ($timeChoice) {
+        "1" { $params.Hours = 1 }
+        "3" { $params.Hours = 168 } # 7 dias
+        "4" { 
+            $customHours = Read-Host "Introduce el numero de horas para analizar"
+            $params.Hours = if ($customHours -match '^\d+$' -and [int]$customHours -gt 0) { [int]$customHours } else { 24 }
+        }
+        default { $params.Hours = 24 }
+    }
+    
+    # Filtro por origen
+    Write-Host "`n[4/5] Filtro por origen (opcional):"
+    Write-Host "   Ejemplos: 'disk', 'service', 'Microsoft-Windows-*', '*nvlddmkm*'"
+    $providerFilter = Read-Host "Introduce filtro de origen (dejar en blanco para todos)"
+    if (-not [string]::IsNullOrWhiteSpace($providerFilter)) {
+        $params.ProviderName = $providerFilter
+    }
+    
+    # Filtro por palabras clave
+    Write-Host "`n[5/5] Filtro por palabras clave en mensaje (opcional):"
+    Write-Host "   Ejemplos: 'error', 'fail*', '*memory*', 'service'"
+    $keywordFilter = Read-Host "Introduce palabras clave (dejar en blanco para mostrar todos)"
+    
+    # Ejecutar analisis
+    $startTime = (Get-Date).AddHours(-$params.Hours)
+    Write-Host "`n[+] Buscando eventos desde $startTime..." -ForegroundColor Yellow
+    
+    $filterHashtable = @{
+        LogName = $params.LogName
+        StartTime = $startTime
+    }
+    
+    if ($params.Level) { $filterHashtable.Add("Level", $params.Level) }
+    if ($params.ProviderName -ne "*") { $filterHashtable.Add("ProviderName", $params.ProviderName) }
+    
+    try {
+        Write-Host "   - Obteniendo eventos del registro..." -ForegroundColor Gray
+        $events = Get-WinEvent -FilterHashtable $filterHashtable -MaxEvents 1000 -ErrorAction Stop
+        
+        if ($keywordFilter) {
+            Write-Host "   - Aplicando filtro de texto: '$keywordFilter'..." -ForegroundColor Gray
+            $events = $events | Where-Object { $_.Message -like "*$keywordFilter*" }
+        }
+        
+        $events = $events | Sort-Object TimeCreated -Descending
+        $totalEventsFound = $events.Count
+        
+        if ($totalEventsFound -eq 0) {
+            Write-Host "`n[INFO] No se encontraron eventos que coincidan con los criterios de busqueda." -ForegroundColor Green
+        }
+        else {
+            Write-Host "`n[OK] Se encontraron $totalEventsFound eventos." -ForegroundColor Green
+            
+            # Mostrar resultados paginados
+            $pageSize = 10
+            $currentPage = 0
+            $totalPages = [math]::Ceiling($totalEventsFound / $pageSize)
+            $selectedEvents = @()
+            
+            do {
+                Clear-Host
+                Write-Host "`n[+] RESULTADOS DEL ANaLISIS ($totalEventsFound eventos encontrados)" -ForegroundColor Cyan
+                Write-Host "    Mostrando pagina $($currentPage + 1) de $totalPages" -ForegroundColor Gray
+                
+                $startIndex = $currentPage * $pageSize
+                $endIndex = [math]::Min($startIndex + $pageSize - 1, $totalEventsFound - 1)
+                
+                for ($i = $startIndex; $i -le $endIndex; $i++) {
+                    $event = $events[$i]
+                    $severityColor = switch ($event.Level) {
+                        1 { "Red" }     # Critico
+                        2 { "Red" }     # Error
+                        3 { "Yellow" }  # Advertencia
+                        4 { "Gray" }    # Informacion
+                        default { "White" }
+                    }
+                    
+                    $time = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+                    $source = $event.ProviderName
+                    $id = $event.Id
+                    $message = ($event.Message -split "`r`n")[0]
+                    
+                    Write-Host "`n[$($i+1)] [$time] [$source] (ID: $id)" -ForegroundColor $severityColor
+                    Write-Host "    $message" -ForegroundColor White
+                }
+                
+                if ($totalPages -gt 1) {
+                    Write-Host "`n[Navegacion] [S] Siguiente pagina  [A] Anterior pagina  [M] Marcar eventos  [T] Todas las paginas  [V] Volver" -ForegroundColor Cyan
+                } else {
+                    Write-Host "`n[Navegacion] [M] Marcar eventos  [V] Volver" -ForegroundColor Cyan
+                }
+                
+                $navChoice = Read-Host "Elige una opcion"
+                
+                switch ($navChoice.ToUpper()) {
+                    "S" { if ($currentPage -lt $totalPages - 1) { $currentPage++ } }
+                    "A" { if ($currentPage -gt 0) { $currentPage-- } }
+                    "T" { $pageSize = $totalEventsFound; $totalPages = 1 } # Mostrar todos
+                    "M" {
+                        $selection = Read-Host "Introduce los numeros de los eventos a marcar (separados por comas, ej: 1,3,5)"
+                        $indices = $selection -split ',' | ForEach-Object { $_.Trim() }
+                        
+                        foreach ($index in $indices) {
+                            if ($index -match '^\d+$' -and [int]$index -ge 1 -and [int]$index -le $totalEventsFound) {
+                                $actualIndex = [int]$index - 1
+                                $selectedEvents += $events[$actualIndex]
+                            }
+                        }
+                        
+                        if ($selectedEvents.Count -gt 0) {
+                            Write-Host "`nSe han marcado $($selectedEvents.Count) eventos para exportacion." -ForegroundColor Green
+                        }
+                    }
+                    "V" { break }
+                }
+            } while ($navChoice.ToUpper() -ne 'V')
+            
+            # Opcion para exportar resultados
+            if ($totalEventsFound -gt 0) {
+                Write-Host ""
+                $exportOptions = @()
+                if ($selectedEvents.Count -gt 0) {
+                    $exportOptions += "   [S] Exportar SOLO los eventos marcados ($($selectedEvents.Count))"
+                }
+                $exportOptions += "   [T] Exportar TODOS los eventos encontrados ($totalEventsFound)"
+                $exportOptions += "   [N] No exportar"
+                
+                Write-Host ($exportOptions -join "`n") -ForegroundColor Gray
+                $exportChoice = Read-Host "`n¿Deseas exportar estos resultados a un archivo? (S/T/N)"
+                
+                if ($exportChoice.ToUpper() -eq 'S' -and $selectedEvents.Count -gt 0) {
+                    Export-EventResults -Events $selectedEvents -FileNamePrefix "Eventos_Seleccionados"
+                }
+                elseif ($exportChoice.ToUpper() -eq 'T') {
+                    Export-EventResults -Events $events -FileNamePrefix "Eventos_Completos"
+                }
+            }
+        }
+    }
+    catch {
+        Write-Error "No se pudieron recuperar los eventos. Error: $($_.Exception.Message)"
+        Write-Log -LogLevel ERROR -Message "Error al obtener eventos: $($_.Exception.Message)"
+        Read-Host "`nPresiona Enter para continuar"
+    }
+}
+
+# --- FUNCIoN 3: Generar Reporte HTML Completo ---
+function Generate-ComprehensiveHtmlReport {
+    Clear-Host
+    Write-Host "`n[+] Generando Reporte HTML Completo de Registros de Eventos..." -ForegroundColor Cyan
+    
+    $startTime = (Get-Date).AddDays(-30)
+    $reportData = @{
+        SystemCritical = Get-WinEvent -FilterHashtable @{LogName='System'; Level=1; StartTime=$startTime} -MaxEvents 50 -ErrorAction SilentlyContinue
+        SystemErrors = Get-WinEvent -FilterHashtable @{LogName='System'; Level=2; StartTime=$startTime} -MaxEvents 50 -ErrorAction SilentlyContinue
+        ApplicationErrors = Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2; StartTime=$startTime} -MaxEvents 50 -ErrorAction SilentlyContinue
+        SecurityFailures = Get-WinEvent -FilterHashtable @{LogName='Security'; Keywords=[uint64]"0x8020000000000000"; StartTime=$startTime} -MaxEvents 50 -ErrorAction SilentlyContinue
+    }
+    
+    # Calcular estadisticas
+    $totalEvents = 0
+    $eventCounts = @{}
+    foreach ($key in $reportData.Keys) {
+        $count = if ($reportData[$key]) { $reportData[$key].Count } else { 0 }
+        $eventCounts[$key] = $count
+        $totalEvents += $count
+    }
+    
+    # Generar HTML
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    $reportDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+    if (-not (Test-Path $reportDir)) {
+        New-Item -Path $reportDir -ItemType Directory | Out-Null
+    }
+    
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+    $reportPath = Join-Path -Path $reportDir -ChildPath "Reporte_Eventos_Completo_$timestamp.html"
+    
+    # CSS y JavaScript para el reporte interactivo (Unificado con Inventario)
+    $css = @"
+    <style>
+        :root { 
+            --bg-color: #f4f7f9;
+            --main-text-color: #2c3e50;
+            --primary-color: #2980b9;
+            --secondary-color: #34495e;
+            --card-bg-color: #ffffff;
+            --header-text-color: #ecf0f1;
+            --border-color: #dfe6e9;
+            --danger-color: #c0392b;
+            --warning-color: #f39c12;
+            --shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
+        h1, h2 { margin: 0; font-weight: 600; }
+        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; }
+        h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
+        .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; }
+        .section { background-color: var(--card-bg-color); border-radius: 8px; padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
+        
+        .summary {
+            background-color: #e3f2fd;
+            border-left: 4px solid var(--primary-color);
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 0 8px 8px 0;
+        }
+        .category {
+            background: var(--card-bg-color);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .category-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 12px 20px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .category-header.critical { background: var(--danger-color); }
+        .category-header.error { background: var(--warning-color); color: var(--main-text-color); }
+        .category-header.security { background: #9b59b6; }
+        .event-list { padding: 0 15px; }
+
+        .event {
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 0;
+            transition: background-color 0.2s;
+        }
+        .event:hover {
+            background-color: #f1f5f8;
+        }
+        .event-time {
+            color: #7f8c8d;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        .event-source {
+            font-weight: bold;
+            color: var(--main-text-color);
+        }
+        .event-id {
+            color: #7f8c8d;
+            margin-left: 10px;
+        }
+        .event-message {
+            margin-top: 5px;
+            line-height: 1.4;
+            color: var(--main-text-color);
+        }
+        .search-box {
+            margin: 20px 0;
+            text-align: right;
+        }
+        .search-box input {
+            padding: 10px 15px;
+            width: 98%;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #7f8c8d;
+            font-size: 0.8em;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: var(--card-bg-color);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .stat-critical { color: var(--danger-color); }
+        .stat-error { color: var(--warning-color); }
+        .stat-security { color: #9b59b6; }
+        .stat-total { color: var(--main-text-color); }
+
+        /* --- INICIO: CSS de Barra de Navegacion --- */
+        .navbar {
+            background-color: var(--secondary-color);
+            overflow: visible;
+            position: sticky;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 8px 5px;
+        }
+        .navbar a {
+            color: var(--header-text-color);
+            background-color: var(--primary-color);
+            text-align: center;
+            padding: 10px 15px;
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 600;
+            border-radius: 5px;
+            margin: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s ease-out;
+        }
+        .navbar a:hover {
+            background-color: var(--primary-color);
+            color: #ffffff;
+        }
+        /* --- FIN: CSS de Barra de Navegacion --- */
+
+    </style>
+    <script>
+        function toggleCategory(categoryId) {
+            const content = document.getElementById(categoryId);
+            const isHidden = content.style.display === 'none' || content.style.display === '';
+            content.style.display = isHidden ? 'block' : 'none';
+        }
+        
+        function searchEvents() {
+            const filter = document.getElementById('searchInput').value.toLowerCase();
+            const events = document.querySelectorAll('.event');
+            
+            events.forEach(event => {
+                const text = event.textContent.toLowerCase();
+                event.style.display = text.includes(filter) ? '' : 'none';
+            });
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text)
+                .then(() => alert('Copiado al portapapeles'))
+                .catch(err => console.error('Error al copiar: ', err));
+        }
+    </script>
+"@
+    
+    $htmlContent = @"
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Completo de Registros de Eventos - Aegis Phoenix Suite</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    $css
+</head>
+<body>
+    <div class="navbar">
+        <a href="#summary">Resumen</a>
+        <a href="#category-systemcritical">Criticos</a>
+        <a href="#category-systemerrors">Errores Sistema</a>
+        <a href="#category-applicationerrors">Errores Apps</a>
+        <a href="#category-securityfailures">Seguridad</a>
+    </div>
+    <div class="header">
+        <h1><i class="fas fa-exclamation-triangle"></i>Reporte Completo de Registros de Eventos</h1>
+        <p class="timestamp">Generado el: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") para el equipo: $($env:COMPUTERNAME)</p>
+    </div>
+    
+    <div class="summary section" id="summary">
+        <h2><i class="fas fa-chart-bar"></i>Resumen Ejecutivo - ultimos 30 Dias</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div>Total de Eventos</div>
+                <div class="stat-number stat-total">$totalEvents</div>
+            </div>
+            <div class="stat-card">
+                <div>Eventos Criticos</div>
+                <div class="stat-number stat-critical">$($eventCounts['SystemCritical'])</div>
+            </div>
+            <div class="stat-card">
+                <div>Errores de Sistema</div>
+                <div class="stat-number stat-error">$($eventCounts['SystemErrors'])</div>
+            </div>
+            <div class="stat-card">
+                <div>Fallos de Seguridad</div>
+                <div class="stat-number stat-security">$($eventCounts['SecurityFailures'])</div>
+            </div>
+        </div>
+        <p>Este reporte muestra los eventos mas importantes de los registros de Windows en las ultimas 24 horas. Los eventos criticos y de error se muestran prioritariamente.</p>
+    </div>
+    
+    <div class="search-box">
+        <input type="text" id="searchInput" onkeyup="searchEvents()" placeholder="Buscar en todos los eventos...">
+    </div>
+"@
+    
+    # Generar secciones para cada categoria de eventos
+    $categories = @(
+        @{ Name = "Eventos Criticos del Sistema"; Key = "SystemCritical"; Class = "critical"; Icon = "exclamation-circle" },
+        @{ Name = "Errores del Sistema"; Key = "SystemErrors"; Class = "error"; Icon = "times-circle" },
+        @{ Name = "Errores de Aplicaciones"; Key = "ApplicationErrors"; Class = "error"; Icon = "window-close" },
+        @{ Name = "Fallos de Seguridad"; Key = "SecurityFailures"; Class = "security"; Icon = "user-secret" }
+    )
+    
+    foreach ($category in $categories) {
+        $events = $reportData[$category.Key]
+        $eventId = "category-" + $category.Key.ToLower()
+        
+        $htmlContent += @"
+    
+    <div class="category">
+        <div class="category-header $($category.Class)" onclick="toggleCategory('$eventId')">
+            <span><i class="fas fa-$($category.Icon)"></i> $($category.Name) ($($events.Count))</span>
+            <span><i class="fas fa-chevron-down"></i></span>
+        </div>
+        <div id="$eventId" class="event-list">
+"@
+        
+        if ($events.Count -eq 0) {
+            $htmlContent += "            <div class='event'><p>No se encontraron eventos en esta categoria.</p></div>"
+        }
+        else {
+            foreach ($event in $events) {
+                $time = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+                $source = $event.ProviderName
+                $id = $event.Id
+                $safeMessage = ""
+                $rawMessage = "" # Para el boton de copiar
+
+                if (-not [string]::IsNullOrWhiteSpace($event.Message)) {
+                    # Si hay un mensaje, lo procesamos
+                    $safeMessage = $event.Message.Replace("<", "<").Replace(">", ">") -split "`r`n" | Select-Object -First 3
+                    $safeMessage = ($safeMessage -join "<br>")
+                    $rawMessage = $event.Message.Replace('"', '&quot;').Replace("`r", "\r").Replace("`n", "\n")
+                } else {
+                    # Si $event.Message es $null, usamos un marcador de posición
+                    $safeMessage = "(Mensaje no disponible o ilegible)"
+                    $rawMessage = "(Mensaje no disponible)"
+                }
+
+                # Construimos el $fullMessage usando las variables seguras
+                $fullMessage = $safeMessage + "<br><small style='color:#7f8c8d; cursor:pointer;' onclick='copyToClipboard(\`"$rawMessage\`")'>Copiar mensaje completo</small>"
+                
+                $htmlContent += @"
+            <div class="event">
+                <div class="event-time">[$time]</div>
+                <div class="event-source">$source <span class="event-id">(ID: $id)</span></div>
+                <div class="event-message">$fullMessage</div>
+            </div>
+"@
+            }
+        }
+        
+        $htmlContent += @"
+        </div>
+    </div>
+"@
+    }
+    
+    $htmlContent += @"
+    
+    <div class="footer">
+        <p>Aegis Phoenix Suite v$($script:Version) by SOFTMAXTER</p>
+    </div>
+</body>
+</html>
+"@
+    
+    # Guardar el reporte
+    try {
+        Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8 -Force
+        Write-Host "`n[OK] Reporte HTML generado correctamente en: '$reportPath'" -ForegroundColor Green
+        
+        $openChoice = Read-Host "`n¿Deseas abrir el reporte ahora? (S/N)"
+        if ($openChoice.ToUpper() -eq 'S') {
+            Start-Process $reportPath
+        }
+    }
+    catch {
+        Write-Error "No se pudo generar el reporte HTML. Error: $($_.Exception.Message)"
+        Write-Log -LogLevel ERROR -Message "Error al generar reporte HTML: $($_.Exception.Message)"
+    }
+    
+    Read-Host "`nPresiona Enter para continuar..."
+}
+
+# --- FUNCIoN 4: Buscar Soluciones para Errores Comunes ---
+function Search-EventSolutions {
+    Clear-Host
+    Write-Host "`n[+] Buscar Soluciones para Errores Comunes de Windows" -ForegroundColor Cyan
+    Write-Host "-------------------------------------------------------"
+    
+    # Base de conocimientos integrada para errores comunes
+    $solutionsDb = @{
+        # Errores de disco
+        "153" = @{
+            SourcePatterns = @("*disk*", "*volsnap*")
+            Title = "Error de volumenes de sombra (VSS) - ID 153"
+            Symptoms = "Problemas con copias de seguridad, restauracion de sistema, o errores al crear puntos de restauracion."
+            Solutions = @(
+                "Ejecutar 'chkdsk C: /f' y reiniciar el equipo.",
+                "Verificar el servicio 'Volume Shadow Copy' esta en ejecucion: services.msc > Volume Shadow Copy > Iniciar.",
+                "Ejecutar 'vssadmin list writers' en CMD para verificar el estado de los escritores VSS.",
+                "Si persiste el problema, ejecutar 'sfc /scannow' para reparar archivos del sistema."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/usar-las-sombras-de-volumen-para-restaurar-versiones-anteriores-de-archivos-6a7a1a8a-4e3a-4df7-8e0e-9d8b9c8ad937"
+            )
+        }
+        "9" = @{
+            SourcePatterns = @("*disk*", "*harddisk*")
+            Title = "Error de disco duro - ID 9"
+            Symptoms = "Perdida de conexion con el disco, lentitud extrema, o mensajes de error relacionados con el disco."
+            Solutions = @(
+                "Verificar que los cables SATA/energia del disco esten correctamente conectados.",
+                "Ejecutar 'chkdsk /f /r' para verificar y reparar sectores defectuosos.",
+                "Verificar el estado S.M.A.R.T. del disco usando CrystalDiskInfo o similar.",
+                "Si es una unidad externa, probar con otro puerto USB o cable."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/verificar-errores-en-una-unidad-en-windows-10-c991f1b4-e5ec-82c1-d2c0-1077a754df71"
+            )
+        }
+        
+        # Errores de controladores
+        "14" = @{
+            SourcePatterns = @("*nvlddmkm*", "*atikmdag*", "*amdkmdag*")
+            Title = "Error de controlador de graficos - ID 14"
+            Symptoms = "Pantalla negra, parpadeo, congelamiento del sistema, o reinicios inesperados durante uso intensivo de graficos."
+            Solutions = @(
+                "Actualizar el controlador de tarjeta grafica desde el sitio web del fabricante.",
+                "Usar DDU (Display Driver Uninstaller) en modo seguro para eliminar completamente el controlador anterior.",
+                "Reducir el overclocking de la GPU si se ha realizado.",
+                "Verificar la temperatura de la tarjeta grafica con herramientas como HWMonitor."
+            )
+            Resources = @(
+                "https://www.nvidia.com/es-es/drivers/",
+                "https://www.amd.com/es/support"
+            )
+        }
+        "41" = @{
+            SourcePatterns = @("*kernel*", "*power*")
+            Title = "El sistema se ha reiniciado sin apagarse correctamente - ID 41"
+            Symptoms = "Reinicios inesperados o pantallazos azules sin mensaje de error claro."
+            Solutions = @(
+                "Verificar sobrecalentamiento del sistema (CPU, GPU, fuente de alimentacion).",
+                "Ejecutar 'powercfg /energy' para generar un informe de energia.",
+                "Actualizar la BIOS/UEFI a la ultima version.",
+                "Probar con otra fuente de alimentacion si los problemas persisten.",
+                "Verificar la memoria RAM con Windows Memory Diagnostic."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/diagnosticar-problemas-de-reinicio-inesperado-en-windows-10-1d0f2a3d-3b2d-4a0f-8c3e-8e2a3eef5a6a"
+            )
+        }
+        
+        # Errores de red
+        "4227" = @{
+            SourcePatterns = @("*tcpip*", "*dhcp*")
+            Title = "Servidor DHCP no autorizado - ID 4227"
+            Symptoms = "Problemas para obtener direccion IP, conexion intermitente a internet."
+            Solutions = @(
+                "Reiniciar el router y el modem.",
+                "Liberar y renovar la direccion IP: 'ipconfig /release' seguido de 'ipconfig /renew'.",
+                "Restablecer TCP/IP: 'netsh int ip reset' y 'netsh winsock reset'.",
+                "Actualizar el controlador de la tarjeta de red."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/solucionar-problemas-de-conexion-a-internet-en-windows-10-8b3ecd78-2770-935b-849e-4c733c929a86"
+            )
+        }
+        
+        # Errores de inicio
+        "7000" = @{
+            SourcePatterns = @("*service*", "*control*")
+            Title = "Error al iniciar servicio - ID 7000"
+            Symptoms = "Servicios que no se inician automaticamente al arrancar Windows."
+            Solutions = @(
+                "Abrir services.msc y verificar el estado del servicio problematico.",
+                "Revisar las dependencias del servicio en la pestana 'Dependencias'.",
+                "Verificar si hay permisos incorrectos con Process Monitor de Sysinternals.",
+                "Ejecutar 'sfc /scannow' para reparar archivos de sistema con defectos."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/administrar-servicios-en-windows-10-8af8e9e9-22e0-b4e1-9c59-4f3c92f29c58"
+            )
+        }
+        "7031" = @{
+            SourcePatterns = @("*service*", "*control*")
+            Title = "Servicio critico fallo - ID 7031"
+            Symptoms = "Servicios que se detienen inesperadamente causando problemas de sistema."
+            Solutions = @(
+                "Identificar que servicio falla revisando el mensaje completo.",
+                "Verificar el registro de eventos para encontrar mas detalles sobre el fallo.",
+                "Actualizar los controladores relacionados con el servicio.",
+                "Usar System File Checker (sfc /scannow) para reparar archivos del sistema."
+            )
+            Resources = @(
+                "https://support.microsoft.com/es-es/windows/fix-corrupted-system-files-in-windows-10-d2459226-f2d5-9123-3c65-2d5e591d6f2a"
+            )
+        }
+    }
+    
+    # Buscar eventos criticos recientes para mostrar soluciones relevantes
+    Write-Host "   - Analizando eventos recientes para encontrar errores conocidos..." -ForegroundColor Gray
+    $recentEvents = @(Get-WinEvent -FilterHashtable @{LogName='System'; Level=@(1,2); StartTime=(Get-Date).AddDays(-7)} -MaxEvents 100 -ErrorAction SilentlyContinue)
+    
+    $matchesFound = @()
+    foreach ($event in $recentEvents) {
+        $eventId = $event.Id.ToString()
+        $eventSource = $event.ProviderName.ToLower()
+        
+        if ($solutionsDb.ContainsKey($eventId)) {
+            $solution = $solutionsDb[$eventId]
+            $sourceMatch = $false
+            
+            foreach ($pattern in $solution.SourcePatterns) {
+                if ($eventSource -like $pattern) {
+                    $sourceMatch = $true
+                    break
+                }
+            }
+            
+            if ($sourceMatch) {
+                $matchesFound += [PSCustomObject]@{
+                    Event = $event
+                    Solution = $solution
+                }
+            }
+        }
+    }
+    
+    Clear-Host
+    if ($matchesFound.Count -gt 0) {
+        Write-Host "`n[OK] Se encontraron soluciones para $($matchesFound.Count) errores conocidos:" -ForegroundColor Green
+        
+        $index = 1
+        foreach ($match in $matchesFound) {
+            $event = $match.Event
+            $solution = $match.Solution
+            
+            Write-Host "`n===== [Error #$index] =====" -ForegroundColor Cyan
+            Write-Host "Fecha: $($event.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Write-Host "Origen: $($event.ProviderName) | ID: $($event.Id)"
+            Write-Host "Mensaje: " -NoNewline
+            $firstLine = ($event.Message -split "`r`n")[0]
+            Write-Host "$firstLine" -ForegroundColor White
+            
+            Write-Host "`n[+] $([char]0x1b)[1m$($solution.Title)$([char]0x1b)[0m" -ForegroundColor Yellow
+            Write-Host "Sintomas: $($solution.Symptoms)" -ForegroundColor Gray
+            
+            Write-Host "`nSoluciones:" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $solution.Solutions.Count; $i++) {
+                Write-Host "   [$(($i+1))] $($solution.Solutions[$i])" -ForegroundColor White
+            }
+            
+            if ($solution.Resources.Count -gt 0) {
+                Write-Host "`nRecursos adicionales:" -ForegroundColor Yellow
+                for ($i = 0; $i -lt $solution.Resources.Count; $i++) {
+                    Write-Host "   - $($solution.Resources[$i])" -ForegroundColor Gray
+                }
+            }
+            
+            $index++
+            Write-Host ""
+        }
+        
+        # Ofrecer exportar las soluciones
+        $exportChoice = Read-Host "`n¿Deseas exportar estas soluciones a un archivo de texto? (S/N)"
+        if ($exportChoice.ToUpper() -eq 'S') {
+            $parentDir = Split-Path -Parent $PSScriptRoot
+            $reportDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+            if (-not (Test-Path $reportDir)) {
+                New-Item -Path $reportDir -ItemType Directory | Out-Null
+            }
+            
+            $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+            $solutionPath = Join-Path -Path $reportDir -ChildPath "Soluciones_Eventos_$timestamp.txt"
+            
+            $exportContent = @"
+=== SOLUCIONES PARA ERRORES COMUNES DE WINDOWS ===
+Generado el: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") 
+Sistema: $($env:COMPUTERNAME)
+
+"@
+            
+            $index = 1
+            foreach ($match in $matchesFound) {
+                $event = $match.Event
+                $solution = $match.Solution
+                
+                $exportContent += @"
+===== [Error #$index] =====
+Fecha: $($event.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss'))
+Origen: $($event.ProviderName) | ID: $($event.Id)
+Mensaje: $($event.Message -split "`r`n")[0]
+
++ $($solution.Title)
+Sintomas: $($solution.Symptoms)
+
+Soluciones:
+"@
+                
+                for ($i = 0; $i -lt $solution.Solutions.Count; $i++) {
+                    $exportContent += "   [$(($i+1))] $($solution.Solutions[$i])`n"
+                }
+                
+                if ($solution.Resources.Count -gt 0) {
+                    $exportContent += "`nRecursos adicionales:`n"
+                    for ($i = 0; $i -lt $solution.Resources.Count; $i++) {
+                        $exportContent += "   - $($solution.Resources[$i])`n"
+                    }
+                }
+                
+                $exportContent += "`n" + ("=" * 50) + "`n`n"
+                $index++
+            }
+            
+            $exportContent += @"
+Reporte generado por Aegis Phoenix Suite v$($script:Version)
+by SOFTMAXTER
+"@
+            
+            Set-Content -Path $solutionPath -Value $exportContent -Encoding UTF8
+            Write-Host "`n[OK] Soluciones exportadas a: '$solutionPath'" -ForegroundColor Green
+        }
+    }
+    else {
+        Write-Host "`n[INFO] No se encontraron errores comunes que coincidan con nuestra base de conocimientos." -ForegroundColor Yellow
+        Write-Host "Puedes intentar:" -ForegroundColor Gray
+        Write-Host "   1. Buscar en internet el ID del evento junto con 'solucion'"
+        Write-Host "   2. Usar el Analisis Profundo Personalizado para filtrar eventos especificos"
+        Write-Host "   3. Generar el Reporte HTML Completo para revisar todos los eventos"
+    }
+    
+    Read-Host "`nPresiona Enter para continuar..."
+}
+
+# --- FUNCIoN 5: Monitoreo en Tiempo Real (Experimental) ---
+function Start-RealTimeMonitoring {
+    Clear-Host
+    Write-Host "`n[+] Monitoreo en Tiempo Real de Eventos del Sistema" -ForegroundColor Cyan
+    Write-Host "-------------------------------------------------------"
+    Write-Host "   Este modo experimental muestra eventos a medida que ocurren."
+    Write-Host "   Presiona Ctrl+C para detener el monitoreo en cualquier momento."
+    Write-Warning "   ADVERTENCIA: Este modo puede generar mucho texto en la consola."
+    
+    $confirm = Read-Host "`n¿Estas seguro de que deseas iniciar el monitoreo en tiempo real? (S/N)"
+    if ($confirm.ToUpper() -ne 'S') {
+        Write-Host "`n[INFO] Monitoreo cancelado por el usuario." -ForegroundColor Yellow
+        Read-Host "`nPresiona Enter para continuar..."
+        return
+    }
+    
+    # Configurar filtros para el monitoreo
+    Write-Host "`n[1/3] Selecciona el tipo de eventos a monitorear:"
+    Write-Host "   [1] Solo Criticos y Errores (recomendado)"
+    Write-Host "   [2] Criticos, Errores y Advertencias"
+    Write-Host "   [3] Todos los niveles"
+    $levelChoice = Read-Host "Elige una opcion (por defecto: 1)"
+    $levelChoice = if ([string]::IsNullOrWhiteSpace($levelChoice)) { "1" } else { $levelChoice }
+    
+    $levelFilter = @(1, 2)  # Por defecto: criticos y errores
+    switch ($levelChoice) {
+        "2" { $levelFilter = @(1, 2, 3) }
+        "3" { $levelFilter = $null }  # Todos los niveles
+    }
+    
+    # Seleccionar logs a monitorear
+    Write-Host "`n[2/3] Selecciona que registros monitorear:"
+    Write-Host "   [1] System (recomendado)"
+    Write-Host "   [2] System y Application"
+    Write-Host "   [3] System, Application y Security"
+    $logChoice = Read-Host "Elige una opcion (por defecto: 1)"
+    $logChoice = if ([string]::IsNullOrWhiteSpace($logChoice)) { "1" } else { $logChoice }
+    
+    $logNames = @("System")
+    switch ($logChoice) {
+        "2" { $logNames += "Application" }
+        "3" { $logNames += "Application", "Security" }
+    }
+    
+    # Duracion del monitoreo
+    Write-Host "`n[3/3] Duracion del monitoreo (en minutos):"
+    Write-Host "   [1] 5 minutos (recomendado para pruebas)"
+    Write-Host "   [2] 15 minutos"
+    Write-Host "   [3] 30 minutos"
+    Write-Host "   [4] 60 minutos"
+    Write-Host "   [M] Manual (introduce minutos)"
+    $durationChoice = Read-Host "Elige una opcion (por defecto: 1)"
+    $durationChoice = if ([string]::IsNullOrWhiteSpace($durationChoice)) { "1" } else { $durationChoice }
+    
+    $durationMinutes = 5  # Por defecto
+    switch ($durationChoice) {
+        "2" { $durationMinutes = 15 }
+        "3" { $durationMinutes = 30 }
+        "4" { $durationMinutes = 60 }
+        "M" { 
+            $customDuration = Read-Host "Introduce la duracion en minutos"
+            $durationMinutes = if ($customDuration -match '^\d+$' -and [int]$customDuration -gt 0) { [int]$customDuration } else { 5 }
+        }
+    }
+    
+    $endTime = (Get-Date).AddMinutes($durationMinutes)
+    $elapsedMinutes = 0
+    
+    # Preparar para el monitoreo
+    Clear-Host
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host "      MONITOREO EN TIEMPO REAL - $durationMinutes minutos      " -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host "Iniciado: $(Get-Date -Format 'HH:mm:ss')"
+    Write-Host "Finalizara: $($endTime.ToString('HH:mm:ss'))"
+    Write-Host "Registros: $($logNames -join ', ')"
+    Write-Host "Niveles: $(if ($levelFilter) { $levelFilter -join ', ' } else { 'Todos' })"
+    Write-Host ""
+    Write-Host "[INFO] Presiona Ctrl+C en cualquier momento para detener el monitoreo."
+    Write-Host ""
+    
+    $eventCount = 0
+    $criticalCount = 0
+    $errorCount = 0
+    
+    try {
+        # Crear una sesion de suscripcion a eventos
+        $query = "*[System[("
+        $levelConditions = @()
+        if ($levelFilter) {
+            foreach ($level in $levelFilter) {
+                $levelConditions += "(Level=$level)"
+            }
+            $query += "(" + ($levelConditions -join " or ") + ")"
+        }
+        
+        $logConditions = @()
+        foreach ($logName in $logNames) {
+            $logConditions += "(EventLog='$logName')"
+        }
+        $query += " and (" + ($logConditions -join " or ") + "))]]"
+        
+        # Iniciar el monitoreo
+        $startTime = Get-Date
+        $session = New-Object System.Diagnostics.Eventing.Reader.EventLogSession
+        $subscription = New-Object System.Diagnostics.Eventing.Reader.EventLogWatcher($query, $session, $true)
+        
+        # Definir el manejador de eventos
+        $subscription.Enabled = $true
+        Register-ObjectEvent -InputObject $subscription -EventName EventRecordWritten -Action {
+            param($eventRecord)
+            try {
+                $event = $eventRecord.EventRecord
+                $time = $event.TimeCreated.ToString("HH:mm:ss")
+                $source = $event.ProviderName
+                $id = $event.Id
+                $level = switch ($event.Level) {
+                    1 { "CRiTICO"; $script:criticalCount++; break }
+                    2 { "ERROR"; $script:errorCount++; break }
+                    3 { "ADVERTENCIA"; break }
+                    4 { "INFORMACIoN"; break }
+                    default { "OTRO" }
+                }
+                $levelColor = switch ($event.Level) {
+                    1 { "Red" }
+                    2 { "Red" }
+                    3 { "Yellow" }
+                    4 { "Gray" }
+                    default { "White" }
+                }
+                $message = ($event.FormatDescription() -split "`r`n")[0]
+                
+                $script:eventCount++
+                
+                Write-Host "[$time] [$level] [$source] (ID: $id)" -ForegroundColor $levelColor
+                Write-Host "   $message" -ForegroundColor White
+            }
+            catch {
+                # No hacer nada si hay un error en el manejador
+            }
+        } | Out-Null
+        
+        Write-Host "[+] Monitoreo iniciado correctamente." -ForegroundColor Green
+        Write-Host ""
+        
+        # Mantener el script ejecutandose hasta que termine el tiempo
+        while ((Get-Date) -lt $endTime) {
+            Start-Sleep -Seconds 1
+            $currentElapsed = [math]::Floor(((Get-Date) - $startTime).TotalMinutes)
+            if ($currentElapsed -gt $elapsedMinutes) {
+                $elapsedMinutes = $currentElapsed
+                $remainingMinutes = $durationMinutes - $elapsedMinutes
+                
+                if ($remainingMinutes -gt 0) {
+                    $progress = ($elapsedMinutes / $durationMinutes) * 100
+                    Write-Host "   [PROGRESO] Tiempo transcurrido: $elapsedMinutes/$durationMinutes minutos - Eventos detectados: $eventCount (Criticos: $criticalCount, Errores: $errorCount)" -ForegroundColor Cyan
+                }
+            }
+        }
+    }
+    catch {
+        Write-Error "Error durante el monitoreo: $($_.Exception.Message)"
+        Write-Log -LogLevel ERROR -Message "Error en monitoreo en tiempo real: $($_.Exception.Message)"
+    }
+    finally {
+        # Limpiar
+        if ($subscription) {
+            $subscription.Enabled = $false
+            $subscription.Dispose()
+        }
+        
+        # Mostrar resumen final
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "         RESUMEN DEL MONITOREO EN TIEMPO REAL          " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "Duracion total: $durationMinutes minutos"
+        Write-Host "Eventos detectados: $eventCount"
+        Write-Host "   - CRiTICOS: $criticalCount" -ForegroundColor Red
+        Write-Host "   - ERRORES: $errorCount" -ForegroundColor Red
+        Write-Host "   - Otros niveles: $($eventCount - $criticalCount - $errorCount)" -ForegroundColor Gray
+        Write-Host ""
+        
+        if ($eventCount -gt 0) {
+            $exportChoice = Read-Host "¿Deseas exportar estos eventos a un archivo de registro? (S/N)"
+            if ($exportChoice.ToUpper() -eq 'S') {
+                $parentDir = Split-Path -Parent $PSScriptRoot
+                $logDir = Join-Path -Path $parentDir -ChildPath "Logs"
+                if (-not (Test-Path $logDir)) {
+                    New-Item -Path $logDir -ItemType Directory | Out-Null
+                }
+                
+                $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+                $logPath = Join-Path -Path $logDir -ChildPath "Monitoreo_En_Tiempo_Real_$timestamp.log"
+                
+                $logContent = @"
+=== MONITOREO EN TIEMPO REAL DE EVENTOS ===
+Inicio: $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))
+Fin: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Duracion: $durationMinutes minutos
+Registros monitoreados: $($logNames -join ', ')
+Niveles monitoreados: $(if ($levelFilter) { $levelFilter -join ', ' } else { 'Todos' })
+------------------------------------------------
+Total de eventos detectados: $eventCount
+   - CRiTICOS: $criticalCount
+   - ERRORES: $errorCount
+   - Otros niveles: $($eventCount - $criticalCount - $errorCount)
+
+Este archivo solo contiene el resumen del monitoreo. Para ver los eventos especificos,
+usa las otras funciones del analizador de eventos.
+"@
+                
+                Set-Content -Path $logPath -Value $logContent -Encoding UTF8
+                Write-Host "`n[OK] Resumen exportado a: '$logPath'" -ForegroundColor Green
+            }
+        }
+        
+        Read-Host "`nPresiona Enter para continuar..."
+    }
+}
+
+# --- FUNCIONES AUXILIARES ---
+function Export-DetailedEventReport {
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$Events
+    )
+    
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+    if (-not (Test-Path $diagDir)) {
+        New-Item -Path $diagDir -ItemType Directory | Out-Null
+    }
+    
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+    $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Eventos_Detallado_$timestamp.html"
+    
+    # CSS mejorado y unificado
+    $css = @"
+    <style>
+        :root { 
+            --bg-color: #f4f7f9;
+            --main-text-color: #2c3e50;
+            --primary-color: #2980b9;
+            --secondary-color: #34495e;
+            --card-bg-color: #ffffff;
+            --header-text-color: #ecf0f1;
+            --border-color: #dfe6e9;
+            --danger-color: #c0392b;
+            --warning-color: #f39c12;
+            --shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
+        h1, h2 { margin: 0; font-weight: 600; }
+        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; }
+        h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
+        .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; }
+        
+        .summary, .recommendations {
+            background-color: var(--card-bg-color);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: var(--shadow);
+        }
+        
+        .issue-section {
+            background-color: var(--card-bg-color);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .issue-header {
+            padding: 12px 20px;
+            font-weight: bold;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .issue-header.critical { background: var(--danger-color); }
+        .issue-header.warning { background: var(--warning-color); color: var(--main-text-color); }
+        .issue-header.info { background: var(--primary-color); }
+        .summary li.critical { color: var(--danger-color); font-weight: bold; }
+        .summary li.warning { color: var(--warning-color); font-weight: bold; }
+        .summary li.info { color: var(--main-text-color); }
+        /* --- Fin de la adicion --- */
+
+        .event { 
+            padding: 12px 15px; 
+            border-bottom: 1px solid var(--border-color); 
+            transition: background-color 0.2s;
+        }
+        .event:hover { background-color: #f1f5f8; }
+        .event:last-child { border-bottom: none; }
+        .event-time { color: #7f8c8d; font-size: 14px; }
+        .event-source { font-weight: bold; color: var(--main-text-color); }
+        .event-message { margin-top: 5px; color: #212529; }
+        
+        .footer { text-align: center; margin-top: 40px; color: #7f8c8d; font-size: 0.8em; }
+        .search-box { margin: 20px 0; text-align: right; }
+        .search-box input { padding: 10px 15px; width: 98%; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1em; }
+
+        .navbar {
+            background-color: var(--secondary-color);
+            overflow: visible;
+            position: sticky;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 8px 5px;
+        }
+        .navbar a {
+            color: var(--header-text-color);
+            background-color: var(--primary-color);
+            text-align: center;
+            padding: 10px 15px;
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 600;
+            border-radius: 5px;
+            margin: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s ease-out;
+        }
+        .navbar a:hover {
+            background-color: var(--primary-color);
+            color: #ffffff;
+        }
+        /* --- FIN: CSS de Barra de Navegacion --- */
+
+    </style>
+    <script>
+        function searchEvents() {
+            const filter = document.getElementById('searchInput').value.toLowerCase();
+            const events = document.getElementsByClassName('event');
+            
+            for (let i = 0; i < events.length; i++) {
+                const event = events[i];
+                const text = event.textContent.toLowerCase();
+                event.style.display = text.includes(filter) ? '' : 'none';
+            }
+        }
+        
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const isHidden = section.style.display === 'none' || section.style.display === '';
+            section.style.display = isHidden ? 'block' : 'none';
+        }
+    </script>
+"@
+    
+    # Generar contenido HTML
+    $htmlContent = @"
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte Detallado de Eventos del Sistema - Aegis Phoenix Suite</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    $css
+</head>
+<body>
+    <div class="navbar">
+        <a href="#summary">Resumen</a>
+        <a href="#detailed-events">Eventos</a>
+        <a href="#recommendations">Recomendaciones</a>
+    </div>
+    <div class="header">
+        <h1><i class="fas fa-clipboard-list"></i> Reporte Detallado de Eventos del Sistema</h1>
+        <p class="timestamp">Generado el: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") para el equipo: $($env:COMPUTERNAME)</p>
+    </div>
+    
+    <div class="summary" id="summary">
+        <h2><i class="fas fa-chart-bar"></i> Resumen Ejecutivo</h2>
+        <p>Se detectaron <strong>$($Events.Count)</strong> eventos criticos en las ultimas 24 horas.</p>
+        
+        <h3>Patrones de Problemas Detectados:</h3>
+        <ul>
+"@
+    
+    $issuesByType = $Events | Group-Object Type | Sort-Object Count -Descending
+    foreach ($issueGroup in $issuesByType) {
+        $severityClass = if ($issueGroup.Count -gt 5) { "critical" } elseif ($issueGroup.Count -gt 2) { "warning" } else { "info" }
+        $htmlContent += "            <li class='$severityClass'>- $($issueGroup.Name): <strong>$($issueGroup.Count)</strong> eventos</li>`n"
+    }
+    
+    $htmlContent += @"
+        </ul>
+    </div>
+    
+    <div class="search-box">
+        <input type="text" id="searchInput" onkeyup="searchEvents()" placeholder="Buscar en eventos...">
+    </div>
+    
+    <h2 id="detailed-events"><i class="fas fa-exclamation-triangle"></i> Eventos Detallados</h2>
+"@
+    
+    # Agrupar eventos por tipo
+    $currentSection = 1
+    foreach ($issueGroup in $issuesByType) {
+        $sectionId = "section-$currentSection"
+        $severityClass = if ($issueGroup.Count -gt 5) { "critical" } elseif ($issueGroup.Count -gt 2) { "warning" } else { "info" }
+        
+        $htmlContent += @"
+    
+    <div class="issue-section">
+        <div class="issue-header $severityClass" onclick="toggleSection('$sectionId')">
+            <span><i class="fas fa-bug"></i> $($issueGroup.Name) ($($issueGroup.Count) eventos)</span>
+            <span><i class="fas fa-chevron-down"></i></span>
+        </div>
+        <div id="$sectionId">
+"@
+        
+        foreach ($event in $issueGroup.Group) {
+            
+            $safeMessage = ""
+            if (-not [string]::IsNullOrWhiteSpace($event.Message)) {
+                $safeMessage = $event.Message.Replace("<", "<").Replace(">", ">") -split "`r`n" | Select-Object -First 3
+                $safeMessage = ($safeMessage -join "<br>")
+            } else {
+                $safeMessage = "(Mensaje no disponible o ilegible)"
+            }
+            
+            $htmlContent += @"
+            <div class="event">
+                <div class="event-time">[$($event.Time)]</div>
+                <div class="event-source">Fuente: $($event.Source) (ID: $($event.Id) | Log: $($event.Log))</div>
+                <div class="event-message">$safeMessage</div>
+            </div>
+"@
+        }
+        
+        $htmlContent += @"
+        </div>
+    </div>
+"@
+        
+        $currentSection++
+    }
+    
+    # Recomendaciones
+    $htmlContent += @"
+    
+    <div class="recommendations" id="recommendations">
+        <h2><i class="fas fa-lightbulb"></i> Recomendaciones de Accion</h2>
+"@
+    
+    foreach ($issueGroup in $issuesByType) {
+        $htmlContent += @"
+        <h3>$($issueGroup.Name)</h3>
+        <ul>
+"@
+        switch ($issueGroup.Name) {
+            "Disk Errors" { 
+                $htmlContent += @"
+            <li>Ejecuta <strong>chkdsk C: /f</strong> y reinicia el equipo</li>
+            <li>Verifica la salud del disco con CrystalDiskInfo o similar</li>
+            <li>Revisa los cables de conexion del disco (SATA/Power)</li>
+"@
+            }
+            "Driver Issues" { 
+                $htmlContent += @"
+            <li>Actualiza los controladores, especialmente de video y chipset</li>
+            <li>Usa DDU (Display Driver Uninstaller) para una limpieza profunda de controladores de video</li>
+            <li>Verifica en el Administrador de dispositivos si hay dispositivos con problemas (!)</li>
+"@
+            }
+            "Memory Problems" { 
+                $htmlContent += @"
+            <li>Ejecuta Windows Memory Diagnostic (mdsched.exe)</li>
+            <li>Si tienes modulos de RAM adicionales, prueba eliminando uno a la vez</li>
+            <li>Verifica la configuracion de XMP/DOCP en la BIOS si aplicable</li>
+"@
+            }
+            "Network Failures" { 
+                $htmlContent += @"
+            <li>Reinicia tu router y modem</li>
+            <li>Actualiza los controladores de red</li>
+            <li>Ejecuta los comandos: <strong>ipconfig /release</strong>, <strong>ipconfig /renew</strong>, <strong>ipconfig /flushdns</strong></li>
+"@
+            }
+            "Startup Failures" { 
+                $htmlContent += @"
+            <li>Ejecuta <strong>sfc /scannow</strong> para reparar archivos del sistema</li>
+            <li>Ejecuta <strong>DISM /Online /Cleanup-Image /RestoreHealth</strong></li>
+            <li>Verifica los servicios de inicio criticos en services.msc</li>
+"@
+            }
+            "Application Crashes" { 
+                $htmlContent += @"
+            <li>Actualiza las aplicaciones problematicas a la ultima version</li>
+            <li>Revisa si hay actualizaciones disponibles de Windows</li>
+            <li>Considera reinstalar la aplicacion problematica</li>
+"@
+            }
+            "System Freezes" { 
+                $htmlContent += @"
+            <li>Verifica las temperaturas del sistema con HWMonitor</li>
+            <li>Actualiza la BIOS/UEFI a la ultima version disponible</li>
+            <li>Revisa si hay conflictos de hardware en el Administrador de dispositivos</li>
+"@
+            }
+            default { 
+                $htmlContent += @"
+            <li>Busca en linea el ID del evento especifico ($($issueGroup.Group[0].Id)) combinado con el origen ($($issueGroup.Group[0].Source))</li>
+            <li>Considera usar el Foro de Microsoft o comunidades especializadas para soluciones especificas</li>
+"@
+            }
+        }
+        $htmlContent += @"
+        </ul>
+"@
+    }
+    
+    $htmlContent += @"
+    </div>
+    
+    <div class="footer">
+        <p>Aegis Phoenix Suite v$($script:Version) by SOFTMAXTER</p>
+    </div>
+</body>
+</html>
+"@
+    
+    # Guardar el reporte
+    Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
+    
+    Write-Host "`n[OK] Reporte detallado generado en: '$reportPath'" -ForegroundColor Green
+    $openChoice = Read-Host "¿Deseas abrir el reporte ahora? (S/N)"
+    if ($openChoice.ToUpper() -eq 'S') {
+        Start-Process $reportPath
+    }
+}
+
+function Export-EventResults {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$Events,
+        [string]$FileNamePrefix = "Resultados_Eventos"
+    )
+    
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+    if (-not (Test-Path $diagDir)) {
+        New-Item -Path $diagDir -ItemType Directory | Out-Null
+    }
+    
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+    $txtPath = Join-Path -Path $diagDir -ChildPath "$FileNamePrefix_$timestamp.txt"
+    $csvPath = Join-Path -Path $diagDir -ChildPath "$FileNamePrefix_$timestamp.csv"
+    
+    # Exportar a TXT (formato legible)
+    $txtContent = @"
+=== RESULTADOS DEL ANÁLISIS DE EVENTOS ===
+Generado: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Sistema: $($env:COMPUTERNAME)
+Número total de eventos: $($Events.Count)
+============================================================
+
+"@
+    
+    $index = 1
+    foreach ($event in $Events) {
+        $time = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+        $source = $event.ProviderName
+        $id = $event.Id
+        $level = switch ($event.Level) {
+            1 { "CRÍTICO" }
+            2 { "ERROR" }
+            3 { "ADVERTENCIA" }
+            4 { "INFORMACION" }
+            default { "OTRO" }
+        }
+        
+        $txtContent += @"
+[$index] $time | $level | $source (ID: $id)
+------------------------------------------------------------
+$($event.Message)
+============================================================
+
+"@
+        $index++
+    }
+    
+    $txtContent += @"
+Reporte generado por Aegis Phoenix Suite v$($script:Version)
+by SOFTMAXTER
+"@
+    
+    Set-Content -Path $txtPath -Value $txtContent -Encoding UTF8
+    
+    # Exportar a CSV (para análisis de datos)
+    $eventsForCsv = $Events | Select-Object @{
+        Name = "FechaHora"
+        Expression = { $_.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss") }
+    }, @{
+        Name = "Nivel"
+        Expression = { 
+            switch ($_.Level) {
+                1 { "CRÍTICO" }
+                2 { "ERROR" }
+                3 { "ADVERTENCIA" }
+                4 { "INFORMACION" }
+                default { "OTRO" }
+            }
+        }
+    }, @{
+        Name = "Origen"
+        Expression = { $_.ProviderName }
+    }, @{
+        Name = "ID"
+        Expression = { $_.Id }
+    }, @{
+        Name = "Mensaje"
+        Expression = { ($_.Message -split "`r`n")[0] }
+    }, @{
+        Name = "Log"
+        Expression = { $_.LogName }
+    }
+    
+    $eventsForCsv | Export-Csv -Path $csvPath -Encoding UTF8 -NoTypeInformation
+    
+    Write-Host "`n[OK] Resultados exportados correctamente:" -ForegroundColor Green
+    Write-Host "   - TXT (legible): $txtPath"
+    Write-Host "   - CSV (análisis): $csvPath"
+    
+    $openChoice = Read-Host "`n¿Deseas abrir la carpeta con los resultados? (S/N)"
+    if ($openChoice.ToUpper() -eq 'S') {
+        Start-Process $diagDir
+    }
 }
 
 # ===================================================================
 # --- MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
 # ===================================================================
-
 function Select-PathDialog {
     param(
         [Parameter(Mandatory=$true)]
@@ -2412,7 +4143,6 @@ function Invoke-UserDataBackup {
     Read-Host "`nPresiona Enter para volver al menu..."
 }
 
-
 # --- FUNCION 3: INTERFAZ DE USUARIO DEL MODULO DE RESPALDO ---
 function Show-UserDataBackupMenu {
     # Funcion interna para no repetir el menu de seleccion de modo
@@ -2691,7 +4421,7 @@ function Get-SystemInventoryData {
         Where-Object { $_.DisplayName } | 
         Sort-Object DisplayName
 
-    # --- Recopilamos el estado de salud de los discos físicos ---
+    # --- Recopilamos el estado de salud de los discos fisicos ---
     $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='HealthStatus'; E={
     switch ($_.HealthStatus) {
         'Healthy'   { 'Saludable' }
@@ -2755,7 +4485,7 @@ function Build-FullInventoryHtmlReport {
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: var(--main-text-color); background-color: var(--bg-color); max-width: 1400px; margin: auto; padding: 20px; }
         .header { background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: var(--header-text-color); padding: 30px; border-radius: 8px; margin-bottom: 30px; box-shadow: var(--shadow); }
         h1, h2 { margin: 0; font-weight: 600; }
-        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; } /* Título mas grande */
+        h1 { font-size: 2.8em; display: flex; align-items: center; } h1 i { margin-right: 15px; } /* Titulo mas grande */
         h2 { color: var(--secondary-color); border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin: 0 0 20px 0; font-size: 1.8em; display: flex; align-items: center; } h2 i { margin-right: 10px; color: var(--primary-color); }
         .timestamp { font-size: 1em; opacity: 0.9; margin-top: 5px; }
         .section { background-color: var(--card-bg-color); border-radius: 8px; padding: 25px; margin-bottom: 25px; box-shadow: var(--shadow); }
@@ -2786,16 +4516,16 @@ function Build-FullInventoryHtmlReport {
         }
         .navbar a {
             color: var(--header-text-color);
-            background-color: var(--primary-color); /* <-- Color de fondo del botón (azul) */
+            background-color: var(--primary-color); /* <-- Color de fondo del boton (azul) */
             text-align: center;
-            padding: 10px 15px; /* <-- Hacemos el padding un poco más compacto */
+            padding: 10px 15px; /* <-- Hacemos el padding un poco mas compacto */
             text-decoration: none;
             font-size: 0.9em;
-            font-weight: 600; /* <-- Hacemos el texto más grueso */
+            font-weight: 600; /* <-- Hacemos el texto mas grueso */
             border-radius: 5px; /* <-- ¡Esquinas redondeadas! */
-            margin: 4px; /* <-- Espacio entre cada botón */
+            margin: 4px; /* <-- Espacio entre cada boton */
             box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* <-- Sombra para dar profundidad */
-            transition: all 0.2s ease-out; /* <-- Transición suave para todo */
+            transition: all 0.2s ease-out; /* <-- Transicion suave para todo */
         }
         .navbar a:hover {
             background-color: var(--primary-color);
@@ -2885,7 +4615,7 @@ function Build-FullInventoryHtmlReport {
         foreach ($disk in $InventoryData.Disks) { $body += "<tr><td>$($disk.Dispositivo) ($($disk.Nombre))</td><td>$($disk.Tipo)</td><td>$($disk.TamanoTotalGB)</td><td>$($disk.EspacioLibreGB)</td><td>$($disk.UsoPorc)%" + (Get-ProgressBarHtml($disk.UsoPorc)) + "</td></tr>" }
     $body += "</tbody></table></div>"
 	
-	# ---salud de discos físicos ---
+	# ---salud de discos fisicos ---
     $body += "<div class='section' id='salud-discos'><h2><i class='fas fa-heartbeat'></i>Diagnostico de Salud de Discos (S.M.A.R.T.)</h2><div class='search-box'><input type='text' id='smartSearch' onkeyup=`"searchTable('smartSearch', 'smartTable')`" placeholder='Buscar por nombre o estado...'></div><table id='smartTable'><thead><tr><th>Nombre</th><th>Tipo</th><th>No. de Serie</th><th>Estado de Salud</th></tr></thead><tbody>"
     foreach ($pdisk in $InventoryData.PhysicalDisks) {
         $healthColor = switch ($pdisk.EstadoSalud) {
@@ -3032,7 +4762,7 @@ function Show-InventoryMenu {
             $reportContent += "=== DISCOS ==="
             $reportContent += ($inventoryData.Disks | Format-Table | Out-String).TrimEnd()
 			
-			# --- Añadimos la seccion de salud de discos físicos ---
+			# --- Añadimos la seccion de salud de discos fisicos ---
             $reportContent += ""
             $reportContent += "=== DIAGNOSTICO DE SALUD DE DISCOS (S.M.A.R.T.) ==="
             $reportContent += ($inventoryData.PhysicalDisks | Format-Table | Out-String).TrimEnd()
@@ -4444,7 +6174,7 @@ function Show-TweakManagerMenu {
                 if ($explorerRestartNeeded) {
                     $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows para ser visibles. ¿Deseas hacerlo ahora? (S/N)"
                     if ($promptChoice.ToUpper() -eq 'S') {
-                        Invoke-ExplorerRestart # Llamamos a nuestra nueva funcion
+                        Invoke-ExplorerRestart
                     } else {
                         Write-Host "[INFO] Recuerda reiniciar la sesion o el equipo para ver todos los cambios." -ForegroundColor Yellow
                     }
@@ -4463,93 +6193,103 @@ function Show-TweakManagerMenu {
 function Show-OptimizationMenu {
 	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Optimizacion y Limpieza."
     $optimChoice = ''
-	do {
-	Clear-Host
-	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan;
-	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host ""
-    Write-Host "   [1] Gestor de Servicios No Esenciales de Windows"
-    Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray
-	Write-Host ""
-    Write-Host "   [2] Optimizar Servicios de Programas Instalados"
-    Write-Host "       (Activa o desactiva servicios de tus aplicaciones)" -ForegroundColor Gray
-    Write-Host ""
-	Write-Host "   [3] Modulo de Limpieza Profunda"
-	Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray
-	Write-Host ""
-	Write-Host "   [4] Eliminar Apps Preinstaladas"
-	Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray
-	Write-Host ""
-	Write-Host "   [5] Gestionar Programas de Inicio"
-	Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray
-	Write-Host ""
-	Write-Host "-------------------------------------------------------"
-	Write-Host ""
-	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
-	Write-Host ""
-	$optimChoice = Read-Host "Selecciona una opcion"; switch ($optimChoice.ToUpper()) {
-        '1' { Manage-SystemServices }
-        '2' { Manage-ThirdPartyServices }
-		'3' { Show-CleaningMenu }
-        '4' { Show-BloatwareMenu }
-        '5' { Manage-StartupApps }
-		'V' { continue };
-		default {
-			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
-			Read-Host }
+	do { 
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "            Modulo de Optimizacion y Limpieza          " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Gestor de Servicios No Esenciales de Windows"
+        Write-Host "       (Activa, desactiva o restaura servicios de forma segura)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Optimizar Servicios de Programas Instalados"
+        Write-Host "       (Activa o desactiva servicios de tus aplicaciones)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Modulo de Limpieza Profunda"
+        Write-Host "       (Libera espacio en disco eliminando archivos basura)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [4] Eliminar Apps Preinstaladas"
+        Write-Host "       (Detecta y te permite elegir que bloatware quitar)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [5] Gestionar Programas de Inicio"
+        Write-Host "       (Controla que aplicaciones arrancan con Windows)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "-------------------------------------------------------"
+        Write-Host ""
+        Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
+        Write-Host ""
+        
+        $optimChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($optimChoice.ToUpper()) {
+            '1' { Manage-SystemServices }
+            '2' { Manage-ThirdPartyServices }
+            '3' { Show-CleaningMenu }
+            '4' { Show-BloatwareMenu }
+            '5' { Manage-StartupApps }
+            'V' { continue }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+                Read-Host 
+            }
 		} 
 	} while ($optimChoice.ToUpper() -ne 'V')
 }
 
 function Show-MaintenanceMenu {
 	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Mantenimiento y Reparacion."
-    $maintChoice = '';
-	do { Clear-Host;
-	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host "           Modulo de Mantenimiento y Reparacion        " -ForegroundColor Cyan;
-	Write-Host "=======================================================" -ForegroundColor Cyan;
-	Write-Host ""
-	Write-Host "   [1] Verificar y Reparar Archivos del Sistema (SFC/DISM)";
-	Write-Host "       (Soluciona errores de sistema, cuelgues y pantallas azules)" -ForegroundColor Gray;
-	Write-Host ""
-	Write-Host "   [2] Limpiar Caches de Sistema (DNS, Tienda, etc.)";
-	Write-Host "       (Resuelve problemas de conexion a internet y de la Tienda Windows)" -ForegroundColor Gray;
-	Write-Host ""
-	Write-Host "   [3] Optimizar Unidades (Desfragmentar/TRIM)";
-	Write-Host "       (Mejora la velocidad de lectura y la vida util de tus discos)" -ForegroundColor Gray;
-	Write-Host ""
-	Write-Host "   [4] Generar Reporte de Salud del Sistema (Energia)";
-	Write-Host "       (Diagnostica problemas de bateria y consumo de energia)" -ForegroundColor Gray;
-	Write-Host ""
-    Write-Host "   [5] Purgar Memoria RAM en Cache (Standby List)" -ForegroundColor Yellow
-    Write-Host "       (Libera la memoria 'En espera'. Para usos muy especificos)" -ForegroundColor Gray
-	Write-Host ""
-    Write-Host "   [6] Diagnostico y Reparacion de Red"
-    Write-Host "       (Soluciona problemas de conectividad a internet)" -ForegroundColor Gray
-	Write-Host ""
-	Write-Host "-------------------------------------------------------"
-	Write-Host ""
-	Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
-	Write-Host ""
-	$maintChoice = Read-Host "Selecciona una opcion"; switch ($maintChoice.ToUpper()) {
-		'1' { Repair-SystemFiles }
-		'2' { Clear-SystemCaches }
-		'3' { Optimize-Drives }
-		'4' { Generate-SystemReport }
-		'5' { Clear-RAMCache }
-		'6' { Show-NetworkDiagnosticsMenu }
-		'V' { continue }
-		default {
-			Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red;
-			Read-Host }
-			} 
+    $maintChoice = ''
+	do { 
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "           Modulo de Mantenimiento y Reparacion        " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Verificar y Reparar Archivos del Sistema (SFC/DISM)"
+        Write-Host "       (Soluciona errores de sistema, cuelgues y pantallas azules)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Limpiar Caches de Sistema (DNS, Tienda, etc.)"
+        Write-Host "       (Resuelve problemas de conexion a internet y de la Tienda Windows)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Optimizar Unidades (Desfragmentar/TRIM)"
+        Write-Host "       (Mejora la velocidad de lectura y la vida util de tus discos)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [4] Generar Reporte de Salud del Sistema (Energia)"
+        Write-Host "       (Diagnostica problemas de bateria y consumo de energia)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [5] Purgar Memoria RAM en Cache (Standby List)" -ForegroundColor Yellow
+        Write-Host "       (Libera la memoria 'En espera'. Para usos muy especificos)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [6] Diagnostico y Reparacion de Red"
+        Write-Host "       (Soluciona problemas de conectividad a internet)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "-------------------------------------------------------"
+        Write-Host ""
+        Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
+        Write-Host ""
+        
+        $maintChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($maintChoice.ToUpper()) {
+            '1' { Repair-SystemFiles }
+            '2' { Clear-SystemCaches }
+            '3' { Optimize-Drives }
+            '4' { Generate-SystemReport }
+            '5' { Clear-RAMCache }
+            '6' { Show-NetworkDiagnosticsMenu }
+            'V' { continue }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+                Read-Host 
+            }
+		} 
 	} while ($maintChoice.ToUpper() -ne 'V')
 }
 
 function Show-AdvancedMenu {
 	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Herramientas Avanzadas."
-    $advChoice = ''; do { 
+    $advChoice = ''
+    do { 
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "                 Herramientas Avanzadas                " -ForegroundColor Cyan
@@ -4583,7 +6323,6 @@ function Show-AdvancedMenu {
         
         $advChoice = Read-Host "Selecciona una opcion"
         
-        # MODIFICADO: El switch ahora apunta a la nueva funcion Show-TweakManagerMenu.
         switch ($advChoice.ToUpper()) {
             '1' { Show-TweakManagerMenu }
             '2' { Show-InventoryMenu }
@@ -4593,7 +6332,10 @@ function Show-AdvancedMenu {
 			'6' { Show-EventLogAnalyzerMenu }
 			'7' { Show-UserDataBackupMenu }
             'V' { continue }
-            default { Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red; Read-Host }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+                Read-Host
+            }
         }
     } while ($advChoice.ToUpper() -ne 'V')
 }
@@ -4630,7 +6372,7 @@ do {
     Write-Host ""
 
     $mainChoice = Read-Host "Selecciona una opcion y presiona Enter"
-	Write-Log -LogLevel INFO -Message "MAIN_MENU: Usuario seleccionó la opción '$($mainChoice.ToUpper())'."
+	Write-Log -LogLevel INFO -Message "MAIN_MENU: Usuario selecciono la opcion '$($mainChoice.ToUpper())'."
 
     switch ($mainChoice.ToUpper()) {
         '1' { Create-RestorePoint }
@@ -4638,24 +6380,24 @@ do {
         '3' { Show-MaintenanceMenu }
         '4' { Show-AdvancedMenu }
 		'L' {
-        $parentDir = Split-Path -Parent $PSScriptRoot
-        $logFile = Join-Path -Path $parentDir -ChildPath "Logs\Registro.log"
-        if (Test-Path $logFile) {
-            Write-Host "`n[+] Abriendo archivo de registro..." -ForegroundColor Green
-            Start-Process notepad.exe -ArgumentList $logFile
-        } else {
-            Write-Warning "El archivo de registro aún no ha sido creado. Realiza alguna acción primero."
-            Read-Host "`nPresiona Enter para continuar..."
+            $parentDir = Split-Path -Parent $PSScriptRoot
+            $logFile = Join-Path -Path $parentDir -ChildPath "Logs\Registro.log"
+            if (Test-Path $logFile) {
+                Write-Host "`n[+] Abriendo archivo de registro..." -ForegroundColor Green
+                Start-Process notepad.exe -ArgumentList $logFile
+            } else {
+                Write-Warning "El archivo de registro aun no ha sido creado. Realiza alguna accion primero."
+                Read-Host "`nPresiona Enter para continuar..."
+            }
         }
-    }
         'S' { Write-Host "`nGracias por usar Aegis Phoenix Suite by SOFTMAXTER!" }
-        default {
-            Write-Host "`n[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
-            Read-Host "`nPresiona Enter para continuar..."
+            default {
+                Write-Host "`n[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
+                Read-Host "`nPresiona Enter para continuar..."
+            }
         }
-    }
 
-} while ($mainChoice.ToUpper() -ne 'S')
+    } while ($mainChoice.ToUpper() -ne 'S')
 
 Write-Log -LogLevel INFO -Message "Aegis Phoenix Suite cerrado por el usuario."
 Write-Log -LogLevel INFO -Message "================================================="
