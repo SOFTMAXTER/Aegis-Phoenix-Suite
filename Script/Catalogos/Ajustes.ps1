@@ -371,6 +371,18 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "None"
     },
+	[PSCustomObject]@{
+        Name           = "Desactivar Inicio Rapido (Fast Startup)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Realiza un apagado completo en lugar de una hibernacion hibrida. Soluciona problemas de drivers, actualizaciones fallidas y acceso a BIOS, a costa de unos segundos mas al arrancar."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power"
+        RegistryKey    = "HiberbootEnabled"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
@@ -678,6 +690,37 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Session"
     },
+	[PSCustomObject]@{
+        Name           = "Desactivar Optimizacion de Entrega (P2P Updates)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que Windows use tu ancho de banda para subir actualizaciones a otros equipos en Internet. (Modo de descarga: Simple)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
+        RegistryKey    = "DODownloadMode"
+        EnabledValue   = 99 # 99 = Simple (Sin P2P), 0 = HTTP Only
+        DefaultValue   = 1  # 1 = LAN P2P
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Desactivar Informe de Errores de Windows"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Deshabilita el servicio WerSvc que recopila y envia informes de fallos a Microsoft."
+        Method         = "Command"
+        EnableCommand  = {
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -Value 1 -Type DWord -Force
+            Set-Service -Name "WerSvc" -StartupType Disabled -ErrorAction SilentlyContinue
+        }
+        DisableCommand = {
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -Value 0 -Type DWord -Force
+            Set-Service -Name "WerSvc" -StartupType Manual -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -ErrorAction SilentlyContinue).Disabled
+            return $val -eq 1
+        }
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
@@ -880,6 +923,31 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Explorer"
     },
+	[PSCustomObject]@{
+        Name           = "Mostrar Extensiones de Archivo (Seguridad)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Obliga al Explorador a mostrar siempre la extension de los archivos (.exe, .bat, .txt). Fundamental para detectar malware disfrazado."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "HideFileExt"
+        EnabledValue   = 0  # 0 = Mostrar (No ocultar)
+        DefaultValue   = 1  # 1 = Ocultar
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+	[PSCustomObject]@{
+        Name           = "Desactivar Atajo de Teclas Especiales (Sticky Keys)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Evita que aparezca el dialogo de 'Teclas Especiales' al presionar Shift 5 veces. Vital para gaming."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Control Panel\Accessibility\StickyKeys"
+        RegistryKey    = "Flags"
+        EnabledValue   = "506" # Valor magico que desactiva el atajo
+        DefaultValue   = "510" # Valor por defecto
+        RegistryType   = "String"
+        RestartNeeded  = "Session"
+    },
+
 	# --- Categoria: Extras (Nuevos) ---
     [PSCustomObject]@{
         Name           = "Desinstalar OneDrive Completamente"
