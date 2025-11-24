@@ -137,6 +137,18 @@ $script:ServiceCatalog = @(
         Category           = "Avanzado"
         DefaultStartupType = "Manual"
     },
+	[PSCustomObject]@{
+        Name               = "WbioSrvc"
+        Description        = "Servicio Biometrico de Windows. Se puede desactivar si no usas huella dactilar o reconocimiento facial (Hello)."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "WerSvc"
+        Description        = "Servicio de informe de errores. Envia datos a Microsoft cuando una aplicacion falla. Seguro de desactivar."
+        Category           = "Avanzado"
+        DefaultStartupType = "Manual"
+    },
     # Categoria: Opcional
     [PSCustomObject]@{
         Name               = "XblAuthManager"
@@ -161,5 +173,11 @@ $script:ServiceCatalog = @(
         Description        = "Servicio de red de Xbox Live. Desactivar si no se usan las funciones online de la plataforma Xbox."
         Category           = "Opcional"
         DefaultStartupType = "Manual"
-    }
+    },
+	[PSCustomObject]@{
+        Name               = "WpcMonSvc"
+        Description        = "Servicio de Control Parental. Innecesario si no se gestionan cuentas de menores en el equipo."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+	}
 )
