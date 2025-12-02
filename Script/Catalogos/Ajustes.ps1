@@ -383,6 +383,42 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Acelerar Apagado del Sistema (Kill Services)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Reduce el tiempo que Windows espera a que los servicios se detengan antes de forzar el apagado (de 5000ms a 2000ms)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control"
+        RegistryKey    = "WaitToKillServiceTimeout"
+        EnabledValue   = "2000"
+        DefaultValue   = "5000"
+        RegistryType   = "String"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Aumentar Cache de Iconos (Carga mas rapida)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Aumenta el tamaño de la cache de iconos a 4MB. Evita que el Explorador tenga que reconstruir iconos frecuentemente, acelerando la navegacion por carpetas."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer"
+        RegistryKey    = "MaxCachedIcons"
+        EnabledValue   = "4096"
+        DefaultValue   = "500" # Valor tipico por defecto
+        RegistryType   = "String"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Habilitar Programacion de GPU Acelerada por Hardware"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Permite que la tarjeta grafica gestione su propia memoria, lo que puede reducir la latencia y mejorar el rendimiento en juegos. (Requiere hardware compatible)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+        RegistryKey    = "HwSchMode"
+        EnabledValue   = 2
+        DefaultValue   = 1 # O el valor por defecto que tenga el sistema
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
     # --- Categoria: Seguridad ---
     [PSCustomObject]@{
@@ -476,6 +512,80 @@ $script:SystemTweaks = @(
         EnabledValue   = 0
         DefaultValue   = 1
         RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Configurar Windows Update Solo Seguridad (Empresarial)"
+        Category       = "Seguridad"
+        Description    = "Aplica una politica estricta: Solo descargas de seguridad, sin drivers automaticos, sin reinicios forzados y difiere grandes actualizaciones por 6 meses. Ideal para maxima estabilidad."
+        Method         = "Command"
+        EnableCommand  = {
+            # 1. Metadatos de dispositivos (Evita trafico innecesario)
+            $path1 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Device Metadata"
+            if (-not (Test-Path $path1)) { New-Item -Path $path1 -Force | Out-Null }
+            Set-ItemProperty -Path $path1 -Name "PreventDeviceMetadataFromNetwork" -Value 1 -Type DWord -Force
+
+            # 2. Busqueda de Drivers (Solo si faltan, sin avisos, prioriza WU)
+            $path2 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DriverSearching"
+            if (-not (Test-Path $path2)) { New-Item -Path $path2 -Force | Out-Null }
+            Set-ItemProperty -Path $path2 -Name "DontSearchWindowsUpdate" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $path2 -Name "DontPromptForWindowsUpdate" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $path2 -Name "DriverUpdateWizardWuSearchEnabled" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $path2 -Name "SearchOrderConfig" -Value 1 -Type DWord -Force
+            
+            # Ajuste adicional de drivers en CurrentVersion
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" -Name "SearchOrderConfig" -Value 1 -Type DWord -Force
+
+            # 3. Solo Seguridad y Sin Reinicios
+            $path3 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+            if (-not (Test-Path $path3)) { New-Item -Path $path3 -Force | Out-Null }
+            Set-ItemProperty -Path $path3 -Name "AUOptions" -Value 2 -Type DWord -Force # Notificar descarga y notificar instalacion
+            Set-ItemProperty -Path $path3 -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $path3 -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $path3 -Name "AUPowerManagement" -Value 0 -Type DWord -Force
+
+            # 4. Canal Estable (Diferir 180 dias)
+            $path4 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
+            if (-not (Test-Path $path4)) { New-Item -Path $path4 -Force | Out-Null }
+            Set-ItemProperty -Path $path4 -Name "BranchReadinessLevel" -Value 20 -Type DWord -Force
+            Set-ItemProperty -Path $path4 -Name "DeferFeatureUpdatesPeriodInDays" -Value 180 -Type DWord -Force
+            Set-ItemProperty -Path $path4 -Name "DeferQualityUpdatesPeriodInDays" -Value 180 -Type DWord -Force
+
+            # 5. Asegurar instalacion de dispositivos habilitada
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name "DeviceInstallDisabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            # Revertir a valores por defecto (Eliminar politicas)
+            Remove-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" -Name "PreventDeviceMetadataFromNetwork" -ErrorAction SilentlyContinue
+            
+            $path2 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DriverSearching"
+            Remove-ItemProperty -Path $path2 -Name "DontSearchWindowsUpdate" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path2 -Name "DontPromptForWindowsUpdate" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path2 -Name "DriverUpdateWizardWuSearchEnabled" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path2 -Name "SearchOrderConfig" -ErrorAction SilentlyContinue
+            
+            # Restaurar valor por defecto de busqueda de drivers
+            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" -Name "SearchOrderConfig" -Value 1 -Type DWord -Force # Se suele dejar en 1 o 2
+
+            $path3 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+            Remove-ItemProperty -Path $path3 -Name "AUOptions" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path3 -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path3 -Name "NoAutoRebootWithLoggedOnUsers" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path3 -Name "AUPowerManagement" -ErrorAction SilentlyContinue
+
+            $path4 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
+            Remove-ItemProperty -Path $path4 -Name "BranchReadinessLevel" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path4 -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $path4 -Name "DeferQualityUpdatesPeriodInDays" -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            # Verificamos 3 claves criticas para determinar si el perfil esta activo
+            $val1 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue).AUOptions
+            $val2 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue).DeferFeatureUpdatesPeriodInDays
+            $val3 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue).ExcludeWUDriversInQualityUpdate
+            
+            return ($val1 -eq 2 -and $val2 -eq 180 -and $val3 -eq 1)
+        }
         RestartNeeded  = "Reboot"
     },
 
@@ -944,6 +1054,18 @@ $script:SystemTweaks = @(
         RegistryKey    = "Flags"
         EnabledValue   = "506" # Valor magico que desactiva el atajo
         DefaultValue   = "510" # Valor por defecto
+        RegistryType   = "String"
+        RestartNeeded  = "Session"
+    },
+	[PSCustomObject]@{
+        Name           = "Forzar Cierre de Apps al Apagar (AutoEndTasks)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Evita que Windows te pregunte si quieres cerrar programas abiertos al apagar. Los cierra automaticamente para un apagado mas rapido."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Control Panel\Desktop"
+        RegistryKey    = "AutoEndTasks"
+        EnabledValue   = 1
+        DefaultValue   = 0
         RegistryType   = "String"
         RestartNeeded  = "Session"
     },
