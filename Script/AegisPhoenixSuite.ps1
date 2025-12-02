@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.0
+    4.8.1
 #>
 
-$script:Version = "4.8.0"
+$script:Version = "4.8.1"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
