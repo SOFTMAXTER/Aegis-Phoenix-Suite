@@ -3914,6 +3914,7 @@ function Invoke-BackupHashVerification {
     if ($backupType -eq 'Files') {
         $sourceFiles = $sourcePaths | Get-Item
     } else {
+        # Usamos ErrorAction SilentlyContinue para saltar archivos bloqueados/sistema
         $sourcePaths | ForEach-Object { $sourceFiles += Get-ChildItem $_ -Recurse -File -ErrorAction SilentlyContinue }
     }
 
@@ -3928,37 +3929,49 @@ function Invoke-BackupHashVerification {
 
     foreach ($sourceFile in $sourceFiles) {
         $checkedFiles++
-        Write-Progress -Activity "Verificando hashes de archivos" -Status "Procesando: $($sourceFile.Name)" -PercentComplete (($checkedFiles / $totalFiles) * 100)
+        # Progreso visual simple para no saturar la consola
+        if ($checkedFiles % 10 -eq 0) {
+            Write-Progress -Activity "Verificando hashes de archivos" -Status "Procesando ($checkedFiles/$totalFiles): $($sourceFile.Name)" -PercentComplete (($checkedFiles / $totalFiles) * 100)
+        }
         
         $destinationFile = ""
         if ($backupType -eq 'Folders') {
-             $baseSourceFolder = ($sourcePaths | Where-Object { $sourceFile.FullName.StartsWith($_) })[0]
-             $relativePath = $sourceFile.FullName.Substring($baseSourceFolder.Length)
-             $destinationFile = Join-Path (Join-Path $destinationPath (Split-Path $baseSourceFolder -Leaf)) $relativePath
+             # CORRECCION CRITICA: Ordenamos por longitud descendente para encontrar la ruta mas especifica
+             # Esto evita el error cuando "Videos" esta dentro de "Documentos"
+             $baseSourceFolder = ($sourcePaths | Where-Object { $sourceFile.FullName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Sort-Object Length -Descending | Select-Object -First 1)
+             
+             if ($baseSourceFolder) {
+                 $relativePath = $sourceFile.FullName.Substring($baseSourceFolder.Length)
+                 # Construimos la ruta destino replicando la estructura
+                 $destinationFile = Join-Path (Join-Path $destinationPath (Split-Path $baseSourceFolder -Leaf)) $relativePath
+             }
         } else {
              $destinationFile = Join-Path $destinationPath $sourceFile.Name
         }
         
+        # Verificacion
         if (Test-Path $destinationFile) {
             try {
                 $sourceHash = (Get-FileHash $sourceFile.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
                 $destHash = (Get-FileHash $destinationFile -Algorithm SHA256 -ErrorAction Stop).Hash
+                
                 if ($sourceHash -ne $destHash) {
                     $mismatchedFiles++
-                    $message = "DISCREPANCIA DE HASH: $($sourceFile.FullName)"
+                    $message = "DISCREPANCIA DE HASH: $($sourceFile.Name)"
                     Write-Warning $message
-                    $mismatchedFileList.Add($message)
+                    $mismatchedFileList.Add("Fuente: $($sourceFile.FullName) | Destino: $destinationFile")
                 }
             } catch {
-                $message = "ERROR DE LECTURA: No se pudo calcular el hash de '$($sourceFile.Name)' o su par. Puede estar en uso."
+                $message = "ERROR DE LECTURA (Archivo en uso o sin permisos): $($sourceFile.Name)"
                 Write-Warning $message
                 $mismatchedFileList.Add($message)
             }
         } else {
             $missingFiles++
-            $message = "ARCHIVO FALTANTE en el destino: $($sourceFile.FullName)"
+            # Mensaje mejorado para depuracion: Muestra donde busco y no encontro
+            $message = "ARCHIVO FALTANTE. Buscado en: $destinationFile"
             Write-Warning $message
-            $missingFileList.Add($message)
+            $missingFileList.Add("Fuente original: $($sourceFile.FullName) | Ruta esperada no encontrada: $destinationFile")
         }
     }
 
@@ -4010,6 +4023,7 @@ function Invoke-UserDataBackup {
     # 1. Determinamos el origen: automatico o personalizado
     $backupType = 'Folders'
     $sourcePaths = @()
+    
     if ($CustomSourcePath) {
         if ($CustomSourcePath.Count -eq 1 -and (Get-Item $CustomSourcePath[0]).PSIsContainer) {
             $backupType = 'Folders'
@@ -4020,13 +4034,35 @@ function Invoke-UserDataBackup {
         }
     } else {
         $backupType = 'Folders'
+        
+        # --- LOGICA AVANZADA PARA DETECTAR LA RUTA REAL DE 'DESCARGAS' ---
+        # Consultamos el registro 'User Shell Folders' para obtener la ruta real, 
+        # incluso si el usuario la ha movido a otro disco.
+        $regPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        $downloadsGuid = "{374DE290-123F-4565-9164-39C4925E467B}" # GUID oficial de Descargas
+        
+        $downloadsPath = try {
+            $regValue = (Get-ItemProperty -Path $regPath -Name $downloadsGuid -ErrorAction SilentlyContinue).$downloadsGuid
+            if ($regValue) {
+                # Expandimos variables de entorno (ej: %USERPROFILE%\Downloads -> C:\Users\Juan\Downloads)
+                [System.Environment]::ExpandEnvironmentVariables($regValue)
+            } else {
+                # Fallback por defecto si no existe la clave
+                Join-Path -Path $env:USERPROFILE -ChildPath "Downloads"
+            }
+        } catch {
+            Join-Path -Path $env:USERPROFILE -ChildPath "Downloads"
+        }
+
+        # Construimos la lista de rutas estandar + descargas inteligente
         $sourcePaths = @(
-            [System.Environment]::GetFolderPath('Desktop')
-			[System.Environment]::GetFolderPath('MyDocuments')
-            [System.Environment]::GetFolderPath('MyPictures')
-            [System.Environment]::GetFolderPath('MyMusic')
-            [System.Environment]::GetFolderPath('MyVideos')
-        ) | Where-Object { Test-Path $_ }
+            [System.Environment]::GetFolderPath('Desktop'),
+            [System.Environment]::GetFolderPath('MyDocuments'),
+            [System.Environment]::GetFolderPath('MyPictures'),
+            [System.Environment]::GetFolderPath('MyMusic'),
+            [System.Environment]::GetFolderPath('MyVideos'),
+            $downloadsPath
+        ) | Where-Object { Test-Path $_ } | Select-Object -Unique
     }
     
     # 2. Solicitamos y validamos el destino
@@ -4037,131 +4073,151 @@ function Invoke-UserDataBackup {
         Write-Warning "No se selecciono una carpeta de destino. Operacion cancelada." ; Start-Sleep -Seconds 2; return
     }
 
-    # Comprobacion inteligente de Origen vs. Destino
+    # --- VALIDACION ANTI-BUCLE (CRITICO) ---
+    $destFull = (Get-Item -Path $destinationPath).FullName.TrimEnd('\')
+    foreach ($src in $sourcePaths) {
+        if ($backupType -eq 'Folders') {
+            $srcFull = (Get-Item -Path $src).FullName.TrimEnd('\')
+            # Si el destino empieza con la ruta de origen, es una subcarpeta (Riesgo de bucle)
+            if ($destFull.StartsWith($srcFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Error "ERROR CRITICO DE CONFIGURACION:"
+                Write-Error "La carpeta de destino ($destFull) esta DENTRO de la carpeta de origen ($srcFull)."
+                Write-Error "Esto causaria un bucle infinito que llenaria tu disco duro."
+                Read-Host "Operacion abortada por seguridad. Presiona Enter..."
+                return
+            }
+        }
+    }
+
+    # Validación de unidad idéntica (Aviso de seguridad)
     $sourceDriveLetter = (Get-Item -Path $sourcePaths[0]).PSDrive.Name
     $destinationDriveLetter = (Get-Item -Path $destinationPath).PSDrive.Name
     if ($sourceDriveLetter.ToUpper() -eq $destinationDriveLetter.ToUpper()) {
-        Write-Warning "El destino esta en la misma unidad que el origen (Unidad $($sourceDriveLetter.ToUpper()):)."
-        Write-Warning "Un respaldo en el mismo disco no protege contra fallos del disco fisico."
+        Write-Warning "AVISO: El destino esta en la misma unidad fisica que el origen."
+        Write-Warning "Esto protege contra borrados accidentales, pero NO contra fallos fisicos del disco."
         if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
-            Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return
+            return
         }
     }
     
-    # Calculamos el espacio requerido
-    Write-Host "`n[+] Calculando espacio requerido para el respaldo. Esto puede tardar..." -ForegroundColor Yellow
+    # 3. Calculamos espacio requerido
+    Write-Host "`n[+] Calculando espacio requerido..." -ForegroundColor Yellow
     $sourceTotalSize = 0
     try {
         if ($backupType -eq 'Files') {
             $sourceTotalSize = ($sourcePaths | Get-Item | Measure-Object -Property Length -Sum).Sum
         } else {
             foreach ($folder in $sourcePaths) {
-                $sourceTotalSize += (Get-ChildItem -Path $folder -Recurse -Force -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum
+                $sourceTotalSize += (Get-ChildItem -Path $folder -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
             }
         }
-    } catch {
-        Write-Warning "No se pudo calcular el tamano total. Error: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Calculo de tamaño aproximado (algunos archivos pueden estar bloqueados)." }
     
     $destinationFreeSpace = (Get-Volume -DriveLetter $destinationDriveLetter).SizeRemaining
-    $sourceTotalSizeGB = [math]::Round($sourceTotalSize / 1GB, 2)
-    $destinationFreeSpaceGB = [math]::Round($destinationFreeSpace / 1GB, 2)
-    Write-Host "Espacio requerido estimado: $sourceTotalSizeGB GB"
-    Write-Host "Espacio disponible en el destino ($($destinationDriveLetter.ToUpper()):): $destinationFreeSpaceGB GB"
-
     if ($sourceTotalSize -gt $destinationFreeSpace) {
-        Write-Error "No hay suficiente espacio en el disco de destino para completar el respaldo."
-        Read-Host "`nOperacion abortada. Presiona Enter para volver al menu..."
+        $neededGB = [math]::Round($sourceTotalSize / 1GB, 2)
+        $freeGB = [math]::Round($destinationFreeSpace / 1GB, 2)
+        Write-Error "ESPACIO INSUFICIENTE: Requieres ~$neededGB GB pero solo tienes $freeGB GB libres."
+        Read-Host "Operacion abortada. Presiona Enter..."
         return
     }
 
-    # 3. Configuramos Robocopy
+    # 4. Configuración Robocopy (Optimizado)
     $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
     if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
     $logFile = Join-Path $logDir "Respaldo_Robocopy_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').log"
-    $baseRoboCopyArgs = @("/COPY:DAT", "/R:3", "/W:5", "/XJ", "/NP", "/TEE")
 
-    # 4. Mostramos el resumen y pedimos confirmacion final
+    # FLAGS DE ROBOCOPY:
+    # /B  : Modo Backup (copia archivos saltando permisos NTFS si eres Admin)
+    # /J  : Unbuffered I/O (Evita llenar la RAM con archivos grandes)
+    # /XD : Excluir directorios basura
+    $baseRoboCopyArgs = @("/COPY:DAT", "/R:2", "/W:3", "/XJ", "/NP", "/TEE", "/B", "/J")
+    $excludeDirs = @("/XD", "`"$destinationPath`"", "System Volume Info", "`$RECYCLE.BIN", "AppData\Local\Temp")
+
+    # 5. Menú de Confirmación
     Clear-Host
-    $modeDescription = if ($Mode -eq 'Mirror') { "Sincronizacion Completa (Modo Espejo)" } else { "Respaldo Simple (Anadir/Actualizar)" }
-    Write-Host "--- RESUMEN DE LA OPERACION DE RESPALDO ---" -ForegroundColor Cyan
+    $modeDescription = if ($Mode -eq 'Mirror') { "Sincronizacion (ESPEJO - Borra en destino lo que no esta en origen)" } else { "Respaldo Incremental (Solo copia nuevos/modificados)" }
+    Write-Host "--- RESUMEN DE RESPALDO ---" -ForegroundColor Cyan
     Write-Host "Modo: $modeDescription"
     Write-Host "Destino: $destinationPath"
-    if ($backupType -eq 'Files') {
-        Write-Host "Archivos de Origen:"
-    } else {
-        Write-Host "Carpetas de Origen:"
-    }
+    Write-Host "Origen(es):"
     $sourcePaths | ForEach-Object { Write-Host " - $_" }
-    if ($Mode -eq 'Mirror') {
-        Write-Warning "El Modo Espejo eliminara cualquier archivo en el destino que no exista en el origen."
-    }
-    Write-Host "Se generara un registro detallado en: $logFile"
     
-	Write-Log -LogLevel ACTION -Message "BACKUP: Iniciando operacion. Modo: '$Mode'. Origen: $($sourcePaths -join ', '). Destino: '$destinationPath'."
-	
     Write-Host ""
-    Write-Host "--- CONFIRMACION FINAL ---" -ForegroundColor Yellow
-    Write-Host "   [S] Si, iniciar solo el respaldo"
-    Write-Host "   [V] Si, respaldar Y verificar (Comprobacion Rapida)"
-    Write-Host "   [H] Si, respaldar Y verificar (Comprobacion Profunda por Hash - MUY LENTO)"
-    Write-Host "   [N] No, cancelar operacion"
+    Write-Host "   [S] Iniciar Respaldo (Sin verificacion)"
+    Write-Host "   [V] Iniciar + Verificacion Rapida (Robocopy /L)"
+    Write-Host "   [H] Iniciar + Verificacion Profunda por Hash (LENTO pero Seguro)" -ForegroundColor Yellow
+    Write-Host "   [N] Cancelar"
     $confirmChoice = Read-Host "`nElige una opcion"
 
-    $verificationType = 'None' # Valor por defecto
+    $verificationType = 'None'
     switch ($confirmChoice.ToUpper()) {
         'S' { $verificationType = 'None' }
         'V' { $verificationType = 'Fast' }
         'H' { $verificationType = 'Deep' }
-        'N' { Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 2; return }
-        default { Write-Warning "Opcion no valida. Operacion cancelada."; Start-Sleep -Seconds 2; return }
+        'N' { return }
+        default { return }
     }
 
-    # 5. Ejecutamos el respaldo
+    # 6. Ejecución del Respaldo
     $logArg = "/LOG+:`"$logFile`""
+    Write-Log -LogLevel ACTION -Message "BACKUP: Iniciando. Modo: $Mode. Destino: $destinationPath"
 
     if ($backupType -eq 'Files') {
-        Write-Host "`n[+] Respaldando $($sourcePaths.Count) archivo(s) hacia '$destinationPath'..." -ForegroundColor Yellow
-        $baseFileArgs = $baseRoboCopyArgs
+        # Copia de Archivos Sueltos
         $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
         foreach ($group in $filesByDirectory) {
             $sourceDir = $group.Name
             $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
-            Write-Host " - Procesando lote desde '$sourceDir'..." -ForegroundColor Gray
-            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $baseFileArgs + $logArg
+            # Nota: Exclusiones de directorios (/XD) no aplican bien al modo archivo, se omiten aquí
+            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $baseRoboCopyArgs + $logArg
+            
+            Write-Host "Procesando archivos desde: $sourceDir" -ForegroundColor Gray
             Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
         }
     } else {
-        $folderArgs = $baseRoboCopyArgs + "/E"
-        if ($Mode -eq 'Mirror') {
-            $folderArgs = $baseRoboCopyArgs + "/MIR"
-        }
+        # Copia de Carpetas Completas
+        $folderArgs = $baseRoboCopyArgs
+        if ($Mode -eq 'Mirror') { $folderArgs += "/MIR" } else { $folderArgs += "/E" }
+        $folderArgs += $excludeDirs
+
         foreach ($sourceFolder in $sourcePaths) {
             $folderName = Split-Path $sourceFolder -Leaf
             $destinationFolder = Join-Path $destinationPath $folderName
-            Write-Host "`n[+] Respaldando '$folderName' hacia '$destinationFolder'..." -ForegroundColor Yellow
+            
+            Write-Host "`n[ROBOCOPY] Procesando: $folderName" -ForegroundColor Cyan
             $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
-            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+            
+            # Usamos PassThru para capturar el código de salida
+            $proc = Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow -PassThru
+            
+            # Manejo de Códigos de Salida de Robocopy (0-7 es Exito, >=8 es Error)
+            if ($proc.ExitCode -ge 8) {
+                Write-Error "Errores detectados en '$folderName' (Codigo: $($proc.ExitCode)). Revisa el log."
+                Write-Log -LogLevel ERROR -Message "BACKUP: Fallo en '$folderName'. Codigo Robocopy: $($proc.ExitCode)"
+            } elseif ($proc.ExitCode -ge 0) {
+                Write-Host "   -> Completado (Codigo: $($proc.ExitCode))." -ForegroundColor Green
+            }
         }
     }
 
-    Write-Host "`n[EXITO] Operacion de respaldo completada." -ForegroundColor Green
-	switch ($verificationType) {
+    Write-Host "`n[FIN] Copia finalizada." -ForegroundColor Green
+    
+    # 7. Ejecución de la Verificación (Si se seleccionó)
+    switch ($verificationType) {
         'Fast' {
-			Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion rapida (Robocopy /L)."
+            Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion rapida."
             Invoke-BackupRobocopyVerification -logFile $logFile -baseRoboCopyArgs $baseRoboCopyArgs -backupType $backupType -sourcePaths $sourcePaths -destinationPath $destinationPath -Mode $Mode
         }
         'Deep' {
-			Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion profunda (Hash SHA256)."
+            Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion profunda (Hash SHA256)."
+            # Llama a la funcion auxiliar de Hash (debe estar definida en el script principal)
             Invoke-BackupHashVerification -sourcePaths $sourcePaths -destinationPath $destinationPath -backupType $backupType -logFile $logFile
         }
-        # Si es 'None', no hacemos nada
     }
-    Write-Host "Se ha guardado un registro detallado en '$logFile'"
-    if ((Read-Host "Deseas abrir el archivo de registro ahora? (S/N)").ToUpper() -eq 'S') {
-        Start-Process "notepad.exe" -ArgumentList $logFile
-    }
-    Read-Host "`nPresiona Enter para volver al menu..."
+    
+    Write-Host "Log guardado en: $logFile"
+    Read-Host "Presiona Enter para volver..."
 }
 
 # --- FUNCION 3: INTERFAZ DE USUARIO DEL MODULO DE RESPALDO ---
@@ -5202,7 +5258,36 @@ function Move-UserProfileFolders {
                  Write-Log -LogLevel ACTION -Message "REUBICACION: Robocopy completado para '$($op.Name)' (Codigo: $($processInfo.ExitCode)). Log: $robocopyLogFile"
             }
         } else { # Si $actionType es 'RegisterOnly'
-             Write-Host "  [2/3] Omitiendo movimiento de archivos (Modo 'Solo Registrar')." -ForegroundColor Gray
+             Write-Host "  [2/3] Omitiendo movimiento masivo de archivos." -ForegroundColor Gray
+             
+             # --- MEJORA: COPIAR Y CONFIGURAR DESKTOP.INI ---
+             Write-Host "      - Verificando y copiando 'desktop.ini' para mantener los iconos..." -ForegroundColor Gray
+             
+             $srcIni = Join-Path $op.CurrentPath "desktop.ini"
+             $destIni = Join-Path $op.NewPath "desktop.ini"
+
+             try {
+                 if (Test-Path $srcIni -PathType Leaf) {
+                     # Copiamos el archivo forzando la sobrescritura si existe
+                     Copy-Item -Path $srcIni -Destination $destIni -Force -ErrorAction Stop
+                     
+                     # Aplicamos atributos de Oculto y Sistema al archivo (necesario para que Windows lo respete)
+                     $fileItem = Get-Item $destIni -Force
+                     $fileItem.Attributes = 'Hidden', 'System'
+                     
+                     # TRUCO CRITICO DE WINDOWS:
+                     # Para que Windows lea el desktop.ini, la CARPETA contenedora debe ser 'ReadOnly' o 'System'.
+                     # Esto no impide escribir en ella, es solo una bandera para el Explorador.
+                     $folderItem = Get-Item $op.NewPath -Force
+                     $folderItem.Attributes = 'ReadOnly'
+                     
+                     Write-Host "      [OK] Icono y nombre personalizado (desktop.ini) restaurados." -ForegroundColor Green
+                 } else {
+                     Write-Host "      [INFO] No se encontró 'desktop.ini' en el origen. La carpeta tendra icono generico." -ForegroundColor Gray
+                 }
+             } catch {
+                 Write-Warning "      [AVISO] No se pudo copiar o configurar desktop.ini: $($_.Exception.Message)"
+             }
         }
 
         # 3. Actualizar el Registro (Si la creacion del dir fue exitosa Y (Robocopy fue exitoso O se eligio 'Solo Registrar'))
