@@ -96,35 +96,34 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
     [PSCustomObject]@{
-        Name           = "Liberar 100% del Ancho de Banda de Red"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva la reserva de ancho de banda que Windows hace para streaming, permitiendo que todas las aplicaciones (juegos, descargas) usen la totalidad de tu conexion."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
-        RegistryKey    = "NetworkThrottlingIndex"
-        EnabledValue   = '4294967295'
-        RegistryType   = "DWord"
-        RestartNeeded  = "Reboot"
-    },
-    [PSCustomObject]@{
         Name           = "Desactivar Aceleracion del Raton"
         Category       = "Rendimiento del Sistema"
         Description    = "Configura el raton para una precision 1:1, eliminando la aceleracion de Windows."
         Method         = "Command"
         EnableCommand  = {
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "0";
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "0";
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "0"
-			}
+            # Desactivar aceleración (Plano)
+            # IMPORTANTE: Se fuerza el tipo 'String' para respetar el formato del registro
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "0" -Type String -Force
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "0" -Type String -Force
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "0" -Type String -Force
+        }
         DisableCommand = {
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "1";
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "6"; 
-			Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "10"
-			}
+            # Restaurar valores por defecto de Windows (Aceleración Estándar)
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "1" -Type String -Force
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "6" -Type String -Force
+            Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "10" -Type String -Force
+        }
         CheckCommand   = {
-			$props = Get-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -ErrorAction SilentlyContinue;
-			return ($props.MouseSpeed -eq "0" -and $props.MouseThreshold1 -eq "0" -and $props.MouseThreshold2 -eq "0")
-			}
+            $props = Get-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -ErrorAction SilentlyContinue
+            if ($null -eq $props) { return $false }
+        
+            # Convertimos a entero para asegurar comparación numérica segura
+            $speed = [int]$props.MouseSpeed
+            $thresh1 = [int]$props.MouseThreshold1
+            $thresh2 = [int]$props.MouseThreshold2
+        
+            return ($speed -eq 0 -and $thresh1 -eq 0 -and $thresh2 -eq 0)
+        }
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
@@ -141,20 +140,40 @@ $script:SystemTweaks = @(
 		}
         RestartNeeded  = "Reboot"
     },
-    [PSCustomObject]@{
-        Name           = "Deshabilitar la Barra de Juegos (Game Bar)"
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Barra de Juegos y DVR (Completo)"
         Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva la Game Bar y la funcionalidad de grabacion DVR, lo que puede mejorar el rendimiento en juegos."
+        Description    = "Desactiva globalmente la Xbox Game Bar y la grabación en segundo plano (DVR) aplicando ajustes de usuario y directivas de sistema. Libera recursos, mejora los FPS y evita que se reactive."
         Method         = "Command"
         EnableCommand  = {
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-			}
+            # 1. Ajustes de Usuario (HKCU)
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            
+            # 2. Directiva de Máquina (HKLM) - GPO
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
+            if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+            Set-ItemProperty -Path $policyPath -Name "AllowGameDVR" -Value 0 -Type DWord -Force
+        }
         DisableCommand = {
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue;
-			Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-			}
-        CheckCommand   = { $val1 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -ErrorAction SilentlyContinue).GameDVR_Enabled; $val2 = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -ErrorAction SilentlyContinue).AppCaptureEnabled; return ($val1 -eq 0 -and $val2 -eq 0) }
+            # 1. Restaurar Ajustes de Usuario
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            
+            # 2. Eliminar Directiva de Máquina
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
+            if (Test-Path $policyPath) {
+                Remove-ItemProperty -Path $policyPath -Name "AllowGameDVR" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            # Verifica que tanto la configuración de usuario como la directiva estén aplicadas
+            $userVal = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -ErrorAction SilentlyContinue).GameDVR_Enabled
+            $policyVal = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue).AllowGameDVR
+            
+            # Si ambos son 0 (o la política existe y es 0), consideramos que está activado el tweak
+            return ($userVal -eq 0 -and $policyVal -eq 0)
+        }
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
@@ -242,18 +261,6 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
-        Name           = "Deshabilitar la Barra de Juegos (Directiva GPO)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Deshabilitar la Game Bar de forma global, la forma mas robusta."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
-        RegistryKey    = "AllowGameDVR"
-        EnabledValue   = 0
-        DefaultValue   = 1
-        RegistryType   = "DWord"
-        RestartNeeded  = "Session"
-    },
-	[PSCustomObject]@{
         Name           = "Reducir Latencia del Sistema (Gaming/Audio)"
         Category       = "Rendimiento del Sistema"
         Description    = "Ajusta el programador de tareas para que los procesos en segundo plano no interfieran con las aplicaciones en tiempo real, reduciendo el lag en juegos y audio."
@@ -264,112 +271,6 @@ $script:SystemTweaks = @(
         DefaultValue   = 20
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
-    },
-    [PSCustomObject]@{
-        Name           = "Deshabilitar Servicio NDU"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva el servicio de monitorizacion de red (NDU),"
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Ndu"
-        RegistryKey    = "Start"
-        EnabledValue   = 4
-        DefaultValue   = 2
-        RegistryType   = "DWord"
-        RestartNeeded  = "Reboot"
-    },	
-	[PSCustomObject]@{
-        Name           = "Habilitar Descarga de Checksum (TCP/UDP)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Fuerza a la tarjeta de red a calcular los checksums de paquetes TCP/UDP, reduciendo la carga de la CPU. (Generalmente activado por defecto)."
-        Method         = "Command"
-        EnableCommand  = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            # Metodo universal (driver)
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '1' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
-        }
-        DisableCommand = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            # Metodo universal (driver)
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '0' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($null -eq $prop) { return 'NotApplicable' }
-            return ($prop.RegistryValue -eq '1')
-        }
-        RestartNeeded  = "None"
-    },
-    [PSCustomObject]@{
-        Name           = "Habilitar Descarga de Envio Grande (LSO)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Permite al sistema enviar paquetes grandes a la NIC, y que sea la tarjeta de red (y no la CPU) quien los segmente. Mejora el rendimiento de envio."
-        Method         = "Command"
-        EnableCommand  = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            # Metodo universal (driver)
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '1' -ErrorAction SilentlyContinue
-        }
-        DisableCommand = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            # Metodo universal (driver)
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '0' -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($null -eq $prop) { return 'NotApplicable' }
-            return ($prop.RegistryValue -eq '1')
-        }
-        RestartNeeded  = "None"
-    },
-    [PSCustomObject]@{
-        Name           = "Habilitar Escalado de Recepcion (RSS)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Distribuye el procesamiento de los paquetes de red recibidos entre multiples nucleos de la CPU, evitando cuellos de botella en un solo nucleo."
-        Method         = "Command"
-        EnableCommand  = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Enable-NetAdapterRss
-        }
-        DisableCommand = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Disable-NetAdapterRss
-        }
-        CheckCommand   = {
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            $rss = Get-NetAdapterRss -Name '*' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notlike '*Virtual*' -and $_.InterfaceDescription -notlike '*Loopback*' } | Select-Object -First 1
-            if ($null -eq $rss) { return 'NotApplicable' }
-            return ($rss.Enabled -eq $true)
-        }
-        RestartNeeded  = "None"
-    },
-    [PSCustomObject]@{
-        Name           = "Habilitar Coalescencia de Segmentos (RSC)"
-        Category       = "Rendimiento del Sistema"
-        Description    = "Permite a la NIC agrupar multiples paquetes recibidos en uno solo antes de enviarlo a la CPU, reduciendo interrupciones y mejorando la latencia."
-        Method         = "Command"
-        EnableCommand  = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Enable-NetAdapterRsc -IPv4 -IPv6
-        }
-        DisableCommand = { 
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            Get-NetAdapter -Physical | Disable-NetAdapterRsc -IPv4 -IPv6
-        }
-        CheckCommand   = {
-            Import-Module NetAdapter -ErrorAction SilentlyContinue
-            $rsc = Get-NetAdapterRsc -Name '*' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceDescription -notlike '*Virtual*' -and $_.InterfaceDescription -notlike '*Loopback*' } | Select-Object -First 1
-            if ($null -eq $rsc) { return 'NotApplicable' }
-            return ($rsc.IPv4Enabled -eq $true -and $rsc.IPv6Enabled -eq $true)
-        }
-        RestartNeeded  = "None"
     },
 	[PSCustomObject]@{
         Name           = "Desactivar Inicio Rapido (Fast Startup)"
@@ -418,6 +319,253 @@ $script:SystemTweaks = @(
         DefaultValue   = 1 # O el valor por defecto que tenga el sistema
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Creacion de Nombres Cortos (8.3)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Mejora el rendimiento de escritura en NTFS al dejar de crear nombres compatibles con MS-DOS (ej. ARCHIV~1.TXT). Recomendado si no usas software de 16-bits."
+        Method         = "Command"
+        EnableCommand  = { fsutil behavior set disable8dot3 1 }
+        DisableCommand = { fsutil behavior set disable8dot3 0 }
+        CheckCommand   = { 
+            # Verificación directa en el registro en lugar de leer texto de consola
+            $regVal = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsDisable8dot3NameCreation" -ErrorAction SilentlyContinue).NtfsDisable8dot3NameCreation
+            # 1 significa deshabilitado
+            return ($regVal -eq 1)
+        }
+        RestartNeeded  = "Reboot"
+    },
+
+	# --- Categoria: Windows 11 UI y Nuevas Funciones ---
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Windows Copilot (IA en Barra de Tareas)"
+        Category       = "Windows 11 UI"
+        Description    = "Desactiva completamente el asistente de IA 'Copilot' de la barra de tareas y del sistema para ahorrar recursos y mejorar la privacidad."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
+        RegistryKey    = "TurnOffWindowsCopilot"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Alineación Clasica de Barra de Tareas (Izquierda)"
+        Category       = "Windows 11 UI"
+        Description    = "Mueve el boton de Inicio y los iconos a la izquierda, restaurando el flujo de trabajo clasico de Windows 10/7."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "TaskbarAl"
+        EnabledValue   = 0 # 0 = Izquierda, 1 = Centro
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Ocultar Icono de Chat/Teams en Barra de Tareas"
+        Category       = "Windows 11 UI"
+        Description    = "Elimina el icono de Chat (Teams personal) anclado por defecto en la barra de tareas de Windows 11."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "TaskbarMn"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Publicidad en Menu Inicio (Iris)"
+        Category       = "Windows 11 UI"
+        Description    = "Evita que aparezcan recomendaciones promocionadas, consejos y accesos directos no solicitados en el menu de Inicio."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "Start_IrisRecommendations"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+
+	# --- Categoria: Red y Latencia (TCP/IP Avanzado) ---
+    [PSCustomObject]@{
+        Name           = "Establecer Algoritmo de Congestion TCP a CUBIC"
+        Category       = "Rendimiento de Red"
+        Description    = "Cambia el algoritmo de control de congestion a CUBIC (estandar en Linux/Android). Mejora la estabilidad del ping y la velocidad en conexiones de fibra optica modernas."
+        Method         = "Command"
+        EnableCommand  = { 
+            # Activa CUBIC explícitamente
+            netsh int tcp set supplemental template=internet congestionprovider=cubic
+        }
+        DisableCommand = {
+            netsh int tcp set supplemental template=internet congestionprovider=ctcp
+        }
+        CheckCommand   = {
+            try {
+                $tcp = Get-NetTCPSetting -SettingName Internet -ErrorAction Stop
+                return ($tcp.CongestionProvider -eq 'CUBIC')
+            } catch {
+                return $false
+            }
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Desactivar Heuristica de Escalado de Ventana"
+        Category       = "Rendimiento de Red"
+        Description    = "Evita que Windows intente adivinar y limitar dinamicamente el tamano de la ventana TCP, lo que a menudo reduce la velocidad de descarga innecesariamente. (Nota: En Windows 10/11, si el Auto-Tuning es 'Normal', el sistema fuerza este ajuste a 'Desactivado' permanentemente)."
+        Method         = "Command"
+        EnableCommand  = { 
+            # Intentamos desactivar (Optimizar)
+            netsh int tcp set heuristics disabled
+            Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Disabled -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            # Intentamos restaurar (Windows podría bloquear esto, lo cual es normal)
+            netsh int tcp set heuristics enabled
+            Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Enabled -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            # Verificación robusta en Español e Inglés
+            $res = netsh int tcp show heuristics
+            return ($res -match "disabled" -or $res -match "deshabilitado")
+        }
+        RestartNeeded  = "None"
+    },
+	[PSCustomObject]@{
+        Name           = "Liberar 100% del Ancho de Banda de Red"
+        Category       = "Rendimiento de Red"
+        Description    = "Desactiva la reserva de ancho de banda que Windows hace para streaming, permitiendo que todas las aplicaciones (juegos, descargas) usen la totalidad de tu conexion."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+        RegistryKey    = "NetworkThrottlingIndex"
+        EnabledValue   = '4294967295'
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Deshabilitar Servicio NDU"
+        Category       = "Rendimiento de Red"
+        Description    = "Desactiva el servicio de monitorizacion de red (NDU),"
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Ndu"
+        RegistryKey    = "Start"
+        EnabledValue   = 4
+        DefaultValue   = 2
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },	
+	[PSCustomObject]@{
+        Name           = "Habilitar Descarga de Checksum (TCP/UDP)"
+        Category       = "Rendimiento de Red"
+        Description    = "Fuerza a la tarjeta de red a calcular los checksums de paquetes TCP/UDP, reduciendo la carga de la CPU. (Generalmente activado por defecto)."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*IPChecksumOffload' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*TCPChecksumOffloadIPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $prop) { return 'NotApplicable' }
+            return ($prop.RegistryValue -eq '1')
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Descarga de Envio Grande (LSO)"
+        Category       = "Rendimiento de Red"
+        Description    = "Permite al sistema enviar paquetes grandes a la NIC, y que sea la tarjeta de red (y no la CPU) quien los segmente. Mejora el rendimiento de envio."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '1' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '1' -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Metodo universal (driver)
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -RegistryValue '0' -ErrorAction SilentlyContinue
+            Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv6' -RegistryValue '0' -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            $prop = Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword '*LSOv2IPv4' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $prop) { return 'NotApplicable' }
+            return ($prop.RegistryValue -eq '1')
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Escalado de Recepcion (RSS)"
+        Category       = "Rendimiento de Red"
+        Description    = "Distribuye el procesamiento de los paquetes de red recibidos entre multiples nucleos de la CPU."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # Intento 1: Método estándar de PowerShell
+            Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Enable-NetAdapterRss -ErrorAction SilentlyContinue
+            # Intento 2: Método global (netsh) para casos con Hyper-V
+            netsh int tcp set global rss=enabled
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Disable-NetAdapterRss -ErrorAction SilentlyContinue
+            netsh int tcp set global rss=disabled
+        }
+        CheckCommand   = {
+            try {
+                # Metodo agnóstico al idioma: Obtenemos el objeto y verificamos su propiedad booleana
+                $rssStatus = Get-NetAdapterRss -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq $true }
+                # Si devuelve algo, es que al menos un adaptador tiene RSS activado
+                return ($null -ne $rssStatus)
+            } catch {
+                return 'NotApplicable'
+            }
+        }
+        RestartNeeded  = "None"
+    },
+    [PSCustomObject]@{
+        Name           = "Habilitar Coalescencia de Segmentos (RSC)"
+        Category       = "Rendimiento de Red"
+        Description    = "Agrupa paquetes recibidos para reducir uso de CPU. (Corregido para soportar Hyper-V/Virtualización)."
+        Method         = "Command"
+        EnableCommand  = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # CAMBIO: Quitamos '-Physical' y apuntamos a cualquier adaptador activo (incluyendo vEthernet)
+            Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Enable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue
+        }
+        DisableCommand = { 
+            Import-Module NetAdapter -ErrorAction SilentlyContinue
+            # CAMBIO: Quitamos '-Physical' para evitar el error en adaptadores puenteados
+            Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            try {
+                Import-Module NetAdapter -ErrorAction Stop
+                # Buscamos si algún adaptador ACTIVO tiene RSC activado
+                $rscStatus = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Get-NetAdapterRsc -ErrorAction SilentlyContinue
+                
+                # Si encontramos configuración, verificamos si está activo para IPv4 o IPv6
+                if ($rscStatus) {
+                    return ($rscStatus.IPv4Enabled -eq $true -or $rscStatus.IPv6Enabled -eq $true)
+                }
+                return $false
+            } catch {
+                return 'NotApplicable'
+            }
+        }
+        RestartNeeded  = "None"
     },
 
     # --- Categoria: Seguridad ---
@@ -858,17 +1006,6 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
-        Name           = "Convertir Busqueda de Inicio en 100% Local"
-        Category       = "Comportamiento del Sistema y UI"
-        Description    = "Elimina por completo las sugerencias y resultados web de Bing del menu de inicio, haciendo que la busqueda se centre unicamente en tus archivos y aplicaciones locales."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer"
-        RegistryKey    = "DisableSearchBoxSuggestions"
-        EnabledValue   = 1
-        RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
-    },
-    [PSCustomObject]@{
         Name           = "Anadir 'Bloquear en Firewall' al Menu Contextual"
         Category       = "Comportamiento del Sistema y UI"
         Description    = "Anade una opcion para bloquear una aplicacion en el Firewall. NOTA: Las reglas creadas no se borran al desactivar."
@@ -1068,6 +1205,30 @@ $script:SystemTweaks = @(
         DefaultValue   = 0
         RegistryType   = "String"
         RestartNeeded  = "Session"
+    },
+	[PSCustomObject]@{
+        Name           = "Abrir Explorador en 'Este Equipo' (No Acceso Rapido)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Al abrir el explorador de archivos, muestra tus discos y carpetas directamente en lugar de la lista de 'Archivos recientes' o 'Acceso rapido'."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "LaunchTo"
+        EnabledValue   = 1 # 1 = Este Equipo, 2 = Acceso Rápido
+        DefaultValue   = 2
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Desactivar 'Aero Shake' (Agitar ventana para minimizar)"
+        Category       = "Comportamiento del Sistema y UI"
+        Description    = "Evita que todas las ventanas se minimicen accidentalmente si mueves el mouse rapidamente mientras arrastras una ventana."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+        RegistryKey    = "DisallowShaking"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "None"
     },
 
 	# --- Categoria: Extras (Nuevos) ---
