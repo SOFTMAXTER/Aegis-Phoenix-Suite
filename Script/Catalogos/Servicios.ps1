@@ -87,6 +87,30 @@ $script:ServiceCatalog = @(
         Category           = "Estandar"
         DefaultStartupType = "Manual"
     },
+	[PSCustomObject]@{
+        Name               = "DPS"
+        Description        = "Servicio de directivas de diagnostico. Si no usas los solucionadores de problemas integrados de Windows, puedes desactivarlo para ahorrar recursos."
+        Category           = "Estandar"
+        DefaultStartupType = "Automatic"
+    },
+    [PSCustomObject]@{
+        Name               = "WdiServiceHost"
+        Description        = "Host de servicio de diagnostico. Junto con DPS, es parte de la telemetria de errores y solucion de problemas. Seguro de desactivar si prefieres rendimiento."
+        Category           = "Estandar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "WdiSystemHost"
+        Description        = "Host del sistema de diagnostico. Componente hermano de WdiServiceHost. Desactivarlo reduce la actividad de diagnostico en segundo plano."
+        Category           = "Estandar"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "PcaSvc"
+        Description        = "Asistente para la compatibilidad de programas. Supervisa instalaciones y muestra avisos molestos de '¿Este programa se instalo correctamente?'. Seguro de desactivar."
+        Category           = "Estandar"
+        DefaultStartupType = "Automatic"
+    },
     # Categoria: Avanzado/Opcional (Servicios para funciones especificas)
     [PSCustomObject]@{
         Name               = "TermService"
@@ -112,7 +136,6 @@ $script:ServiceCatalog = @(
         Category           = "Avanzado"
         DefaultStartupType = "Manual"
 	},
-    
 	[PSCustomObject]@{
         Name               = "CscService"
         Description        = "Servicio de Archivos sin conexion, para acceder a archivos de red localmente. Innecesario para usuarios domesticos."
@@ -149,6 +172,52 @@ $script:ServiceCatalog = @(
         Category           = "Avanzado"
         DefaultStartupType = "Manual"
     },
+	# Red y Conectividad
+	[PSCustomObject]@{
+        Name               = "iphlpsvc"
+        Description        = "Aplicacion auxiliar IP. Proporciona conectividad de tunel IPv6 (6to4, ISATAP, Teredo). Innecesario para la gran mayoria de usuarios domesticos que usan IPv4."
+        Category           = "Red y Conectividad"
+        DefaultStartupType = "Automatic"
+    },
+    [PSCustomObject]@{
+        Name               = "lmhosts"
+        Description        = "Aplicacion auxiliar de NetBIOS sobre TCP/IP. Protocolo de red antiguo para compartir archivos. Innecesario en redes modernas (usa SMB directo)."
+        Category           = "Red y Conectividad"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "TapiSrv"
+        Description        = "Telefonia. Proporciona soporte TAPI para programas antiguos, modems y fax. Totalmente obsoleto para la mayoria de usuarios modernos."
+        Category           = "Legacy/Obsoleto"
+        DefaultStartupType = "Manual"
+    },
+	# Legacy/Obsoleto
+    [PSCustomObject]@{
+        Name               = "WPDBusEnum"
+        Description        = "Servicio de enumeracion de dispositivos portatiles. Sincroniza contenido con reproductores MP3/celulares antiguos en Windows Media Player. Rara vez necesario hoy dia."
+        Category           = "Legacy/Obsoleto"
+        DefaultStartupType = "Manual"
+    },
+	# Realidad Mixta
+    [PSCustomObject]@{
+        Name               = "MixedRealityOpenXRSvc"
+        Description        = "Windows Mixed Reality OpenXR Service. Habilita funciones para cascos de realidad mixta. Si no tienes hardware VR/AR, es bloatware puro."
+        Category           = "Realidad Mixta"
+        DefaultStartupType = "Manual"
+    },
+    [PSCustomObject]@{
+        Name               = "spectrum"
+        Description        = "Windows Perception Service. Gestiona la percepcion espacial para realidad virtual y aumentada (HoloLens). Innecesario para uso de escritorio estandar."
+        Category           = "Realidad Mixta"
+        DefaultStartupType = "Manual"
+    },
+	# Seguridad Corporativa
+	[PSCustomObject]@{
+        Name               = "Netlogon"
+        Description        = "Mantiene un canal seguro entre este equipo y el controlador de dominio. Si tu PC es domestico y no pertenece a un dominio empresarial, es totalmente innecesario."
+        Category           = "Seguridad Corporativa"
+        DefaultStartupType = "Manual"
+    },
     # Categoria: Opcional
     [PSCustomObject]@{
         Name               = "XblAuthManager"
@@ -179,5 +248,11 @@ $script:ServiceCatalog = @(
         Description        = "Servicio de Control Parental. Innecesario si no se gestionan cuentas de menores en el equipo."
         Category           = "Opcional"
         DefaultStartupType = "Manual"
-	}
+	},
+	[PSCustomObject]@{
+        Name               = "PhoneSvc"
+        Description        = "Servicio de telefono. Gestiona el estado de telefonia en el dispositivo. Generalmente vinculado a la app 'Enlace Movil'. Si no la usas, desactivalo."
+        Category           = "Opcional"
+        DefaultStartupType = "Manual"
+    }
 )
