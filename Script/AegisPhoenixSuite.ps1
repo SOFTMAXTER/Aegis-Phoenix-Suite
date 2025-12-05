@@ -9,121 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.2
+    4.8.3
 #>
 
-$script:Version = "4.8.2"
-
-# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
-
-function Invoke-FullRepoUpdater {
-    # --- CONFIGURACION ---
-    $repoUser = "SOFTMAXTER"; $repoName = "Aegis-Phoenix-Suite"; $repoBranch = "main"
-    $versionUrl = "https://raw.githubusercontent.com/$repoUser/$repoName/$repoBranch/version.txt"
-    $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
-    
-    try {
-        # Se intenta la operacion de red con un timeout corto para no retrasar el script si no hay conexion.
-        $remoteVersionStr = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"}).Content.Trim()
-
-        if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
-            # Solo si se encuentra una actualizacion, se le notifica al usuario.
-            Write-Host "¡Nueva version encontrada! Local: v$($script:Version) | Remota: v$remoteVersionStr" -ForegroundColor Green
-            $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
-            if ($confirmation.ToUpper() -eq 'S') {
-                Write-Warning "El actualizador se ejecutara en una nueva ventana. NO LA CIERRES."
-                $tempDir = Join-Path $env:TEMP "AegisUpdater"
-                if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
-                New-Item -Path $tempDir -ItemType Directory | Out-Null
-                $updaterScriptPath = Join-Path $tempDir "updater.ps1"
-                $installPath = (Split-Path -Path $PSScriptRoot -Parent)
-                $batchPath = Join-Path $installPath "Run.bat"
-
-                # --- MODIFICADO: El script interno ahora acepta un parametro y tiene 6 pasos ---
-                $updaterScriptContent = @"
-param(`$parentPID) # <--- AÑADIDO: Recibe el ID del proceso principal
-
-`$ErrorActionPreference = 'Stop'
-`$Host.UI.RawUI.WindowTitle = 'PROCESO DE ACTUALIZACION DE AEGIS - NO CERRAR'
-try {
-    `$tempDir_updater = "$tempDir"
-    `$tempZip_updater = Join-Path "`$tempDir_updater" "update.zip"
-    `$tempExtract_updater = Join-Path "`$tempDir_updater" "extracted"
-
-    Write-Host "[PASO 1/6] Descargando la nueva version..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip_updater"
-
-    Write-Host "[PASO 2/6] Descomprimiendo archivos..." -ForegroundColor Yellow
-    Expand-Archive -Path "`$tempZip_updater" -DestinationPath "`$tempExtract_updater" -Force
-    `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract_updater" -Directory).FullName
-
-    # --- AÑADIDO: Paso de espera explicito ---
-    Write-Host "[PASO 3/6] Esperando a que el proceso principal de Aegis finalice..." -ForegroundColor Yellow
-    try {
-        # Espera a que el PID que le pasamos termine antes de continuar
-        Get-Process -Id `$parentPID -ErrorAction Stop | Wait-Process -ErrorAction Stop
-    } catch {
-        # Si el proceso ya cerro (fue muy rapido), no es un error.
-        Write-Host "   - El proceso principal ya ha finalizado." -ForegroundColor Gray
-    }
-    # --- FIN DE LA MODIFICACIoN ---
-
-    Write-Host "[PASO 4/6] Eliminando archivos antiguos (excluyendo datos de usuario)..." -ForegroundColor Yellow # <--- MODIFICADO: Paso 4/6
-    `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
-    if (`$null -ne `$itemsToRemove) { Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force }
-
-    Write-Host "[PASO 5/6] Instalando nuevos archivos..." -ForegroundColor Yellow # <--- MODIFICADO: Paso 5/6
-    Move-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Force
-    Get-ChildItem -Path "$installPath" -Recurse | Unblock-File
-
-    Write-Host "[PASO 6/6] ¡Actualizacion completada! Reiniciando la suite en 5 segundos..." -ForegroundColor Green # <--- MODIFICADO: Paso 6/6
-    Start-Sleep -Seconds 5
-    
-    Remove-Item -Path "`$tempDir_updater" -Recurse -Force
-    Start-Process -FilePath "$batchPath"
-}
-catch {
-    $errFile = Join-Path "$env:TEMP" "AegisUpdateError.log"
-    "ERROR FATAL DE ACTUALIZACION: $_" | Out-File -FilePath $errFile -Force
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show("La actualización falló. Revisa: $errFile", "Error Aegis", 'OK', 'Error')
-    exit 1
-}
-"@
-                Set-Content -Path $updaterScriptPath -Value $updaterScriptContent -Encoding utf8
-                
-                # --- MODIFICADO: Se pasa el $PID actual como argumento al nuevo proceso ---
-                $launchArgs = "/c start `"PROCESO DE ACTUALIZACION DE AEGIS`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`" -parentPID $PID"
-                
-                Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Hidden
-                exit # El script principal se cierra inmediatamente
-            } else {
-				Write-Host "Actualizacion omitida por el usuario." -ForegroundColor Yellow; Start-Sleep -Seconds 1
-        	}
-        } 
-    }
-    catch {
-		# Silencioso si no hay conexion, no es un error.
-        return
-    }
-}
-
-# Ejecutar el actualizador DESPUES de definir la version
-Invoke-FullRepoUpdater
-
-# --- CARGA DE CATALOGOS EXTERNOS ---
-Write-Host "Cargando catalogos..."
-try {
-    . "$PSScriptRoot\Catalogos\Ajustes.ps1"
-    . "$PSScriptRoot\Catalogos\Servicios.ps1"
-	. "$PSScriptRoot\Catalogos\Bloatware.ps1"
-}
-catch {
-    Write-Error "Error critico: No se pudieron cargar los archivos de catalogo."
-    Write-Error "Asegurate de que 'Ajustes.ps1', 'Servicios.ps1' y 'Bloatware.ps1' existen en la subcarpeta 'Catalogos'."
-    Read-Host "Presiona Enter para salir."
-    exit
-}
+$script:Version = "4.8.3"
 
 function Write-Log {
     [CmdletBinding()]
@@ -150,6 +39,165 @@ function Write-Log {
     catch {
         Write-Warning "No se pudo escribir en el archivo de log: $_"
     }
+}
+
+# --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
+function Invoke-FullRepoUpdater {
+    # --- CONFIGURACION ---
+    $repoUser = "SOFTMAXTER"
+    $repoName = "Aegis-Phoenix-Suite"
+    $repoBranch = "main"
+    
+    # URLs directas
+    $versionUrl = "https://raw.githubusercontent.com/$repoUser/$repoName/$repoBranch/version.txt"
+    $zipUrl = "https://github.com/$repoUser/$repoName/archive/refs/heads/$repoBranch.zip"
+    
+    $updateAvailable = $false
+    $remoteVersionStr = ""
+
+    try {
+        # Timeout corto para no afectar el inicio si no hay red
+        $response = Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"} -TimeoutSec 1 -ErrorAction Stop
+        $remoteVersionStr = $response.Content.Trim()
+
+        # --- LOGICA ROBUSTA DE VERSIONADO ---
+        try {
+            $localV = [System.Version]$script:Version
+            $remoteV = [System.Version]$remoteVersionStr
+            
+            if ($remoteV -gt $localV) {
+                $updateAvailable = $true
+            }
+        }
+        catch {
+            # Fallback: Comparación de texto simple si el formato no es estándar
+            if ($remoteVersionStr -ne $script:Version) { 
+                $updateAvailable = $true 
+            }
+        }
+    }
+    catch {
+        # Silencioso si no hay conexión, no es crítico
+        return
+    }
+
+    # --- Si hay una actualización, preguntamos al usuario ---
+    if ($updateAvailable) {
+        Write-Host "`n¡Nueva version encontrada!" -ForegroundColor Green
+        Write-Host ""
+		Write-Host "Version Local: v$($script:Version)" -ForegroundColor Gray
+        Write-Host "Version Remota: v$remoteVersionStr" -ForegroundColor Yellow
+        Write-Log -LogLevel INFO -Message "UPDATER: Nueva version detectada. Local: v$($script:Version) | Remota: v$remoteVersionStr"
+        
+		Write-Host ""
+        $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
+        
+        if ($confirmation.ToUpper() -eq 'S') {
+            Write-Warning "`nEl actualizador se ejecutara en una nueva ventana."
+            Write-Warning "Este script principal se cerrara para permitir la actualizacion."
+            Write-Log -LogLevel ACTION -Message "UPDATER: Iniciando proceso de actualizacion. El script se cerrara."
+            
+            # --- Preparar el script del actualizador externo ---
+            $tempDir = Join-Path $env:TEMP "AegisUpdater"
+            if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+            New-Item -Path $tempDir -ItemType Directory | Out-Null
+            
+            $updaterScriptPath = Join-Path $tempDir "updater.ps1"
+            $installPath = (Split-Path -Path $PSScriptRoot -Parent)
+            $batchPath = Join-Path $installPath "Run.bat"
+
+            # Contenido del script temporal
+            $updaterScriptContent = @"
+param(`$parentPID)
+`$ErrorActionPreference = 'Stop'
+`$Host.UI.RawUI.WindowTitle = 'PROCESO DE ACTUALIZACION DE AEGIS - NO CERRAR'
+
+# Funcion auxiliar para logs del actualizador
+function Write-UpdateLog { param([string]`$msg) Write-Host "`n`$msg" -ForegroundColor Cyan }
+
+try {
+    `$tempDir_updater = "$tempDir"
+    `$tempZip_updater = Join-Path "`$tempDir_updater" "update.zip"
+    `$tempExtract_updater = Join-Path "`$tempDir_updater" "extracted"
+
+    Write-UpdateLog "[PASO 1/6] Descargando la nueva version v$remoteVersionStr..."
+    Invoke-WebRequest -Uri "$zipUrl" -OutFile "`$tempZip_updater"
+
+    Write-UpdateLog "[PASO 2/6] Descomprimiendo archivos..."
+    Expand-Archive -Path "`$tempZip_updater" -DestinationPath "`$tempExtract_updater" -Force
+    
+    # GitHub extrae en una subcarpeta (ej: Aegis-Phoenix-Suite-main)
+    `$updateSourcePath = (Get-ChildItem -Path "`$tempExtract_updater" -Directory | Select-Object -First 1).FullName
+
+    Write-UpdateLog "[PASO 3/6] Esperando a que el proceso principal finalice..."
+    try {
+        # Espera segura con Timeout para no colgarse
+        Get-Process -Id `$parentPID -ErrorAction Stop | Wait-Process -ErrorAction Stop -Timeout 30
+    } catch {
+        Write-Host "   - El proceso principal ya ha finalizado." -ForegroundColor Gray
+    }
+
+    Write-UpdateLog "[PASO 4/6] Preparando instalacion (limpiando archivos antiguos)..."
+    
+    # --- EXCLUSIONES ESPECIFICAS DE AEGIS PHOENIX SUITE ---
+    `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
+    if (`$null -ne `$itemsToRemove) { 
+        Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-UpdateLog "[PASO 5/6] Instalando nuevos archivos..."
+    Copy-Item -Path "`$updateSourcePath\*" -Destination "$installPath" -Recurse -Force
+    
+    # Desbloqueamos los archivos descargados
+    Get-ChildItem -Path "$installPath" -Recurse | Unblock-File -ErrorAction SilentlyContinue
+
+    Write-UpdateLog "[PASO 6/6] ¡Actualizacion completada con exito!"
+    Write-Host "`nReiniciando Aegis Phoenix Suite en 5 segundos..." -ForegroundColor Green
+    Start-Sleep -Seconds 5
+    
+    # Limpieza y reinicio
+    Remove-Item -Path "`$tempDir_updater" -Recurse -Force -ErrorAction SilentlyContinue
+    Start-Process -FilePath "$batchPath"
+}
+catch {
+    `$errFile = Join-Path "`$env:TEMP" "AegisUpdateError.log"
+    "ERROR FATAL DE ACTUALIZACION: `$_" | Out-File -FilePath `$errFile -Force
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show("La actualizacion fallo.`nRevisa: `$errFile", "Error Aegis", 'OK', 'Error')
+    exit 1
+}
+"@
+            # Guardar el script del actualizador con codificación UTF8 limpia
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($updaterScriptPath, $updaterScriptContent, $utf8NoBom)
+            
+            # Lanzar el actualizador y cerrar
+            $launchArgs = "/c start `"PROCESO DE ACTUALIZACION`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$updaterScriptPath`" -parentPID $PID"
+            Start-Process cmd.exe -ArgumentList $launchArgs -WindowStyle Normal
+            
+            exit
+        } else {
+            Write-Host "`nActualizacion omitida por el usuario." -ForegroundColor Yellow
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
+# Ejecutar el actualizador DESPUES de definir la version
+Invoke-FullRepoUpdater
+
+# --- CARGA DE CATALOGOS EXTERNOS ---
+Write-Host "Cargando catalogos..."
+try {
+    . "$PSScriptRoot\Catalogos\Ajustes.ps1"
+    . "$PSScriptRoot\Catalogos\Servicios.ps1"
+	. "$PSScriptRoot\Catalogos\Bloatware.ps1"
+}
+catch {
+    Write-Error "Error critico: No se pudieron cargar los archivos de catalogo."
+    Write-Error "Asegurate de que 'Ajustes.ps1', 'Servicios.ps1' y 'Bloatware.ps1' existen en la subcarpeta 'Catalogos'."
+    Read-Host "Presiona Enter para salir."
+    exit
 }
 
 # --- Verificacion de Privilegios de Administrador ---
