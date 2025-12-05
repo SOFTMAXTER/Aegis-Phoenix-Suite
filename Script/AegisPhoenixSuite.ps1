@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.1
+    4.8.2
 #>
 
-$script:Version = "4.8.1"
+$script:Version = "4.8.2"
 
 # --- INICIO DEL MODULO DE AUTO-ACTUALIZACION ---
 
@@ -83,9 +83,11 @@ try {
     Start-Process -FilePath "$batchPath"
 }
 catch {
-    Write-Error "¡LA ACTUALIZACION HA FALLADO!"
-    Write-Error `$_
-    Read-Host "El proceso ha fallado. Presiona Enter para cerrar esta ventana."
+    $errFile = Join-Path "$env:TEMP" "AegisUpdateError.log"
+    "ERROR FATAL DE ACTUALIZACION: $_" | Out-File -FilePath $errFile -Force
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show("La actualización falló. Revisa: $errFile", "Error Aegis", 'OK', 'Error')
+    exit 1
 }
 "@
                 Set-Content -Path $updaterScriptPath -Value $updaterScriptContent -Encoding utf8
@@ -289,15 +291,21 @@ function Invoke-ExplorerRestart {
 
     if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
         try {
-            # Obtener todos los procesos del Explorador (puede haber mas de uno)
+            # Obtener todos los procesos del Explorador (puede haber más de uno)
             $explorerProcesses = Get-Process -Name explorer -ErrorAction Stop
             
             # Detener los procesos
             $explorerProcesses | Stop-Process -Force
             Write-Host "   - Proceso(s) detenido(s)." -ForegroundColor Gray
             
-            # Esperar a que terminen
-            $explorerProcesses.WaitForExit()
+            # CORRECCIÓN: Esperar a que terminen uno por uno de forma segura
+            foreach ($proc in $explorerProcesses) {
+                try { 
+                    $proc.WaitForExit() 
+                } catch { 
+                    # Si el proceso ya no existe, ignoramos el error
+                }
+            }
             
             # Iniciar un nuevo proceso del explorador
             Start-Process "explorer.exe"
@@ -370,7 +378,7 @@ function Manage-SystemServices {
                 
                 # Se imprime la linea principal del servicio
                 Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
-                Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+                Write-Host ("{0,-26}" -f $statusText) -ForegroundColor $statusColor -NoNewline
                 Write-Host $serviceDef.Name -ForegroundColor White
                 
                 # Usamos la nueva funcion para formatear e imprimir la descripcion.
@@ -643,7 +651,7 @@ function Manage-ThirdPartyServices {
             $backupColor = if ($item.InBackup) { "Green" } else { "Red" }
             
             Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
-            Write-Host ("{0,-25}" -f $statusText) -ForegroundColor $statusColor -NoNewline
+            Write-Host ("{0,-26}" -f $statusText) -ForegroundColor $statusColor -NoNewline
             Write-Host "$backupIndicator" -NoNewline -ForegroundColor $backupColor
             Write-Host $service.DisplayName -ForegroundColor White
 
@@ -945,6 +953,19 @@ public class Kernel32 {
 function Invoke-AdvancedSystemClean {
     [CmdletBinding(SupportsShouldProcess=$true)]
     param()
+	
+	# --- VALIDACIÓN DE SEGURIDAD: REINICIO PENDIENTE ---
+    if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending") {
+        Write-Warning "AVISO CRITICO: Hay actualizaciones de Windows pendientes de reinicio."
+        Write-Warning "Ejecutar una limpieza profunda de componentes ahora podria corromper el sistema."
+        Write-Warning "Por favor, reinicia tu PC antes de usar esta funcion."
+        
+        $choice = Read-Host "¿Deseas cancelar (C) o arriesgarte y continuar (R)? [Se recomienda Cancelar]"
+        if ($choice.ToUpper() -ne 'R') {
+            Write-Host "Operacion cancelada por seguridad." -ForegroundColor Green
+            return
+        }
+    }
     
     Write-Log -LogLevel INFO -Message "Usuario inicio la Limpieza Avanzada de Componentes de Windows."
     Write-Host "`n[+] Iniciando Limpieza Avanzada de Componentes del Sistema..." -ForegroundColor Cyan
@@ -4229,37 +4250,60 @@ function Show-UserDataBackupMenu {
 # ===================================================================
 
 function Get-DetailedWindowsVersion {
-    # Obtenemos los datos clave del registro en una sola llamada para mayor eficiencia
-    $winVerInfo = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    try {
+        # Intentamos obtener los datos del registro. Si falla, no detiene el script (SilentlyContinue)
+        $winVerInfo = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue
 
-    $osArch = (Get-ComputerInfo).OsArchitecture
+        # Definimos valores por defecto por si el registro falla
+        $baseProductName = "Windows (Desconocido)"
+        $friendlyEdition = "Edición Desconocida"
+        $fullBuildString = "Build Desconocida"
+        $osArch = "Arquitectura Desconocida"
 
-    $buildNumber = [int]$winVerInfo.CurrentBuildNumber
-	$ubrNumber = $winVerInfo.UBR
-    $fullBuildString = "$buildNumber.$ubrNumber"  
-    $editionId = $winVerInfo.EditionID
+        # Intentamos obtener arquitectura de forma segura
+        try { 
+            $osArch = (Get-ComputerInfo -ErrorAction Stop).OsArchitecture 
+        } catch { 
+            $osArch = $env:PROCESSOR_ARCHITECTURE 
+        }
 
-    # Determinar el nombre base (Windows 10 o 11) segun el numero de compilacion
-    $baseProductName = "Windows 10" # Valor por defecto
-    if ($buildNumber -ge 22000) {
-        $baseProductName = "Windows 11"
+        # Validación de datos del registro
+        if ($winVerInfo) {
+            $buildNumber = 0
+            if ($winVerInfo.CurrentBuildNumber) { 
+                $buildNumber = [int]$winVerInfo.CurrentBuildNumber 
+            }
+            
+            $ubrNumber = if ($winVerInfo.UBR) { $winVerInfo.UBR } else { "0" }
+            $fullBuildString = "$buildNumber.$ubrNumber"
+            
+            # Lógica de nombre base
+            $baseProductName = "Windows 10"
+            if ($buildNumber -ge 22000) { $baseProductName = "Windows 11" }
+
+            # Lógica de Edición
+            $editionId = if ($winVerInfo.EditionID) { $winVerInfo.EditionID } else { "Unknown" }
+            
+            $friendlyEdition = switch ($editionId) {
+                "Core"                  { "Home" }
+                "CoreSingleLanguage"    { "Home Single Language" }
+                "Professional"          { "Pro" }
+                "ProfessionalWorkstation" { "Pro for Workstations" }
+                "ProfessionalEducation" { "Pro Education" }
+                "Enterprise"            { "Enterprise" }
+                "EnterpriseS"           { "Enterprise LTSC" }
+                "Education"             { "Education" }
+                default                 { $editionId }
+            }
+        }
+        
+        return "$baseProductName $friendlyEdition $osArch (Build: $fullBuildString)"
     }
-
-    # Traducir el EditionID a un nombre mas amigable, como en tu ejemplo
-    $friendlyEdition = switch ($editionId) {
-        "Core"                  { "Home" }
-        "CoreSingleLanguage"    { "Home Single Language" }
-        "Professional"          { "Pro" }
-        "ProfessionalWorkstation" { "Pro for Workstations" }
-        "ProfessionalEducation" { "Pro Education" }
-        "Enterprise"            { "Enterprise" }
-        "EnterpriseS"           { "Enterprise LTSC" }
-        "Education"             { "Education" }
-        default                 { $editionId }
+    catch {
+        # Fallback de emergencia en caso de error crítico
+        Write-Warning "No se pudo detectar la versión detallada de Windows. Usando información básica."
+        return "Windows Detectado (Error al leer versión detallada)"
     }
-
-    # Devolvemos la cadena de texto combinada y detallada
-    return "$baseProductName $friendlyEdition $osArch (Build: $fullBuildString)"
 }
 
 # --- FUNCIoN AUXILIAR 1: Recopilador de Datos Exhaustivo ---
@@ -5165,7 +5209,7 @@ function Move-UserProfileFolders {
         if ($destinationDirCreated -and $robocopySucceeded) {
             Write-Host "  [3/3] Actualizando la ruta en el Registro..." -ForegroundColor Gray
             try {
-                Set-ItemProperty -Path $registryPath -Name $op.RegValueName -Value $op.NewPath -Type String -Force -ErrorAction Stop
+                Set-ItemProperty -Path $registryPath -Name $op.RegValueName -Value $op.NewPath -Type ExpandString -Force -ErrorAction Stop
                 Write-Host "  -> Registro actualizado exitosamente." -ForegroundColor Green
                 Write-Log -LogLevel ACTION -Message "REUBICACION: Registro actualizado para '$($op.Name)' a '$($op.NewPath)'."
                 $explorerRestartNeeded = $true
@@ -5461,28 +5505,35 @@ function Get-AegisWingetUpdates {
     Write-Host "Buscando en Winget..." -ForegroundColor Gray
     $updates = @()
     try {
-        $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
-        $lines = $output -split "`r?`n"
-        $inTable = $false
+        # Forzamos codificación para estandarizar la salida
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         
+        # Ejecutamos winget incluyendo paquetes desconocidos
+        $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
+        
+        # Filtramos líneas inútiles (encabezados, barras de progreso, líneas vacías)
+        $lines = $output | Where-Object { 
+            $_ -notmatch "^Nombre" -and 
+            $_ -notmatch "^Name" -and 
+            $_ -notmatch "^Id" -and 
+            $_ -notmatch "^-" -and      # Líneas separadoras
+            $_ -notmatch "No se encontraron" -and
+            $_ -notmatch "No updates found" -and
+            ![string]::IsNullOrWhiteSpace($_)
+        }
+
         foreach ($line in $lines) {
-            $trimmedLine = $line.Trim()
+            # Dividimos por 2 o más espacios consecutivos, que es más seguro que posiciones fijas
+            $columns = $line -split "\s{2,}"
             
-            if ($trimmedLine -match "^[-\\s]{20,}") {
-                $inTable = $true
-                continue
-            }
-            
-            if ($inTable -and $trimmedLine -ne "" -and $trimmedLine -notmatch "^-") {
-                $columns = $trimmedLine -split "\s{2,}"
-                if ($columns.Count -ge 3) {
-                    $updates += [PSCustomObject]@{
-                        Name = $columns[0].Trim()
-                        Id = $columns[1].Trim()
-                        Version = $columns[2].Trim()
-                        Available = if ($columns.Count -ge 4) { $columns[3].Trim() } else { "Unknown" }
-                        Engine = 'Winget'
-                    }
+            # Winget suele devolver: Nombre | Id | Versión | Disponible
+            if ($columns.Count -ge 3) {
+                $updates += [PSCustomObject]@{
+                    Name      = $columns[0].Trim()
+                    Id        = $columns[1].Trim()
+                    Version   = $columns[2].Trim()
+                    Available = if ($columns.Count -ge 4) { $columns[3].Trim() } else { "Unknown" }
+                    Engine    = 'Winget'
                 }
             }
         }
@@ -6096,7 +6147,7 @@ function Show-TweakManagerMenu {
                 $stateColor = if ($state -eq 'Enabled') { 'Green' } elseif ($state -eq 'Disabled') { 'Red' } else { 'Gray' }
                 
                 Write-Host ("   [{0,2}] {1} " -f ($i + 1), $status) -NoNewline
-                Write-Host ("{0,-15}" -f "[$state]") -ForegroundColor $stateColor -NoNewline
+                Write-Host ("{0,-17}" -f "[$state]") -ForegroundColor $stateColor -NoNewline
                 Write-Host $tweak.Name
 
                 if (-not [string]::IsNullOrWhiteSpace($tweak.Description)) {
