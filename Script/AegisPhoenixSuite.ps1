@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.3
+    4.8.5
 #>
 
-$script:Version = "4.8.3"
+$script:Version = "4.8.5"
 
 function Write-Log {
     [CmdletBinding()]
@@ -369,10 +369,33 @@ function Invoke-ExplorerRestart {
     }
 }
 
+# =========================================================================================
+# MODULO DE GESTION DE SERVICIOS DE SISTEMA INECESARIOS
+# =========================================================================================
+
 function Manage-SystemServices {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
     Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Servicios de Windows."
+
+    # --- NUEVO: Bloque de código para refrescar la caché de servicios ---
+    # Definimos esto como un ScriptBlock para poder llamarlo varias veces
+    $RefreshServiceCache = {
+        Write-Host "Actualizando estado de servicios..." -ForegroundColor Gray
+        $hash = @{}
+        try {
+            $allServices = Get-CimInstance -ClassName Win32_Service -ErrorAction Stop
+            foreach ($svc in $allServices) {
+                $hash[$svc.Name] = $svc
+            }
+        } catch {
+            Write-Error "No se pudieron obtener los servicios del sistema via WMI."
+        }
+        return $hash
+    }
+
+    # 1. Carga inicial (Primera vez que entras)
+    $serviceHash = & $RefreshServiceCache
 
     $fullServiceList = @()
     foreach ($serviceDef in $script:ServiceCatalog) {
@@ -394,10 +417,9 @@ function Manage-SystemServices {
         $itemIndex = 0
         $categories = $fullServiceList.Definition.Category | Select-Object -Unique
         
-        # Obtenemos el ancho de la consola para que el texto se ajuste dinamicamente.
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
-        # Definimos la sangria para las descripciones.
         $descriptionIndent = 13
+
         foreach ($category in $categories) {
             Write-Host "--- Categoria: $category ---" -ForegroundColor Yellow
             $servicesInCategory = $fullServiceList | Where-Object { $_.Definition.Category -eq $category }
@@ -406,7 +428,10 @@ function Manage-SystemServices {
                 $itemIndex++
                 $serviceDef = $serviceItem.Definition
                 $checkbox = if ($serviceItem.Selected) { "[X]" } else { "[ ]" }
-                $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$($serviceDef.Name)'" -ErrorAction SilentlyContinue
+                
+                # --- USO DE LA CACHÉ OPTIMIZADA ---
+                $service = $serviceHash[$serviceDef.Name] 
+                # ----------------------------------
                 
                 $statusText = ""
                 $statusColor = "Gray"
@@ -424,12 +449,10 @@ function Manage-SystemServices {
                     }
                 } else { $statusText = "[No Encontrado]" }
                 
-                # Se imprime la linea principal del servicio
                 Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
                 Write-Host ("{0,-26}" -f $statusText) -ForegroundColor $statusColor -NoNewline
                 Write-Host $serviceDef.Name -ForegroundColor White
                 
-                # Usamos la nueva funcion para formatear e imprimir la descripcion.
                 if (-not [string]::IsNullOrWhiteSpace($serviceDef.Description)) {
                     $wrappedDescription = Format-WrappedText -Text $serviceDef.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
                     $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
@@ -438,13 +461,12 @@ function Manage-SystemServices {
             Write-Host ""
         }
         
-		$selectedCount = $fullServiceList.Where({$_.Selected}).Count
+        $selectedCount = $fullServiceList.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
-			Write-Host ""
+            Write-Host ""
             Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
-		
-        # El resto de la funcion (menu y logica de acciones) permanece igual...
+        
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] - Marcar / Desmarcar servicio"
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
@@ -498,6 +520,12 @@ function Manage-SystemServices {
                 }
 
                 Write-Host "`n[OK] Accion completada para los servicios seleccionados." -ForegroundColor Green
+                
+                # --- ACTUALIZACION CRITICA: Refrescar la caché después de aplicar cambios ---
+                # Esto asegura que el menú muestre el estado nuevo inmediatamente
+                $serviceHash = & $RefreshServiceCache
+                # ----------------------------------------------------------------------------
+
                 $fullServiceList.ForEach({$_.Selected = $false})
                 Read-Host "Presiona Enter para continuar..."
             }
@@ -507,7 +535,7 @@ function Manage-SystemServices {
             }
         } catch {
             Write-Error "Error: $($_.Exception.Message)"
-			Write-Log -LogLevel ERROR -Message "Error en Manage-SystemServices: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "Error en Manage-SystemServices: $($_.Exception.Message)"
             Read-Host "Presiona Enter para continuar..."
         }
     }
@@ -522,47 +550,66 @@ function Manage-ThirdPartyServices {
     param()
     Write-Log -LogLevel INFO -Message "Usuario entro al Gestion Inteligente de Servicios de Aplicaciones."
 
-    # Definir la ruta del archivo de respaldo
+    # Definir rutas
     $parentDir = Split-Path -Parent $PSScriptRoot
     $backupDir = Join-Path -Path $parentDir -ChildPath "Backup"
-    if (-not (Test-Path $backupDir)) {
-        New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
-    }
+    if (-not (Test-Path $backupDir)) { New-Item -Path $backupDir -ItemType Directory -Force | Out-Null }
     $backupFile = Join-Path -Path $backupDir -ChildPath "ThirdPartyServicesBackup.json"
 
-    # Funcion para obtener servicios de terceros
-    function Get-ThirdPartyServices {
-        $thirdPartyServices = @()
-        $allServices = Get-CimInstance -ClassName Win32_Service
-        
-        foreach ($service in $allServices) {
-            if ($service.PathName -and $service.PathName -notmatch '\\Windows\\' -and $service.PathName -notlike '*svchost.exe*') {
-                $thirdPartyServices += $service
-            }
-        }
-        return $thirdPartyServices | Sort-Object DisplayName
-    }
+    # --- BLOQUE DE OPTIMIZACIÓN: CACHÉ INTELIGENTE ---
+    # Este bloque obtiene TODOS los servicios una vez y los clasifica.
+    # Devuelve un objeto con dos propiedades: 
+    #   .List (Solo los de terceros para el menú)
+    #   .Hash (Diccionario rápido para consultar estado)
+    $RefreshServiceCache = {
+        Write-Host "Escaneando y clasificando servicios..." -ForegroundColor Gray
+        $hash = @{}
+        $thirdPartyList = @()
 
-    # Funcion para actualizar el backup con servicios nuevos
+        try {
+            # UNA SOLA LLAMADA WMI PARA TODO
+            $allServices = Get-CimInstance -ClassName Win32_Service -ErrorAction Stop
+            
+            foreach ($svc in $allServices) {
+                # 1. Guardar en Hash para acceso rápido por nombre (O(1))
+                $hash[$svc.Name] = $svc
+
+                # 2. Filtrar si es de terceros (Lógica optimizada)
+                if ($svc.PathName -and $svc.PathName -notmatch '\\Windows\\' -and $svc.PathName -notlike '*svchost.exe*') {
+                    $thirdPartyList += $svc
+                }
+            }
+        } catch {
+            Write-Error "Error critico al obtener servicios: $($_.Exception.Message)"
+        }
+        
+        # Ordenamos la lista para presentación
+        $thirdPartyList = $thirdPartyList | Sort-Object DisplayName
+        
+        return @{ Hash = $hash; List = $thirdPartyList }
+    }
+    # ---------------------------------------------------
+
+    # --- FUNCIÓN AUXILIAR: ACTUALIZAR BACKUP (OPTIMIZADA) ---
+    # Ya no hace llamadas WMI, recibe la lista ya procesada
     function Update-ServicesBackup {
         param(
             [hashtable]$CurrentStates,
+            [array]$LiveServices, # <-- Recibe la lista desde la caché
             [string]$BackupPath
         )
         
         $updated = $false
-        $currentServices = Get-ThirdPartyServices
         
-        foreach ($service in $currentServices) {
+        foreach ($service in $LiveServices) {
             if (-not $CurrentStates.ContainsKey($service.Name)) {
-                # Servicio nuevo detectado, agregar al backup
                 $CurrentStates[$service.Name] = @{
                     StartupType = $service.StartMode
                     DisplayName = $service.DisplayName
                     Description = $service.Description
                     AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 }
-                Write-Host "Servicio nuevo agregado al backup: $($service.DisplayName)" -ForegroundColor Yellow
+                Write-Host "   [NUEVO] Agregado al backup: $($service.DisplayName)" -ForegroundColor Yellow
                 $updated = $true
             }
         }
@@ -570,91 +617,53 @@ function Manage-ThirdPartyServices {
         if ($updated) {
             try {
                 $CurrentStates | ConvertTo-Json -Depth 3 | Set-Content -Path $BackupPath -Encoding UTF8 -ErrorAction Stop
-                Write-Host "Backup actualizado con servicios nuevos." -ForegroundColor Green
+                Write-Host "   [INFO] Backup actualizado." -ForegroundColor Green
             } catch {
-                Write-Host "Error al actualizar el backup: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "   [ERROR] Al guardar backup: $($_.Exception.Message)" -ForegroundColor Red
             }
         }
-        
         return $CurrentStates
     }
 
-    # Cargar o crear el backup de estados originales
-    $originalStates = @{} # Inicializar como hashtable vacia por defecto
+    # 1. Carga Inicial de Datos (Snapshot)
+    $cacheData = & $RefreshServiceCache
+    $originalStates = @{}
 
+    # 2. Carga/Creación del JSON de Backup
     if (Test-Path $backupFile) {
-        Write-Host "Cargando estados originales desde el archivo de respaldo..." -ForegroundColor Gray
+        Write-Host "Cargando historial de servicios..." -ForegroundColor Gray
         try {
             $fileContent = Get-Content -Path $backupFile -Raw -ErrorAction Stop
-            
-            if ([string]::IsNullOrWhiteSpace($fileContent)) {
-                throw [System.IO.InvalidDataException]::new("El archivo de respaldo esta vacio o no contiene datos validos.")
-            }
-            
-            $jsonObject = $fileContent | ConvertFrom-Json -ErrorAction Stop
-            
-            # Convertir el objeto PSCustomObject a Hashtable manualmente
-            foreach ($property in $jsonObject.PSObject.Properties) {
-                $originalStates[$property.Name] = @{
-                    StartupType = $property.Value.StartupType
-                    DisplayName = $property.Value.DisplayName
-                    Description = $property.Value.Description
-                    AddedDate = $property.Value.AddedDate
+            if (-not [string]::IsNullOrWhiteSpace($fileContent)) {
+                $jsonObject = $fileContent | ConvertFrom-Json -ErrorAction Stop
+                foreach ($property in $jsonObject.PSObject.Properties) {
+                    $originalStates[$property.Name] = @{
+                        StartupType = $property.Value.StartupType
+                        DisplayName = $property.Value.DisplayName
+                        Description = $property.Value.Description
+                        AddedDate = $property.Value.AddedDate
+                    }
                 }
+                # Actualizamos backup usando la caché recién generada
+                $originalStates = Update-ServicesBackup -CurrentStates $originalStates -LiveServices $cacheData.List -BackupPath $backupFile
             }
-            
-            Write-Host "Respaldo cargado correctamente desde: $backupFile" -ForegroundColor Green
-            $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
-        }
-        catch [System.Text.Json.JsonException], [System.ArgumentException] {
-            Write-Error "El archivo de respaldo '$backupFile' parece estar corrupto (JSON no valido)."
-            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Archivo JSON corrupto. Error: $($_.Exception.Message)"
-            # (Aqui iria la logica para recrear el respaldo)
-        }
-        catch [System.IO.InvalidDataException] {
-            Write-Error "El archivo de respaldo '$backupFile' esta vacio."
-            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Archivo vacio. Error: $($_.Exception.Message)"
-            # (Aqui iria la logica para recrear el respaldo)
-        }
-        catch [System.IO.IOException] {
-            Write-Error "No se pudo leer el archivo de respaldo '$backupFile'. Verifique los permisos o si otro programa lo esta usando."
-            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Error de I/O. Error: $($_.Exception.Message)"
-            Read-Host "Presiona Enter para continuar sin usar el respaldo..."
-            # Se mantiene la hashtable vacia
-        }
-        catch {
-            Write-Error "Ocurrio un error inesperado al cargar el archivo de respaldo."
-            Write-Log -LogLevel ERROR -Message "Fallo al cargar el respaldo: Error inesperado. Error: $($_.Exception.Message)"
-            # (Aqui iria la logica para recrear el respaldo como fallback)
-        }
-    } 
-
-    # Si despues de todo, la tabla esta vacia, es porque no existia o fallo la carga. La creamos.
-    if ($originalStates.Keys.Count -eq 0) {
-        Write-Host "Creando respaldo de estados originales de servicios de terceros..." -ForegroundColor Gray
-        $services = Get-ThirdPartyServices
-        foreach ($service in $services) {
-            $originalStates[$service.Name] = @{
-                StartupType = $service.StartMode
-                DisplayName = $service.DisplayName
-                Description = $service.Description
-                AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-            }
-        }
-        try {
-            $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile -Encoding UTF8 -ErrorAction Stop
-            Write-Host "Respaldo guardado en: $backupFile" -ForegroundColor Green
         } catch {
-            Write-Error "Error al guardar el respaldo: $($_.Exception.Message)"
+            Write-Warning "El archivo de respaldo esta defectuoso o vacío. Se regenerara."
         }
     }
+    
+    # Si no hay estados (archivo nuevo o dañado), creamos desde cero
+    if ($originalStates.Keys.Count -eq 0) {
+        $originalStates = Update-ServicesBackup -CurrentStates @{} -LiveServices $cacheData.List -BackupPath $backupFile
+    }
 
-    # Obtener la lista actual de servicios para mostrar
-    $rawServices = Get-ThirdPartyServices
+    # Preparamos la lista de objetos visuales
     $displayItems = @()
-    foreach ($service in $rawServices) {
+    foreach ($service in $cacheData.List) {
         $displayItems += [PSCustomObject]@{
-            ServiceObject = $service
+            ServiceName = $service.Name # Guardamos solo el nombre para buscar en Hash después
+            DisplayName = $service.DisplayName
+            Description = $service.Description
             Selected = $false
             InBackup = $originalStates.ContainsKey($service.Name)
         }
@@ -675,9 +684,12 @@ function Manage-ThirdPartyServices {
         $itemIndex = 0
         foreach ($item in $displayItems) {
             $itemIndex++
-            $service = $item.ServiceObject
             $checkbox = if ($item.Selected) { "[X]" } else { "[ ]" }
-            $liveService = Get-CimInstance -ClassName Win32_Service -Filter "Name='$($service.Name)'" -ErrorAction SilentlyContinue
+            
+            # --- BÚSQUEDA OPTIMIZADA (O(1)) ---
+            # Usamos el Hash en lugar de llamar a WMI
+            $liveService = $cacheData.Hash[$item.ServiceName]
+            # ----------------------------------
             
             $statusText = "[No Encontrado]"
             $statusColor = "Gray"
@@ -694,24 +706,23 @@ function Manage-ThirdPartyServices {
                 }
             }
 
-            # Indicador de servicio en backup (usando texto en lugar de simbolos Unicode)
             $backupIndicator = if ($item.InBackup) { " [BACKUP] " } else { " [NO BK] " }
             $backupColor = if ($item.InBackup) { "Green" } else { "Red" }
             
             Write-Host ("   [{0,2}] {1} " -f $itemIndex, $checkbox) -NoNewline
             Write-Host ("{0,-26}" -f $statusText) -ForegroundColor $statusColor -NoNewline
             Write-Host "$backupIndicator" -NoNewline -ForegroundColor $backupColor
-            Write-Host $service.DisplayName -ForegroundColor White
+            Write-Host $item.DisplayName -ForegroundColor White
 
-            if (-not [string]::IsNullOrWhiteSpace($service.Description)) {
-                $wrappedDescription = Format-WrappedText -Text $service.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
+            if (-not [string]::IsNullOrWhiteSpace($item.Description)) {
+                $wrappedDescription = Format-WrappedText -Text $item.Description -Indent $descriptionIndent -MaxWidth $consoleWidth
                 $wrappedDescription | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
             }
         }
-		
-	    $selectedCount = $displayItems.Where({$_.Selected}).Count
+        
+        $selectedCount = $displayItems.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
-			Write-Host ""
+            Write-Host ""
             Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
 
@@ -720,7 +731,7 @@ function Manage-ThirdPartyServices {
         Write-Host "   [H] Habilitar Seleccionados       [D] Deshabilitar Seleccionados"
         Write-Host "   [R] Restaurar Seleccionados a su estado original"
         Write-Host "   [T] Marcar Todos                  [N] Desmarcar Todos"
-        Write-Host "   [U] Actualizar backup con servicios nuevos"
+        Write-Host "   [U] Forzar actualización del backup (Refresh)"
         Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
@@ -735,15 +746,23 @@ function Manage-ThirdPartyServices {
             elseif ($choice.ToUpper() -eq 'T') { $displayItems.ForEach({$_.Selected = $true}) }
             elseif ($choice.ToUpper() -eq 'N') { $displayItems.ForEach({$_.Selected = $false}) }
             elseif ($choice.ToUpper() -eq 'U') {
-                # Actualizar backup manualmente
-                $originalStates = Update-ServicesBackup -CurrentStates $originalStates -BackupPath $backupFile
+                # Refresh forzado: Recargamos la caché y actualizamos el backup
+                $cacheData = & $RefreshServiceCache
+                $originalStates = Update-ServicesBackup -CurrentStates $originalStates -LiveServices $cacheData.List -BackupPath $backupFile
                 
-                # Actualizar indicadores de backup en la lista
-                foreach ($item in $displayItems) {
-                    $item.InBackup = $originalStates.ContainsKey($item.ServiceObject.Name)
+                # Actualizamos la interfaz visual si hubo cambios en la lista
+                # (Nota: Reconstruimos displayItems por si aparecieron servicios nuevos)
+                $displayItems = @()
+                foreach ($service in $cacheData.List) {
+                    $displayItems += [PSCustomObject]@{
+                        ServiceName = $service.Name
+                        DisplayName = $service.DisplayName
+                        Description = $service.Description
+                        Selected = $false
+                        InBackup = $originalStates.ContainsKey($service.Name)
+                    }
                 }
-                
-                Read-Host "Presiona Enter para continuar..."
+                Read-Host "Backup y lista actualizados. Presiona Enter..."
             }
             elseif ($choice.ToUpper() -in @('D', 'H', 'R')) {
                 $selectedItems = $displayItems | Where-Object { $_.Selected }
@@ -754,62 +773,55 @@ function Manage-ThirdPartyServices {
                 }
 
                 foreach ($itemAction in $selectedItems) {
-                    $selectedService = $itemAction.ServiceObject
+                    # Recuperamos el objeto real desde el Hash usando el nombre
+                    $selectedService = $cacheData.Hash[$itemAction.ServiceName]
+                    if (-not $selectedService) { Write-Warning "El servicio $($itemAction.ServiceName) ya no parece existir."; continue }
+
                     $actionDescription = ""
                     switch ($choice.ToUpper()) {
                         'D' { $actionDescription = "Deshabilitar" }
                         'H' { $actionDescription = "Habilitar" }
                         'R' { 
                             if (-not $itemAction.InBackup) {
-                                Write-Host "El servicio '$($selectedService.DisplayName)' no tiene un estado original guardado." -ForegroundColor Red
-                                $addToBackup = Read-Host "¿Deseas agregarlo al backup ahora? (S/N)"
-                                if ($addToBackup.ToUpper() -eq 'S') {
-                                    $originalStates[$selectedService.Name] = @{
-                                        StartupType = $selectedService.StartMode
-                                        DisplayName = $selectedService.DisplayName
-                                        Description = $selectedService.Description
-                                        AddedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                                    }
-                                    $originalStates | ConvertTo-Json -Depth 3 | Set-Content -Path $backupFile
-                                    $itemAction.InBackup = $true
-                                    Write-Host "Servicio agregado al backup." -ForegroundColor Green
-                                } else {
-                                    Write-Host "No se puede restaurar un servicio sin backup." -ForegroundColor Red
-                                    continue
-                                }
+                                Write-Host "El servicio '$($itemAction.DisplayName)' no tiene un estado original guardado." -ForegroundColor Red
+                                continue
                             }
-                            $actionDescription = "Restaurar a estado original ($($originalStates[$selectedService.Name].StartupType))" 
+                            $actionDescription = "Restaurar a estado original ($($originalStates[$itemAction.ServiceName].StartupType))" 
                         }
                     }
                     
-                    if ($PSCmdlet.ShouldProcess($selectedService.DisplayName, $actionDescription)) {
+                    if ($PSCmdlet.ShouldProcess($itemAction.DisplayName, $actionDescription)) {
                         $newStartupType = ''
                         if ($choice.ToUpper() -eq 'D') { $newStartupType = 'Disabled' }
                         if ($choice.ToUpper() -eq 'H') { $newStartupType = 'Manual' }
-                        if ($choice.ToUpper() -eq 'R') { $newStartupType = $originalStates[$selectedService.Name].StartupType }
+                        if ($choice.ToUpper() -eq 'R') { $newStartupType = $originalStates[$itemAction.ServiceName].StartupType }
 
-                        Set-Service -Name $selectedService.Name -StartupType $newStartupType -ErrorAction Stop
-                        
-                        $isRunningNow = (Get-Service -Name $selectedService.Name).Status -eq 'Running'
-                        if ($newStartupType -eq 'Disabled' -and $isRunningNow) {
-                            Stop-Service -Name $selectedService.Name -Force -ErrorAction SilentlyContinue
-                        } elseif ($newStartupType -ne 'Disabled' -and -not $isRunningNow) {
-                            Start-Service -Name $selectedService.Name -ErrorAction SilentlyContinue
+                        try {
+                            Set-Service -Name $itemAction.ServiceName -StartupType $newStartupType -ErrorAction Stop
+                            
+                            $svcNow = Get-Service -Name $itemAction.ServiceName
+                            if ($newStartupType -eq 'Disabled' -and $svcNow.Status -eq 'Running') {
+                                Stop-Service -Name $itemAction.ServiceName -Force -ErrorAction SilentlyContinue
+                            } elseif ($newStartupType -ne 'Disabled' -and $svcNow.Status -ne 'Running') {
+                                Start-Service -Name $itemAction.ServiceName -ErrorAction SilentlyContinue
+                            }
+                            Write-Log -LogLevel ACTION -Message "Servicio '$($itemAction.DisplayName)' modificado: $actionDescription."
+                        } catch {
+                            Write-Error "Fallo al modificar '$($itemAction.DisplayName)': $($_.Exception.Message)"
                         }
-                        Write-Log -LogLevel ACTION -Message "Servicio de Aplicacion '$($selectedService.DisplayName)' modificado via accion '$actionDescription'."
                     }
                 }
 
-                Write-Host "`n[OK] Accion completada para los servicios seleccionados." -ForegroundColor Green
+                Write-Host "`n[OK] Accion completada." -ForegroundColor Green
+                
+                # Refrescamos solo la caché de estado para que el menú muestre los cambios
+                $cacheData = & $RefreshServiceCache
+                
                 $displayItems.ForEach({$_.Selected = $false})
                 Read-Host "Presiona Enter para continuar..."
             }
-            elseif ($choice.ToUpper() -ne 'V') {
-                Write-Warning "Opcion no valida."
-                Start-Sleep -Seconds 2
-            }
         } catch {
-            Write-Error "Error: $($_.Exception.Message)"
+            Write-Error "Error inesperado: $($_.Exception.Message)"
             Write-Log -LogLevel ERROR -Message "Error en Manage-ThirdPartyServices: $($_.Exception.Message)"
             Read-Host "Presiona Enter para continuar..."
         }
@@ -886,16 +898,22 @@ function Remove-FilesSafely {
 
         foreach ($file in $files) {
             try {
-                # Intentar eliminar con permisos elevados
+                # Intentar eliminar con permisos elevados usando SID universal
                 $acl = Get-Acl -Path $file.FullName -ErrorAction SilentlyContinue
-                if ($acl) {
-                    $acl.SetOwner([System.Security.Principal.NTAccount]"Administrators")
+                    if ($acl) {
+                    # S-1-5-32-544 es el SID universal para el grupo de Administradores
+                    $adminSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+        
+                    $acl.SetOwner($adminSid)
                     $acl.SetAccessRuleProtection($true, $false)
-                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")
+        
+                    # Regla usando el SID en lugar del nombre "Administrators"
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($adminSid, "FullControl", "Allow")
                     $acl.AddAccessRule($rule)
+        
                     Set-Acl -Path $file.FullName -AclObject $acl -ErrorAction SilentlyContinue
                 }
-                
+    
                 Remove-Item -Path $file.FullName -Force -ErrorAction Stop
                 $deletedCount++
             }
@@ -970,7 +988,16 @@ function Remove-FilesSafely {
         return [long]$liberatedSpace
     }
     catch {
-        Write-Warning "Error al limpiar '$Path': $($_.Exception.Message)"
+        $errorMsg = $_.Exception.Message
+        Write-Warning "Error al limpiar '$Path': $errorMsg"
+
+        try {
+            Write-Log -LogLevel ERROR -Message "LIMPIEZA: Fallo crítico al limpiar '$Path'. Motivo: $errorMsg"
+        } catch {
+            # Fallback por si Write-Log no está disponible en este ámbito
+            Write-Host "   [LOG ERROR] No se pudo escribir en el log." -ForegroundColor Red
+        }
+
         return 0L
     }
 }
@@ -1090,14 +1117,14 @@ function Invoke-AdvancedSystemClean {
                 Write-Host "[+] Verificando y limpiando Windows.old..." -ForegroundColor Yellow
                 
                 try {
-                    # Tomar posesion de la carpeta
-                    $takeOwnOutput = & takeown.exe /F $winOldPath /R /D Y 2>&1
-                    if ($LASTEXITCODE -ne 0) {
-                        Write-Warning "No se pudo tomar posesion de Windows.old: $($takeOwnOutput | Out-String)"
-                    }
-                    
-                    # Otorgar permisos completos
-                    $icaclsOutput = & icacls.exe $winOldPath /grant Administrators:F /T /C /Q 2>&1
+                    # Tomar posesión de la carpeta (takeown suele funcionar bien porque usa el usuario actual)
+                    $takeOwnOutput = & takeown.exe /F $winOldPath /R /D S 2>&1 # Cambiado /D Y por /D S (Sí/Yes depende del idioma, S suele ser seguro en ES, pero mejor omitir si falla)
+                    # MEJOR OPCIÓN: Omitir /D si no estamos seguros del idioma o usar un script recursivo de PowerShell.
+                    # Pero para icacls, el uso de SID es la clave:
+        
+                    # Otorgar permisos completos usando el SID universal (*S-1-5-32-544)
+                    $icaclsOutput = & icacls.exe $winOldPath /grant *S-1-5-32-544:F /T /C /Q 2>&1
+        
                     if ($LASTEXITCODE -ne 0) {
                         Write-Warning "No se pudieron establecer permisos en Windows.old: $($icaclsOutput | Out-String)"
                     }
@@ -1134,13 +1161,37 @@ function Invoke-AdvancedSystemClean {
     Read-Host "`nPresiona Enter para continuar..."
 }
 
-# --- FUNCIoN MEJORADA: Menu Principal de Limpieza ---
+# --- FUNCIÓN MEJORADA Y BLINDADA: Menú Principal de Limpieza ---
 function Show-CleaningMenu {
-    Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Limpieza."
+    Write-Log -LogLevel INFO -Message "Usuario entró al Módulo de Limpieza."
     
+    # --- FUNCIÓN INTERNA PARA SUMAR DE FORMA SEGURA ---
+    # Esta pequeña función se encarga de limpiar la "basura" que devuelve PowerShell
+    # y extraer solo el número para evitar el error op_Addition.
+    function Add-Safe {
+        param($CurrentTotal, $NewValue)
+        try {
+            $valToAd = 0
+            # Si es un array (lista), tomamos el último elemento (usualmente el return)
+            if ($NewValue -is [array]) {
+                $valToAd = $NewValue[-1]
+            } else {
+                $valToAd = $NewValue
+            }
+            
+            # Intentamos convertir a número entero largo
+            if ($valToAd -match '^\d+$') {
+                return $CurrentTotal + [long]$valToAd
+            }
+            return $CurrentTotal
+        } catch {
+            return $CurrentTotal
+        }
+    }
+
     $cleanChoice = ''
     do {
-        # --- Precalcular tamaños antes de mostrar el menu ---
+        # --- Precalcular tamaños antes de mostrar el menú ---
         Write-Host "Refrescando datos de espacio, por favor espera..." -ForegroundColor Gray
         
         $tempPaths = @(
@@ -1159,31 +1210,35 @@ function Show-CleaningMenu {
             "$env:windir\SoftwareDistribution\DeliveryOptimization"
         )
         
-        $sizeTempBytes = Get-CleanableSize -Paths $tempPaths
-        $sizeCachesBytes = Get-CleanableSize -Paths $cachePaths
+        # Calcular tamaños iniciales (protegidos contra errores)
+        $sizeTempBytes = 0
+        try { $sizeTempBytes = Get-CleanableSize -Paths $tempPaths } catch {}
+        
+        $sizeCachesBytes = 0
+        try { $sizeCachesBytes = Get-CleanableSize -Paths $cachePaths } catch {}
         
         # --- Calcular tamaño de la Papelera de Reciclaje ---
         $recycleBinSize = 0
         $recycleBinItemCount = 0
         try {
             $shell = New-Object -ComObject Shell.Application
-            $recycleBinItems = $shell.NameSpace(0x0a).Items()  # 0x0a es el codigo para Recycle Bin
+            $recycleBinItems = $shell.NameSpace(0x0a).Items()
             $recycleBinItemCount = $recycleBinItems.Count
             foreach ($item in $recycleBinItems) {
-                $recycleBinSize += $item.Size
+                $recycleBinSize += [long]$item.Size
             }
         } catch {
-            # Si falla el COM, los valores se mantienen en 0
+            # Si falla el COM, ignorar
         }
         
-        # Convertir a MB para visualizacion
+        # Convertir a MB para visualización
         $sizeTempMB = [math]::Round($sizeTempBytes / 1MB, 2)
         $sizeCachesMB = [math]::Round($sizeCachesBytes / 1MB, 2)
         $sizeBinMB = [math]::Round($recycleBinSize / 1MB, 2)
         
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "               Modulo de Limpieza Profunda             " -ForegroundColor Cyan
+        Write-Host "               Módulo de Limpieza Profunda             " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "Selecciona el tipo de limpieza que deseas ejecutar."
         Write-Host ""
@@ -1204,20 +1259,20 @@ function Show-CleaningMenu {
         Write-Host ""
         Write-Host "   [T] TODO (Ejecutar todas las limpiezas rapidas [1-3])"
         Write-Host ""
-        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host "   [V] Volver al menú anterior" -ForegroundColor Red
         Write-Host ""
         
         $cleanChoice = Read-Host "`nSelecciona una opcion"
-        Write-Log -LogLevel INFO -Message "Usuario selecciono la opcion de limpieza '$($cleanChoice.ToUpper())'"
+        Write-Log -LogLevel INFO -Message "Usuario seleccionó la opcion de limpieza '$($cleanChoice.ToUpper())'"
         
-        $totalFreed = 0  # Asegurar que siempre es un numero
+        # Inicializar contador seguro
+        [long]$totalFreed = 0
 
         switch ($cleanChoice.ToUpper()) {
            '1' {
-                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Estandar (Temporales y Dumps)."
+                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Estándar (Temporales y Dumps)."
                 Write-Host "`n[+] Limpiando archivos temporales y dumps de errores..." -ForegroundColor Yellow
         
-                # Cerrar procesos comunes que bloquean archivos temporales
                 $processesToStop = @("explorer", "OneDrive", "Teams", "chrome", "firefox", "msedge")
                 foreach ($proc in $processesToStop) {
                     Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
@@ -1225,24 +1280,11 @@ function Show-CleaningMenu {
         
                 foreach ($path in $tempPaths) {
                     if (Test-Path $path) {
-                        $liberated = Remove-FilesSafely -Path $path
-                        # Asegurar que $liberated es un numero antes de sumar
-                        if ($liberated -is [long]) {
-                        $totalFreed += $liberated
-                    } else {
-                        # Si por alguna razon no es long, intentamos convertirlo
-                        try {
-                            $totalFreed += [long]$liberated
-                        }
-                        catch {
-                            # Si falla la conversion, ignoramos este valor
-                            Write-Warning "No se pudo convertir el espacio liberado en '$path' a un valor numerico."
-                            }
-                        }
+                        $rawResult = Remove-FilesSafely -Path $path
+                        $totalFreed = Add-Safe -CurrentTotal $totalFreed -NewValue $rawResult
                     }
                 }
         
-                # Reiniciar explorer
                 Start-Process "explorer.exe"
             }
             '2' {
@@ -1251,25 +1293,21 @@ function Show-CleaningMenu {
                 
                 foreach ($path in $cachePaths) {
                     if (Test-Path $path) {
-                        $liberated = Remove-FilesSafely -Path $path
-                        $totalFreed += $liberated
+                        $rawResult = Remove-FilesSafely -Path $path
+                        $totalFreed = Add-Safe -CurrentTotal $totalFreed -NewValue $rawResult
                     }
                 }
                 
-                # Limpiar cache de miniaturas
-                Write-Host "   - Limpiando cache de miniaturas..." -ForegroundColor Gray
+                Write-Host "   - Limpiando caché de miniaturas..." -ForegroundColor Gray
                 Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
                 try {
                     $thumbPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
                     if (Test-Path "$thumbPath\thumbcache_*.db") {
                         Remove-Item -Path "$thumbPath\thumbcache_*.db" -Force -ErrorAction Stop
-                        Write-Host "     [OK] Cache de miniaturas limpiada." -ForegroundColor Green
-                    } else {
-                        Write-Host "     [INFO] No se encontraron archivos de cache de miniaturas." -ForegroundColor Gray
+                        Write-Host "     [OK] Caché de miniaturas limpiada." -ForegroundColor Green
                     }
-                } catch {
-                    Write-Warning "No se pudo limpiar la cache de miniaturas: $($_.Exception.Message)"
-                } finally {
+                } catch {} 
+                finally {
                     Start-Process "explorer"
                 }
             }
@@ -1278,71 +1316,67 @@ function Show-CleaningMenu {
                     Write-Host "`n[+] Vaciando la Papelera de Reciclaje..." -ForegroundColor Yellow
                     try {
                         Clear-RecycleBin -Force -Confirm:$false -ErrorAction Stop
-                        $totalFreed += $recycleBinSize 
+                        $totalFreed += [long]$recycleBinSize
                         Write-Host "[OK] Papelera de Reciclaje vaciada correctamente." -ForegroundColor Green
                         Write-Log -LogLevel ACTION -Message "Papelera de Reciclaje vaciada exitosamente."
                     } catch {
-                        Write-Warning "No se pudo vaciar la Papelera de Reciclaje: $($_.Exception.Message)"
-                        Write-Log -LogLevel ERROR -Message "Error al vaciar Papelera de Reciclaje: $($_.Exception.Message)"
+                        Write-Warning "No se pudo vaciar la Papelera de Reciclaje."
                     }
                 } else {
-                    Write-Host "[OK] La Papelera de Reciclaje ya estaba vacia." -ForegroundColor Green
+                    Write-Host "[OK] La Papelera de Reciclaje ya estaba vacía." -ForegroundColor Green
                 }
             }
             '4' { 
                 Invoke-AdvancedSystemClean
             }
             'T' {
-                # Ejecutar todas las opciones 1-3
-                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Completa (Opcion TODO)."
-                
+                # Opción TODO: Usa la función Add-Safe para evitar errores de array
+                Write-Log -LogLevel ACTION -Message "Iniciando Limpieza Completa (Opción TODO)."
                 Write-Host "`n[+] Ejecutando limpieza completa..." -ForegroundColor Yellow
                 
-                # Detener procesos que bloquean archivos temporales
-                $processesToStop = @("explorer", "OneDrive", "Teams")
+                $processesToStop = @("explorer", "OneDrive", "Teams", "chrome", "firefox", "msedge")
                 foreach ($proc in $processesToStop) {
                     Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
                 }
                 
-                # Limpieza de archivos temporales
+                # 1. Temporales
                 foreach ($path in $tempPaths) {
                     if (Test-Path $path) {
-                        $liberated = Remove-FilesSafely -Path $path
-                        $totalFreed += $liberated
+                        $rawResult = Remove-FilesSafely -Path $path
+                        $totalFreed = Add-Safe -CurrentTotal $totalFreed -NewValue $rawResult
                     }
                 }
                 
-                # Limpieza de caches
+                # 2. Cachés
                 foreach ($path in $cachePaths) {
                     if (Test-Path $path) {
-                        $liberated = Remove-FilesSafely -Path $path
-                        $totalFreed += $liberated
+                        $rawResult = Remove-FilesSafely -Path $path
+                        $totalFreed = Add-Safe -CurrentTotal $totalFreed -NewValue $rawResult
                     }
                 }
                 
-                # Limpieza de cache de miniaturas
+                # 3. Miniaturas
                 $thumbPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
                 if (Test-Path "$thumbPath\thumbcache_*.db") {
                     Remove-Item -Path "$thumbPath\thumbcache_*.db" -Force -ErrorAction SilentlyContinue
                 }
                 
-                # Vaciar Papelera de Reciclaje
+                # 4. Papelera
                 if ($recycleBinItemCount -gt 0) {
                     Clear-RecycleBin -Force -Confirm:$false -ErrorAction SilentlyContinue
-                    $totalFreed += $recycleBinSize 
+                    $totalFreed += [long]$recycleBinSize
                 }
                 
-                # Reiniciar explorer
                 Start-Process "explorer.exe"
             }
             'V' { continue }
-            default { Write-Warning "Opcion no valida." }
+            default { Write-Warning "Opcion no válida." }
         }
         
         # Mostrar resumen de espacio liberado
         if ($totalFreed -gt 0 -and $cleanChoice.ToUpper() -ne '4') {
             $freedMB = [math]::Round($totalFreed / 1MB, 2)
-            Write-Host "`n[eXITO] ¡Se han liberado aproximadamente $freedMB MB!" -ForegroundColor Magenta
+            Write-Host "`n[EXITO] ¡Se han liberado aproximadamente $freedMB MB!" -ForegroundColor Magenta
             Write-Log -LogLevel ACTION -Message "Limpieza completada. Espacio liberado: $freedMB MB."
         }
         
@@ -1661,75 +1695,84 @@ function Manage-StartupApps {
 
     Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Programas de Inicio."
     
-    # --- Valores binarios exactos que usa el Administrador de Tareas ---
+    # --- Valores binarios exactos para Habilitar/Deshabilitar en Registro ---
     $script:EnabledValue  = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
     $script:DisabledValue = [byte[]](0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
 
-    # --- Escribe el estado (Habilitado/Deshabilitado) de la misma forma que el Administrador de Tareas ---
+    # --- HELPER: Escribe el estado en el registro ---
     function Set-StartupApprovedStatus {
-        param(
-            [string]$ItemName,
-            [string]$BaseKeyPath,
-            [string]$ItemType, # 'Run' o 'StartupFolder'
-            [ValidateSet('Enable', 'Disable')][string]$Action
-        )
+        param($ItemName, $BaseKeyPath, $ItemType, $Action)
         try {
             $approvedKeyPath = Join-Path -Path $BaseKeyPath -ChildPath "Explorer\StartupApproved\$ItemType"
-            if (-not (Test-Path $approvedKeyPath)) {
-                New-Item -Path $approvedKeyPath -Force | Out-Null
-            }
-            
+            if (-not (Test-Path $approvedKeyPath)) { New-Item -Path $approvedKeyPath -Force | Out-Null }
             $valueToSet = if ($Action -eq 'Enable') { $script:EnabledValue } else { $script:DisabledValue }
-            
             Set-ItemProperty -Path $approvedKeyPath -Name $ItemName -Value $valueToSet -Type Binary -Force
             return $true
         } catch {
-            Write-Warning "No se pudo establecer el estado para '$ItemName'. Error: $($_.Exception.Message)"
+            Write-Warning "Error al establecer estado para '$ItemName': $($_.Exception.Message)"
             return $false
         }
     }
 
-    # Detecta el estado real de un programa de inicio. Esta funcion es de la version anterior y es correcta.
-    function Get-StartupApprovedStatus {
-        param(
-            [string]$ItemName,
-            [string]$BaseKeyPath,
-            [string]$ItemType
-        )
-        $approvedKeyPath = Join-Path -Path $BaseKeyPath -ChildPath "Explorer\StartupApproved\$ItemType"
-        if (-not (Test-Path $approvedKeyPath)) { return 'Enabled' }
-        $property = Get-ItemProperty -Path $approvedKeyPath -Name $ItemName -ErrorAction SilentlyContinue
-        if ($null -eq $property) { return 'Enabled' }
-        $binaryData = $property.$ItemName
-        if ($null -ne $binaryData -and $binaryData.Length -gt 0) {
-            if ($binaryData[0] % 2 -ne 0) { return 'Disabled' }
-        }
-        return 'Enabled'
-    }
-
-    # MODIFICADO: Se asegura de que el objeto devuelto contenga BaseKey y ItemType para las acciones.
-    function Get-AllStartupItems {
+    # --- BLOQUE DE OPTIMIZACIÓN: CACHÉ INTELIGENTE ---
+    $RefreshStartupCache = {
+        Write-Host "Escaneando programas de inicio..." -ForegroundColor Gray
         $allItems = [System.Collections.Generic.List[psobject]]::new()
         
-        # 1. Elementos de Registro
+        # 1. PRE-CARGA DE ESTADOS DEL REGISTRO (Optimización O(1))
+        # Leemos las claves de "StartupApproved" UNA sola vez y las guardamos en memoria.
+        $statusCache = @{}
+        $approvalPaths = @(
+            @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; Type = "Run" },
+            @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"; Type = "StartupFolder" },
+            @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; Type = "Run" },
+            @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"; Type = "StartupFolder" }
+        )
+
+        foreach ($loc in $approvalPaths) {
+            if (Test-Path $loc.Path) {
+                $props = Get-ItemProperty -Path $loc.Path -ErrorAction SilentlyContinue
+                foreach ($p in $props.PSObject.Properties) {
+                    if ($p.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider', '(Default)')) {
+                        # Clave única para el cache: "Run|NombreApp"
+                        $key = "$($loc.Type)|$($p.Name)"
+                        $statusCache[$key] = $p.Value
+                    }
+                }
+            }
+        }
+
+        # Helper interno para consultar el cache local
+        $CheckCache = {
+            param($Name, $Type)
+            $key = "$Type|$Name"
+            if ($statusCache.ContainsKey($key)) {
+                $bytes = $statusCache[$key]
+                if ($null -ne $bytes -and $bytes.Length -gt 0 -and ($bytes[0] % 2 -ne 0)) { return 'Disabled' }
+            }
+            return 'Enabled' # Por defecto habilitado si no existe entrada
+        }
+
+        # 2. ESCANEO DE REGISTRO (Items de Inicio)
         $regLocations = @(
             @{ Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; ItemType = "Run" },
             @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; ItemType = "Run" },
             @{ Path = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"; BaseKey = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion"; ItemType = "Run" }
         )
+
         foreach ($location in $regLocations) {
             if (Test-Path $location.Path) {
-                Get-ItemProperty $location.Path | ForEach-Object {
-                    $itemProperties = $_
-                    $itemProperties.PSObject.Properties | Where-Object { $_.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider', '(Default)') } | ForEach-Object {
+                $items = Get-ItemProperty $location.Path -ErrorAction SilentlyContinue
+                foreach ($prop in $items.PSObject.Properties) {
+                    if ($prop.Name -notin @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider', '(Default)')) {
                         $allItems.Add([PSCustomObject]@{
-                            Name      = $_.Name
+                            Name      = $prop.Name
                             Type      = 'Registry'
-                            Status    = Get-StartupApprovedStatus -ItemName $_.Name -BaseKeyPath $location.BaseKey -ItemType $location.ItemType
-                            Command   = $_.Value
+                            Status    = & $CheckCache -Name $prop.Name -Type $location.ItemType
+                            Command   = $prop.Value
                             Path      = $location.Path
-                            BaseKey   = $location.BaseKey # Necesario para la accion
-                            ItemType  = $location.ItemType  # Necesario para la accion
+                            BaseKey   = $location.BaseKey
+                            ItemType  = $location.ItemType
                             Selected  = $false
                         })
                     }
@@ -1737,7 +1780,7 @@ function Manage-StartupApps {
             }
         }
 
-        # 2. Elementos de Carpetas de Inicio
+        # 3. ESCANEO DE CARPETAS
         $folderLocations = @(
             @{ Path = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion"; ItemType = "StartupFolder" },
             @{ Path = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; BaseKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"; ItemType = "StartupFolder" }
@@ -1748,18 +1791,19 @@ function Manage-StartupApps {
                     $allItems.Add([PSCustomObject]@{
                         Name      = $_.Name
                         Type      = 'Folder'
-                        Status    = Get-StartupApprovedStatus -ItemName $_.Name -BaseKeyPath $location.BaseKey -ItemType $location.ItemType
+                        Status    = & $CheckCache -Name $_.Name -Type $location.ItemType
                         Command   = $_.FullName
                         Path      = $_.FullName
-                        BaseKey   = $location.BaseKey # Necesario para la accion
-                        ItemType  = $location.ItemType  # Necesario para la accion
+                        BaseKey   = $location.BaseKey
+                        ItemType  = $location.ItemType
                         Selected  = $false
                     })
                 }
             }
         }
         
-        # 3. Tareas Programadas
+        # 4. TAREAS PROGRAMADAS (Filtrado Optimizado)
+        # Obtenemos SOLO las que tienen triggers de Logon para reducir ruido, si es posible, o filtramos post-query.
         Get-ScheduledTask | Where-Object { ($_.Triggers.TriggerType -contains 'Logon') -and ($_.TaskPath -notlike "\Microsoft\*") } | ForEach-Object {
             $action = ($_.Actions | Select-Object -First 1).Execute
             $arguments = ($_.Actions | Select-Object -First 1).Arguments
@@ -1769,41 +1813,45 @@ function Manage-StartupApps {
                 Status   = if ($_.State -eq 'Disabled') { 'Disabled' } else { 'Enabled' }
                 Command  = "$action $arguments"
                 Path     = $_.TaskPath
-                BaseKey  = '' # No aplica
-                ItemType = '' # No aplica
+                BaseKey  = '' 
+                ItemType = ''
                 Selected = $false
             })
         }
         
         return $allItems | Sort-Object @{Expression={if ($_.Status -eq 'Enabled') {0} else {1}}}, Name
     }
-    #endregion
+    # ---------------------------------------------------
 
-    # --- Bucle Principal de la Interfaz ---
-    $startupItems = Get-AllStartupItems
+    # Carga Inicial
+    $startupItems = & $RefreshStartupCache
     $choice = ''
 
     while ($choice -ne 'V') {
         Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "     Gestion de Programas de Inicio (Modo Nativo)      " -ForegroundColor Cyan
+        Write-Host "           Gestion de Programas de Inicio              " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "Escribe el numero para marcar/desmarcar un programa."
         Write-Host ""
         
+        # Bucle de visualización (Ahora es rápido porque $startupItems ya está en memoria)
         for ($i = 0; $i -lt $startupItems.Count; $i++) {
             $item = $startupItems[$i]
             $statusMarker = if ($item.Selected) { "[X]" } else { "[ ]" }
             $statusColor = if ($item.Status -eq 'Enabled') { 'Green' } else { 'Red' }
+            
+            # Recortamos el nombre si es muy largo para que no rompa la tabla visual
+            $displayName = if ($item.Name.Length -gt 45) { $item.Name.Substring(0, 42) + "..." } else { $item.Name }
 
             Write-Host ("   [{0,2}] {1} " -f ($i + 1), $statusMarker) -NoNewline
-            Write-Host ("{0,-50}" -f $item.Name) -NoNewline
+            Write-Host ("{0,-50}" -f $displayName) -NoNewline
             Write-Host ("[{0,-8}]" -f $item.Status) -ForegroundColor $statusColor
         }
-		
-	    $selectedCount = $startupItems.Where({$_.Selected}).Count
+        
+        $selectedCount = $startupItems.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
-			Write-Host ""
+            Write-Host ""
             Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
 
@@ -1811,7 +1859,7 @@ function Manage-StartupApps {
         Write-Host "   [Numero] Marcar/Desmarcar        [D] Deshabilitar Seleccionados"
         Write-Host "   [H] Habilitar Seleccionados      [T] Seleccionar Todos"
         Write-Host "   [R] Refrescar Lista              [N] Deseleccionar Todos"
-		Write-Host ""
+        Write-Host ""
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         $choice = (Read-Host "`nSelecciona una opcion").ToUpper()
@@ -1822,30 +1870,27 @@ function Manage-StartupApps {
         }
         elseif ($choice -eq 'T') { $startupItems.ForEach({$_.Selected = $true}) }
         elseif ($choice -eq 'N') { $startupItems.ForEach({$_.Selected = $false}) }
-        elseif ($choice -eq 'R') { $startupItems = Get-AllStartupItems }
+        elseif ($choice -eq 'R') { $startupItems = & $RefreshStartupCache }
         elseif ($choice -eq 'D' -or $choice -eq 'H') {
             $selectedItems = $startupItems | Where-Object { $_.Selected }
             if ($selectedItems.Count -eq 0) {
                 Write-Host "`n[AVISO] No se selecciono ningun programa." -ForegroundColor Yellow
-                Read-Host "Presiona Enter para continuar..."
+                Start-Sleep -Seconds 1
                 continue
             }
 
             foreach ($item in $selectedItems) {
                 $action = if ($choice -eq 'D') { "Disable" } else { "Enable" }
-                if (-not($PSCmdlet.ShouldProcess($item.Name, $action))) {
-                    continue
-                }				
+                if (-not($PSCmdlet.ShouldProcess($item.Name, $action))) { continue }               
                 
                 try {
                     Write-Log -LogLevel ACTION -Message "INICIO: Se aplico la accion '$action' al programa '$($item.Name)'."
-                    # --- LoGICA DE ACCIoN 100% NATIVA ---
                     switch ($item.Type) {
                         'Registry' {
-                            Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action -ErrorAction Stop
+                            Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action
                         }
                         'Folder' {
-                            Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action -ErrorAction Stop
+                            Set-StartupApprovedStatus -ItemName $item.Name -BaseKeyPath $item.BaseKey -ItemType $item.ItemType -Action $action
                         }
                         'Task' {
                              if ($action -eq 'Disable') {
@@ -1855,103 +1900,153 @@ function Manage-StartupApps {
                             }
                         }
                     }
+                    # Actualizamos el estado en memoria inmediatamente para evitar re-escanear
+                    $item.Status = if ($action -eq 'Disable') { 'Disabled' } else { 'Enabled' }
                 }
                 catch {
                     Write-Log -LogLevel ERROR -Message "INICIO: Fallo al aplicar '$action' a '$($item.Name)'. Motivo: $($_.Exception.Message)"
                 }
             }
-			Write-Host "`n[OK] Se modificaron $($selectedItems.Count) programas." -ForegroundColor Green
+            
+            Write-Host "`n[OK] Accion completada." -ForegroundColor Green
             $startupItems.ForEach({$_.Selected = $false})
-            Write-Host "`n[OK] Accion completada. Refrescando lista..." -ForegroundColor Green
-            Start-Sleep -Seconds 2
-            $startupItems = Get-AllStartupItems
+            $startupItems = $startupItems | Sort-Object @{Expression={if ($_.Status -eq 'Enabled') {0} else {1}}}, Name
+            Read-Host "Presiona Enter para continuar..."
+
         }
     }
 }
 
 function Repair-SystemFiles {
-    Write-Log -LogLevel INFO -Message "Usuario inicio la secuencia de reparacion del sistema (SFC/DISM)."
+    Write-Log -LogLevel INFO -Message "Usuario inicio la secuencia de reparacion del sistema (SFC/DISM/CHKDSK)."
     Write-Host "`n[+] Iniciando la secuencia de reparacion del sistema." -ForegroundColor Cyan
-    Write-Host "Este proceso puede tardar bastante tiempo y no debe interrumpirse." -ForegroundColor Yellow
+    Write-Host "Este proceso consta de varias etapas de diagnostico y reparacion." -ForegroundColor Yellow
     
     $repairsMade = $false
     $imageIsRepairable = $false
+    $chkdskScheduled = $false
 
     # --- PASO 1: Reparar la Imagen de Windows con DISM ---
-    # DISM repara el almacen de componentes que SFC usa como fuente. Es crucial ejecutarlo primero.
+    Write-Host "`n[+] PASO 1/4: Ejecutando DISM para escanear la salud de la imagen..." -ForegroundColor Yellow
     
-    # --- PASO 1a: Escanear la salud de la imagen ---
-    Write-Host "`n[+] PASO 1/3: Ejecutando DISM para escanear la salud de la imagen de Windows..." -ForegroundColor Yellow
-    Write-Host "    (Este paso busca problemas y puede tardar varios minutos)..." -ForegroundColor Gray
-    
-    # Capturamos la salida para analizarla, pero tambien la mostramos para que el usuario la vea.
     $dismScanOutput = (DISM.exe /Online /Cleanup-Image /ScanHealth | Tee-Object -Variable tempOutput) -join "`n"
     
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "DISM encontro un error durante el escaneo."
     } else {
         Write-Host "[OK] Escaneo de DISM completado." -ForegroundColor Green
-        # Verificamos si la imagen necesita reparacion
-        if ($dismScanOutput -match "The component store is repairable|El almacen de componentes es reparable") {
+        # Regex compatible con Español e Inglés
+        if ($dismScanOutput -match "repairable|reparable") {
             $imageIsRepairable = $true
         }
     }
 
-    # --- PASO 1b: Reparar la imagen si es necesario ---
+    # --- PASO 2: Reparar la imagen si es necesario ---
     if ($imageIsRepairable) {
-        Write-Host "`n[+] PASO 2/3: Se detecto corrupcion. Ejecutando DISM para reparar la imagen..." -ForegroundColor Yellow
-        Write-Host "    (Esto puede parecer atascado en ciertos porcentajes, es normal)..." -ForegroundColor Gray
-		Write-Log -LogLevel ACTION -Message "DISM: Almacen de componentes reparable detectado. Iniciando RestoreHealth."
+        Write-Host "`n[+] PASO 2/4: Se detecto corrupcion. Reparando imagen con DISM..." -ForegroundColor Yellow
+        Write-Log -LogLevel ACTION -Message "DISM: Almacen de componentes reparable detectado. Iniciando RestoreHealth."
         DISM.exe /Online /Cleanup-Image /RestoreHealth
         if ($LASTEXITCODE -ne 0) {
-			Write-Log -LogLevel WARN -Message "DISM: RestoreHealth finalizo con un codigo de error ($LASTEXITCODE)."
+            Write-Log -LogLevel WARN -Message "DISM: RestoreHealth finalizo con un codigo de error ($LASTEXITCODE)."
             Write-Warning "DISM encontro un error y podria no haber completado la reparacion."
         } else {
             Write-Host "[OK] Reparacion de DISM completada." -ForegroundColor Green
             $repairsMade = $true
         }
     } else {
-        Write-Host "`n[+] PASO 2/3: No se detecto corrupcion en la imagen de Windows. Omitiendo reparacion." -ForegroundColor Green
+        Write-Host "`n[+] PASO 2/4: No se detecto corrupcion en la imagen. Omitiendo reparacion." -ForegroundColor Green
     }
 
-    # --- PASO 2: Reparar Archivos del Sistema con SFC ---
-    Write-Host "`n[+] PASO 3/3: Ejecutando SFC para verificar los archivos del sistema..." -ForegroundColor Yellow
+    # --- PASO 3: Reparar Archivos del Sistema con SFC ---
+    Write-Host "`n[+] PASO 3/4: Ejecutando SFC para verificar los archivos del sistema..." -ForegroundColor Yellow
     sfc.exe /scannow
 
     if ($LASTEXITCODE -ne 0) {
-		Write-Log -LogLevel WARN -Message "SFC: Scannow finalizo con un codigo de error ($LASTEXITCODE)."
+        Write-Log -LogLevel WARN -Message "SFC: Scannow finalizo con un codigo de error ($LASTEXITCODE)."
         Write-Warning "SFC encontro un error o no pudo reparar todos los archivos."
     } else {
         Write-Host "[OK] SFC ha completado su operacion." -ForegroundColor Green
-		Write-Log -LogLevel ACTION -Message "REPAIR/SFC: Se encontraron y repararon archivos de sistema corruptos."
+        Write-Log -LogLevel ACTION -Message "REPAIR/SFC: Se encontraron y repararon archivos de sistema corruptos."
     }
 
-    # Verificamos si SFC hizo reparaciones.
+    # Verificacion de reparaciones SFC
     $cbsLogPath = "$env:windir\Logs\CBS\CBS.log"
     if (Test-Path $cbsLogPath) {
         $sfcEntries = Get-Content $cbsLogPath | Select-String -Pattern "\[SR\]"
-        if ($sfcEntries -match "Repairing file|Fixed|Repaired") {
+        # Regex compatible con Español e Inglés
+        if ($sfcEntries -match "Repairing file|Fixed|Repaired|Reparando archivo|Reparado") {
             $repairsMade = $true
         }
     }
 
+    # --- PASO 4 (UNIVERSAL): CHKDSK PROFUNDO ---
+    Write-Host "`n[+] PASO 4/4 (OPCIONAL): Analisis Profundo de Disco (CHKDSK /r /f /b /x)" -ForegroundColor Cyan
+    Write-Host "    Este comando busca sectores fisicos defectuosos y re-evalua todo el disco." -ForegroundColor Gray
+    Write-Warning "Esta operacion requiere reiniciar y puede tardar VARIAS HORAS."
+    Write-Warning "Durante el analisis (pantalla negra al inicio), NO podras usar el equipo."
+    
+    $chkdskChoice = Read-Host "`n¿Deseas programar este analisis profundo para el proximo reinicio? (S/N)"
+    
+    if ($chkdskChoice.ToUpper() -eq 'S') {
+        try {
+            Write-Host "Programando CHKDSK en unidad C:..." -ForegroundColor Yellow
+            
+            # --- DETECCION INTELIGENTE DE IDIOMA ---
+            # Detectamos el idioma del sistema para enviar la tecla correcta (Y, S, O, J, etc.)
+            $sysLang = (Get-UICulture).TwoLetterISOLanguageName.ToUpper()
+            $yesKey = "Y" # Valor por defecto (Inglés y mayoría de idiomas)
+
+            switch ($sysLang) {
+                "ES" { $yesKey = "S" } # Español
+                "FR" { $yesKey = "O" } # Francés (Oui)
+                "DE" { $yesKey = "J" } # Alemán (Ja)
+                "IT" { $yesKey = "S" } # Italiano (Si)
+                "PT" { $yesKey = "S" } # Portugués (Sim)
+            }
+            # ---------------------------------------
+
+            # Ejecutamos con la tecla detectada
+            $result = cmd.exe /c "echo $yesKey | chkdsk C: /f /r /b /x" 2>&1
+            
+            # Validación robusta: Código 0 o mensaje de éxito en ES o EN
+            if ($LASTEXITCODE -eq 0 -or $result -match "se comprobar|checked the next time") {
+                Write-Host "[OK] CHKDSK programado exitosamente ($sysLang detected -> '$yesKey')." -ForegroundColor Green
+                Write-Log -LogLevel ACTION -Message "REPAIR: Se programo CHKDSK /f /r /b  /x para el proximo reinicio (Idioma: $sysLang)."
+                $chkdskScheduled = $true
+                $repairsMade = $true 
+            } else {
+                Write-Error "No se pudo programar CHKDSK. Windows devolvio:`n$result"
+            }
+        } catch {
+            Write-Error "Error al invocar CHKDSK: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "   - Analisis de disco omitido por el usuario." -ForegroundColor Gray
+    }
+
     # --- Conclusion ---
-    Write-Host "`n[+] Secuencia de reparacion del sistema completada." -ForegroundColor Green
-    if ($repairsMade) {
-        Write-Host "[RECOMENDACIoN] Se realizaron reparaciones en el sistema. Se recomienda encarecidamente reiniciar el equipo." -ForegroundColor Cyan
-		$choice = Read-Host "`n¿Deseas reiniciar ahora? (S/N)"
+    Write-Host "`n[+] Secuencia de reparacion completada." -ForegroundColor Green
+    
+    if ($repairsMade -or $chkdskScheduled) {
+        $msg = if ($chkdskScheduled) { 
+            "Se ha programado un analisis de disco. El equipo se reiniciara y comenzara el analisis." 
+        } else { 
+            "Se realizaron reparaciones en el sistema. Se recomienda reiniciar." 
+        }
+        
+        Write-Host "[RECOMENDACIoN] $msg" -ForegroundColor Cyan
+        $choice = Read-Host "`n¿Deseas reiniciar ahora? (S/N)"
         if ($choice.ToUpper() -eq 'S') {
             Write-Host "Reiniciando el sistema en 60 segundos..." -ForegroundColor Yellow
             Start-Sleep -Seconds 60
             Restart-Computer -Force
         }
     } else {
-        Write-Host "[INFO] No se detectaron corrupciones que requirieran reparacion." -ForegroundColor Green
+        Write-Host "[INFO] No se detectaron problemas criticos que requieran reinicio inmediato." -ForegroundColor Green
     }
 
     Read-Host "`nPresiona Enter para volver..."
 }
-
 function Clear-RAMCache {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -3234,7 +3329,7 @@ function Start-RealTimeMonitoring {
     Write-Host "-------------------------------------------------------"
     Write-Host "   Este modo experimental muestra eventos a medida que ocurren."
     Write-Host "   Presiona Ctrl+C para detener el monitoreo en cualquier momento."
-    Write-Warning "   ADVERTENCIA: Este modo puede generar mucho texto en la consola."
+    Write-Warning "Este modo puede generar mucho texto en la consola."
     
     $confirm = Read-Host "`n¿Estas seguro de que deseas iniciar el monitoreo en tiempo real? (S/N)"
     if ($confirm.ToUpper() -ne 'S') {
@@ -4389,15 +4484,22 @@ function Get-DetailedWindowsVersion {
             $editionId = if ($winVerInfo.EditionID) { $winVerInfo.EditionID } else { "Unknown" }
             
             $friendlyEdition = switch ($editionId) {
-                "Core"                  { "Home" }
-                "CoreSingleLanguage"    { "Home Single Language" }
-                "Professional"          { "Pro" }
-                "ProfessionalWorkstation" { "Pro for Workstations" }
-                "ProfessionalEducation" { "Pro Education" }
-                "Enterprise"            { "Enterprise" }
-                "EnterpriseS"           { "Enterprise LTSC" }
-                "Education"             { "Education" }
-                default                 { $editionId }
+                "Core"                        { "Home" }
+                "CoreSingleLanguage"          { "Home Single Language" }
+                "Professional"                { "Pro" }
+                "ProfessionalCountrySpecific" { "Pro Country Specific" }
+                "ProfessionalSingleLanguage"  { "Pro Single Language" }
+                "ProfessionalWorkstation"     { "Pro for Workstations" }
+                "ProfessionalEducation"       { "Pro Education" }
+                "Enterprise"                  { "Enterprise" }
+                "EnterpriseS"                 { "Enterprise LTSC" }
+                "IoTEnterprise"               { "IoT Enterprise" }
+                "IoTEnterpriseS"              { "IoT Enterprise LTSC" }
+                "IoTEnterpriseK"              { "IoT Enterprise K" }
+                "Education"                   { "Education" }
+                "ServerRdsh"                  { "Enterprise Multi-Session" }
+                "CloudEdition"                { "Cloud" }
+                default                       { $editionId }
             }
         }
         
@@ -4418,13 +4520,22 @@ function Get-SystemInventoryData {
     $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
     $csInfo = Get-ComputerInfo
     $uptime = (Get-Date) - $osInfo.LastBootUpTime
-	$physicalCores = (Get-CimInstance -ClassName Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum
+    $physicalCores = (Get-CimInstance -ClassName Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum
+    
+    # --- NUEVO: Calculo de RAM Maxima Soportada ---
+    $maxRamInfo = Get-CimInstance -ClassName Win32_PhysicalMemoryArray | Measure-Object -Property MaxCapacity -Sum
+    $maxRamGB = if ($maxRamInfo.Sum -gt 0) { 
+        [math]::Round($maxRamInfo.Sum / 1024 / 1024, 0) # Convertir KB a GB
+    } else { "Desconocido" }
+    # ---------------------------------------------
+
     $systemData = @{
         WindowsVersion = Get-DetailedWindowsVersion
         Hostname = $csInfo.CsName
         Procesador = ($csInfo.CsProcessors | Select-Object -First 1).Name
         Nucleos = "$physicalCores fisicos. $($csInfo.CsNumberOfLogicalProcessors) logicos."
         MemoriaTotalGB = [math]::Round((Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+        MemoriaMaxGB   = $maxRamGB  # <--- Agregado aqui
         MemoriaEnUsoPorc = [math]::Round((($osInfo.TotalVisibleMemorySize - $osInfo.FreePhysicalMemory) / $osInfo.TotalVisibleMemorySize) * 100, 2)
         Uptime = "$($uptime.Days) dias, $($uptime.Hours) horas, $($uptime.Minutes) minutos"
     }
@@ -4432,21 +4543,16 @@ function Get-SystemInventoryData {
     # -- Hardware Detallado --
     $tempTxtPath = Join-Path $env:TEMP "dxdiag.txt"
     $gpuInfo = try {
-        # Preparamos el registro para que DxDiag no muestre ventanas emergentes
         $dxdiagRegPath = "HKCU:\Software\Microsoft\DxDiag"
         if (-not (Test-Path $dxdiagRegPath)) { New-Item -Path $dxdiagRegPath -Force | Out-Null }
         Set-ItemProperty -Path $dxdiagRegPath -Name "bOnceRun" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         
-        # Eliminamos cualquier reporte anterior
         if (Test-Path $tempTxtPath) { Remove-Item $tempTxtPath -Force }
 
-        # Ejecutamos DxDiag para generar el .txt y esperamos a que finalice
         Start-Process "dxdiag.exe" -ArgumentList "/t $tempTxtPath" -Wait -WindowStyle Hidden
         
         if (Test-Path $tempTxtPath) {
             $dxdiagContent = Get-Content $tempTxtPath
-
-            # Extraemos los valores del archivo de texto
             $cardName = ($dxdiagContent | Select-String -Pattern "Card name:").Line -split ':', 2 | Select-Object -Last 1 | ForEach-Object { $_.Trim() }
             $driverVersion = ""
             foreach ($line in $dxdiagContent) {
@@ -4455,27 +4561,23 @@ function Get-SystemInventoryData {
                     break
                 }
             }
-			$vramString = ($dxdiagContent | Select-String -Pattern "Dedicated Memory:").Line
+            $vramString = ($dxdiagContent | Select-String -Pattern "Dedicated Memory:").Line
             
             $vram_gb = 0
             if ($vramString -match '(\d+)\s*MB') {
                 $vram_gb = [math]::Round([int]$matches[1] / 1024, 2)
             }
 
-            # Devolvemos el objeto con la informacion completa. Esta es la salida si todo va bien.
             [PSCustomObject]@{
                 Name          = $cardName
                 DriverVersion = $driverVersion
                 VRAM_GB       = $vram_gb
             }
         } else {
-            # Si el archivo no se crea, lanzamos un error para activar el bloque 'catch'.
             throw "El archivo DxDiag.txt no se pudo crear."
         }
     } catch {
-        # Esto solo se ejecutara si el bloque 'try' (DxDiag) falla por cualquier motivo.
-        Write-Warning "El metodo principal con DxDiag.txt fallo. Usando WMI como ultimo recurso (la VRAM puede ser imprecisa). Error: $($_.Exception.Message)"
-        
+        Write-Warning "El metodo principal con DxDiag.txt fallo. Usando WMI como fallback."
         Get-CimInstance -ClassName Win32_VideoController | Select-Object -First 1 | ForEach-Object {
             [PSCustomObject]@{
                 Name          = $_.Name
@@ -4484,10 +4586,7 @@ function Get-SystemInventoryData {
             }
         }
     } finally {
-        # LIMPIEZA: Nos aseguramos de borrar el archivo temporal sin importar el resultado.
-        if (Test-Path $tempTxtPath) {
-            Remove-Item $tempTxtPath -Force
-        }
+        if (Test-Path $tempTxtPath) { Remove-Item $tempTxtPath -Force }
     }
 
     # -- Asignacion final al objeto de Hardware --
@@ -4498,46 +4597,15 @@ function Get-SystemInventoryData {
     }
 
     # -- Estado de Seguridad --
-    $antivirusStatus = try {
-        $avProducts = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction Stop)
-        if ($avProducts.Count -gt 0) {
-            $avNames = $avProducts | ForEach-Object { $_.displayName } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-            if ($avNames) { $avNames -join ', ' } else { "Registrado, pero sin nombre" }
-        } else { "No Detectado" }
-    } catch { "No Detectado (Error al consultar)" }
-
-    $firewallStatus = try {
-        $profileStrings = @()
-        foreach ($profile in (Get-NetFirewallProfile -ErrorAction Stop)) {
-            $status = if ($profile.Enabled) { "Activado" } else { "Desactivado" }
-            $profileStrings += "$($profile.Name): $status"
-        }
-        $profileStrings -join ' | '
-    } catch { "No se pudo obtener el estado" }
-
-    $bitlockerStatus = try {
-        $vol = Get-BitLockerVolume -MountPoint "C:" -ErrorAction Stop
-        if ($vol.ProtectionStatus -eq 'On') {
-            "Activado (Proteccion: $($vol.ProtectionStatus))"
-        } else {
-            "Inactivo (Proteccion: $($vol.ProtectionStatus))"
-        }
-    } catch { "No Disponible" }
-
     $securityData = @{
         Antivirus = try { @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction Stop) } catch { @() };
         Firewall = try { @(Get-NetFirewallProfile -ErrorAction Stop) } catch { @() };
-        
         BitLocker = try {
             $vol = Get-BitLockerVolume -MountPoint "C:" -ErrorAction Stop
-            if ($vol.ProtectionStatus -eq 'On') {
-                "Activado (Proteccion: $($vol.ProtectionStatus))"
-            } else {
-                "Inactivo (Proteccion: $($vol.ProtectionStatus))"
-            }
+            if ($vol.ProtectionStatus -eq 'On') { "Activado (Proteccion: $($vol.ProtectionStatus))" } else { "Inactivo (Proteccion: $($vol.ProtectionStatus))" }
         } catch { "No Disponible" }
     }    
-	
+    
     # -- Discos y Red --
     $diskData = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
         [PSCustomObject]@{
@@ -4565,40 +4633,32 @@ function Get-SystemInventoryData {
                     catch { $_.InstallDate }
                 } else { $_.InstallDate }
             }
-        } | 
-        Where-Object { $_.DisplayName } | 
-        Sort-Object DisplayName
+        } | Where-Object { $_.DisplayName } | Sort-Object DisplayName
 
-    # --- Recopilamos el estado de salud de los discos fisicos ---
+    # -- Salud Discos Fisicos --
     $physicalDiskData = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, SerialNumber, @{N='HealthStatus'; E={
-    switch ($_.HealthStatus) {
-        'Healthy'   { 'Saludable' }
-        'Warning'   { 'Advertencia' }
-        'Unhealthy' { 'No saludable' }
-        default     { $_.HealthStatus } # Si hay un estado desconocido, muestra el original en ingles
+        switch ($_.HealthStatus) {
+            'Healthy'   { 'Saludable' }
+            'Warning'   { 'Advertencia' }
+            'Unhealthy' { 'No saludable' }
+            default     { $_.HealthStatus }
         }
     }
 }
 
-    # Informacion detallada de cada modulo de RAM
-   $ramDetails = Get-CimInstance -ClassName Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, PartNumber, Capacity, Speed
-
-    # Cuentas de usuario locales y sus grupos
+    # -- Detalles RAM, Usuarios, Puertos --
+    $ramDetails = Get-CimInstance -ClassName Win32_PhysicalMemory | Select-Object DeviceLocator, Manufacturer, PartNumber, Capacity, Speed
     $localUsers = Get-LocalUser | Select-Object Name, Enabled, LastLogon
     $adminUsers = Get-LocalGroupMember -Group "Administradores" | Select-Object Name, PrincipalSource
-
-    # Puertos de red en estado de "escucha" (Listening)
     $listeningPorts = Get-NetTCPConnection -State Listen | Select-Object LocalAddress, LocalPort, OwningProcess | Sort-Object LocalPort
-    
-    # Plan de energia activo
     $powerPlan = if ((powercfg /getactivescheme) -match '\((.*?)\)') { $matches[1] } else { (powercfg /getactivescheme) }
 
     # -- Objeto final --
     return [PSCustomObject]@{
         System = $systemData; Hardware = $hardwareData; Security = $securityData; Disks = $diskData
         Network = $networkData; OSConfig = $osConfigData; Software = $softwareData
-		PhysicalDisks = $physicalDiskData
-		RAMDetails = $ramDetails
+        PhysicalDisks = $physicalDiskData
+        RAMDetails = $ramDetails
         LocalUsers = $localUsers
         AdminUsers = $adminUsers
         ListeningPorts = $listeningPorts
@@ -4713,7 +4773,8 @@ function Build-FullInventoryHtmlReport {
     $body += "<div><span class='info-label'>Procesador:</span> $($InventoryData.System.Procesador)</div>"
     $body += "<div><span class='info-label'>Nucleos:</span> $($InventoryData.System.Nucleos)</div>"
     $body += "<div><span class='info-label'>Tiempo de Actividad:</span> $($InventoryData.System.Uptime)</div>"
-    $body += "<div><span class='info-label'>Memoria RAM:</span> $($InventoryData.System.MemoriaTotalGB) GB $($InventoryData.System.MemoriaEnUsoPorc)% Usado" + (Get-ProgressBarHtml($InventoryData.System.MemoriaEnUsoPorc)) + "</div>"
+    $body += "<div><span class='info-label'>Memoria RAM Instalada:</span> $($InventoryData.System.MemoriaTotalGB) GB $($InventoryData.System.MemoriaEnUsoPorc)% Usado" + (Get-ProgressBarHtml($InventoryData.System.MemoriaEnUsoPorc)) + "</div>"
+	$body += "<div><span class='info-label'>Capacidad Maxima Soportada (segun BIOS):</span> <strong>$($InventoryData.System.MemoriaMaxGB) GB</strong></div>"
     $body += "</div></div>"
 
     $body += "<div class='section' id='hardware'><h2><i class='fas fa-microchip'></i>Hardware Detallado</h2><div class='grid-container'>"
@@ -4853,6 +4914,7 @@ function Show-InventoryMenu {
             $reportContent += "Procesador       : $($inventoryData.System.Procesador)"
             $reportContent += "Nucleos          : $($inventoryData.System.Nucleos)"
             $reportContent += "MemoriaTotalGB   : $($inventoryData.System.MemoriaTotalGB)"
+			$reportContent += "MemoriaMaxGB     : $($inventoryData.System.MemoriaMaxGB)"
             $reportContent += "MemoriaEnUsoPorc : $($inventoryData.System.MemoriaEnUsoPorc)"
             $reportContent += "Uptime           : $($inventoryData.System.Uptime)"
             
@@ -6238,13 +6300,18 @@ function Set-TweakState {
 
 function Show-TweakManagerMenu {
     $Category = $null
-	Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Ajustes del Sistema (Tweaks)."
+    Write-Log -LogLevel INFO -Message "Usuario entro al Gestor de Ajustes del Sistema (Tweaks)."
     
     [bool]$explorerRestartNeeded = $false
+
+    # --- NUEVO: Cache de estados para evitar lag en el menu ---
+    $tweakStateCache = @{}
+    # ----------------------------------------------------------
 
     while ($true) {
         Clear-Host
         if ($null -eq $Category) {
+            # --- MENU DE SELECCION DE CATEGORIA (Sin cambios) ---
             Write-Host "=======================================================" -ForegroundColor Cyan
             Write-Host "           Gestor de Ajustes del Sistema (Tweaks)      " -ForegroundColor Cyan
             Write-Host "=======================================================" -ForegroundColor Cyan
@@ -6260,12 +6327,23 @@ function Show-TweakManagerMenu {
             if ($choice.ToUpper() -eq 'V') { return }
             if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $categories.Count) {
                 $Category = $categories[[int]$choice - 1]
-				Write-Log -LogLevel INFO -Message "TWEAKS: Usuario selecciono la categoria '$Category'."
+                Write-Log -LogLevel INFO -Message "TWEAKS: Usuario selecciono la categoria '$Category'."
+                
                 $tweaksInCategory = @($script:SystemTweaks | Where-Object { $_.Category -eq $Category })
                 $tweaksInCategory | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false -Force }
+                
+                # --- OPTIMIZACION: Carga inicial de estados (Solo al entrar a la categoria) ---
+                Write-Host "Cargando lista de los ajustes..." -ForegroundColor Gray
+                $tweakStateCache.Clear()
+                foreach ($tweak in $tweaksInCategory) {
+                    # Guardamos el estado en el Hash usando el Nombre como clave
+                    $tweakStateCache[$tweak.Name] = Get-TweakState -Tweak $tweak
+                }
+                # ------------------------------------------------------------------------------
             }
         }
         else {
+            # --- MENU DE LISTADO DE TWEAKS (Optimizado) ---
             Write-Host "Gestor de Ajustes | Categoria: $Category" -ForegroundColor Cyan
             Write-Host "Marca los ajustes que deseas alternar (activar/desactivar)."
             Write-Host "------------------------------------------------"
@@ -6276,7 +6354,12 @@ function Show-TweakManagerMenu {
             for ($i = 0; $i -lt $tweaksInCategory.Count; $i++) {
                 $tweak = $tweaksInCategory[$i]
                 $status = if ($tweak.Selected) { "[X]" } else { "[ ]" }
-                $state = Get-TweakState -Tweak $tweak
+                
+                # --- USO DE CACHE (Lectura O(1) instantanea) ---
+                # Ya no consultamos al registro/comando, leemos de la memoria
+                $state = $tweakStateCache[$tweak.Name]
+                # -----------------------------------------------
+                
                 $stateColor = if ($state -eq 'Enabled') { 'Green' } elseif ($state -eq 'Disabled') { 'Red' } else { 'Gray' }
                 
                 Write-Host ("   [{0,2}] {1} " -f ($i + 1), $status) -NoNewline
@@ -6289,19 +6372,19 @@ function Show-TweakManagerMenu {
                 }
                 Write-Host "" 
             }
-			
-	    		$selectedCount = $tweaksInCategory.Where({$_.Selected}).Count
-                if ($selectedCount -gt 0) {
-		          	Write-Host ""
-                    Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
+            
+            $selectedCount = $tweaksInCategory.Where({$_.Selected}).Count
+            if ($selectedCount -gt 0) {
+                Write-Host ""
+                Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
             }
 
             Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
             Write-Host "   [Numero] Marcar/Desmarcar                [T] Marcar Todos"
             Write-Host "   [A] Aplicar cambios a los seleccionados  [N] Desmarcar Todos"
             Write-Host ""
-			Write-Host "   [V] Volver a la seleccion de categoria" -ForegroundColor Red
-			Write-Host ""
+            Write-Host "   [V] Volver a la seleccion de categoria" -ForegroundColor Red
+            Write-Host ""
             
             $choice = Read-Host "`nElige una opcion"
 
@@ -6319,7 +6402,8 @@ function Show-TweakManagerMenu {
                 } else {
                     Write-Host "`n[+] Se aplicaran los siguientes cambios:" -ForegroundColor Cyan
                     foreach ($tweak in $selectedTweaks) {
-                        $currentState = Get-TweakState -Tweak $tweak
+                        # Aqui usamos la cache para determinar la accion necesaria
+                        $currentState = $tweakStateCache[$tweak.Name]
                         if ($currentState -ne 'NotApplicable') {
                             $action = if ($currentState -eq 'Enabled') { 'Desactivar' } else { 'Activar' }
                             $actionColor = if ($action -eq 'Activar') { 'Green' } else { 'Red' }
@@ -6333,19 +6417,31 @@ function Show-TweakManagerMenu {
                     if ($confirmation.ToUpper() -ne 'S') {
                         Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
                         Start-Sleep -Seconds 2
-                        continue # Vuelve al inicio del bucle sin aplicar cambios
+                        continue 
                     }
 
                     foreach ($tweakToToggle in $selectedTweaks) {
-                        $currentState = Get-TweakState -Tweak $tweakToToggle
+                        # Leemos estado actual desde Cache
+                        $currentState = $tweakStateCache[$tweakToToggle.Name]
+                        
                         if ($currentState -eq 'NotApplicable') {
                             Write-Warning "El ajuste '$($tweakToToggle.Name)' no es aplicable y se omitira."
                             continue
                         }
+                        
+                        # Determinamos la accion
                         $action = if ($currentState -eq 'Enabled') { 'Disable' } else { 'Enable' }
+                        
+                        # Ejecutamos el cambio real
                         Set-TweakState -Tweak $tweakToToggle -Action $action
 
-                        # Si el ajuste requiere reiniciar explorer, activamos la bandera
+                        # --- ACTUALIZACION DE CACHE POST-ACCION ---
+                        # Invertimos el estado en la cache manualmente para evitar re-leer el registro
+                        # Esto hace que la UI se sienta instantanea
+                        $newState = if ($action -eq 'Enable') { 'Enabled' } else { 'Disabled' }
+                        $tweakStateCache[$tweakToToggle.Name] = $newState
+                        # ------------------------------------------
+
                         if ($tweakToToggle.RestartNeeded -eq 'Explorer') {
                             $explorerRestartNeeded = $true
                         }
@@ -6354,22 +6450,103 @@ function Show-TweakManagerMenu {
                 }
                 $tweaksInCategory.ForEach({$_.Selected = $false})
 
-                # Comprobar la bandera y preguntar al usuario
                 if ($explorerRestartNeeded) {
-                    $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows para ser visibles. ¿Deseas hacerlo ahora? (S/N)"
+                    $promptChoice = Read-Host "`n[?] Varios cambios requieren reiniciar el Explorador de Windows. ¿Deseas hacerlo ahora? (S/N)"
                     if ($promptChoice.ToUpper() -eq 'S') {
                         Invoke-ExplorerRestart
                     } else {
-                        Write-Host "[INFO] Recuerda reiniciar la sesion o el equipo para ver todos los cambios." -ForegroundColor Yellow
+                        Write-Host "[INFO] Recuerda reiniciar la sesion para ver todos los cambios." -ForegroundColor Yellow
                     }
-                    # Restablecer la bandera para la siguiente ronda de cambios
                     $explorerRestartNeeded = $false
                 }
-
                 Read-Host "`nPresiona Enter para continuar..."
             }
         }
     }
+}
+
+function Rebuild-SearchIndex {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    Write-Log -LogLevel INFO -Message "MANTENIMIENTO: Usuario inicio la reconstruccion del indice de busqueda."
+    Write-Host "`n[+] Reconstruyendo el Indice de Busqueda de Windows..." -ForegroundColor Cyan
+    Write-Warning "Esta operacion eliminara la base de datos de busqueda actual (.edb)."
+    Write-Warning "El sistema tardara un tiempo en volver a indexar tus archivos (puede haber consumo de CPU)."
+
+    if (-not ($PSCmdlet.ShouldProcess("Base de Datos de Busqueda", "Eliminar y Regenerar desde Cero"))) { 
+        return 
+    }
+
+    try {
+        # 1. Detener el servicio Windows Search
+        Write-Host "   - Deteniendo servicio Windows Search (WSearch)..." -ForegroundColor Gray
+        $service = Get-Service -Name "WSearch" -ErrorAction SilentlyContinue
+        
+        if ($service.Status -eq 'Running') {
+            Stop-Service -Name "WSearch" -Force -ErrorAction Stop
+        }
+
+        # 2. Localizar la ruta real de la base de datos (No asumir ProgramData)
+        Write-Host "   - Localizando ubicacion del indice..." -ForegroundColor Gray
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows Search"
+        $dataDir = (Get-ItemProperty -Path $regPath -Name "DataDirectory" -ErrorAction SilentlyContinue).DataDirectory
+
+        if ([string]::IsNullOrWhiteSpace($dataDir)) {
+            # Fallback seguro si el registro falla
+            $dataDir = "$env:ProgramData\Microsoft\Search\Data"
+        }
+
+        # La carpeta critica es "Applications\Windows"
+        $searchDbPath = Join-Path $dataDir "Applications\Windows"
+
+        # 3. Eliminar la base de datos corrupta/vieja
+        if (Test-Path $searchDbPath) {
+            Write-Host "   - Purgando base de datos en: $searchDbPath" -ForegroundColor Yellow
+            # Intentamos eliminar. Si falla por bloqueo, esperamos 2 segundos y reintentamos
+            try {
+                Remove-Item -Path $searchDbPath -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Host "     (Archivo bloqueado, reintentando en 2s...)" -ForegroundColor DarkGray
+                Start-Sleep -Seconds 2
+                Remove-Item -Path $searchDbPath -Recurse -Force -ErrorAction Stop
+            }
+            Write-Log -LogLevel ACTION -Message "MANTENIMIENTO: Base de datos de busqueda purgada exitosamente."
+        } else {
+            Write-Host "   - No se encontro base de datos previa (o ya estaba limpia)." -ForegroundColor Gray
+        }
+
+        # 4. Truco Pro: Resetear bandera de configuracion
+        # Esto obliga a Windows a verificar las ubicaciones de indexado al arrancar
+        Set-ItemProperty -Path $regPath -Name "SetupCompletedSuccessfully" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+        # 5. Reiniciar el servicio (CON VALIDACION DE ESTADO)
+        Write-Host "   - Reiniciando servicio Windows Search..." -ForegroundColor Gray
+        
+        # Refrescamos el objeto del servicio para ver su estado actual
+        $svcFinal = Get-Service -Name "WSearch"
+        
+        # Si el usuario lo habia deshabilitado en el modulo de Servicios, lo reactivamos
+        if ($svcFinal.StartType -eq 'Disabled') {
+            Write-Warning "El servicio WSearch estaba deshabilitado. Reactivandolo temporalmente para reconstruir el indice..."
+            Set-Service -Name "WSearch" -StartupType Automatic
+            Write-Log -LogLevel WARN -Message "MANTENIMIENTO: Se reactivo WSearch (estaba Disabled) para reconstruccion."
+        }
+        
+        Start-Service -Name "WSearch" -ErrorAction Stop
+
+        Write-Host "`n[OK] Indice restablecido correctamente." -ForegroundColor Green
+        Write-Host "      Windows comenzara a re-indexar en segundo plano inmediatamente." -ForegroundColor Cyan
+
+    } catch {
+        Write-Error "Fallo critico al reconstruir el indice: $($_.Exception.Message)"
+        Write-Log -LogLevel ERROR -Message "MANTENIMIENTO: Fallo reconstruccion de indice. Error: $($_.Exception.Message)"
+        
+        # Intento de emergencia para levantar el servicio si quedo apagado
+        Start-Service -Name "WSearch" -ErrorAction SilentlyContinue
+    }
+    
+    Read-Host "`nPresiona Enter para continuar..."
 }
 
 # --- FUNCIONES DE MENU PRINCIPAL ---
@@ -6447,6 +6624,9 @@ function Show-MaintenanceMenu {
         Write-Host "   [6] Diagnostico y Reparacion de Red"
         Write-Host "       (Soluciona problemas de conectividad a internet)" -ForegroundColor Gray
         Write-Host ""
+		Write-Host "   [7] Reconstruir Indice de Busqueda (Search Index)" -ForegroundColor Cyan
+        Write-Host "       (Soluciona busquedas lentas, incompletas o que no encuentran archivos)" -ForegroundColor Gray
+		Write-Host ""
         Write-Host "-------------------------------------------------------"
         Write-Host ""
         Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
@@ -6461,13 +6641,14 @@ function Show-MaintenanceMenu {
             '4' { Generate-SystemReport }
             '5' { Clear-RAMCache }
             '6' { Show-NetworkDiagnosticsMenu }
-            'V' { continue }
+            '7' { Rebuild-SearchIndex }
+			'V' { continue }
             default {
                 Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
-                Read-Host 
+                Start-Sleep -Seconds 1
             }
-		} 
-	} while ($maintChoice.ToUpper() -ne 'V')
+        } 
+    } while ($maintChoice.ToUpper() -ne 'V')
 }
 
 function Show-AdvancedMenu {
