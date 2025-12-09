@@ -73,11 +73,43 @@ $script:SystemTweaks = @(
             Set-ItemProperty -Path "$basePath\ListBoxSmoothScrolling" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
             Set-ItemProperty -Path "$basePath\DropShadow" -Name 'DefaultValue' -Value 1 -Type 'DWord' -Force;
         }
-        CheckCommand   = {
+        CheckCommand = {
             $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
-            $animate = (Get-ItemProperty -Path "$basePath\AnimateMinMax" -Name 'DefaultValue' -ErrorAction SilentlyContinue).DefaultValue
-            $peek = (Get-ItemProperty -Path "$basePath\DWMAeroPeekEnabled" -Name 'DefaultValue' -ErrorAction SilentlyContinue).DefaultValue
-            return ($animate -eq 0 -and $peek -eq 1)
+    
+            # Definimos los valores críticos esperados para considerar que está "Activado"
+            # Basado en tu EnableCommand
+            $expectedValues = @{
+                "ControlAnimations"       = 0
+                "AnimateMinMax"           = 0
+                "TaskbarAnimations"       = 0
+                "DWMAeroPeekEnabled"      = 1
+                "MenuAnimation"           = 0
+                "TooltipAnimation"        = 0
+                "SelectionFade"           = 0
+                "DWMSaveThumbnailEnabled" = 0
+                "CursorShadow"            = 1
+                "ListviewShadow"          = 1
+                "ThumbnailsOrIcon"        = 1
+                "ListviewAlphaSelect"     = 1
+                "DragFullWindows"         = 1
+                "ComboBoxAnimation"       = 0
+                "FontSmoothing"           = 1
+                "ListBoxSmoothScrolling"  = 0
+                "DropShadow"              = 0
+            }
+
+            $allMatch = $true
+    
+            foreach ($key in $expectedValues.Keys) {
+                $current = (Get-ItemProperty -Path "$basePath\$key" -Name 'DefaultValue' -ErrorAction SilentlyContinue).DefaultValue
+                # Comparamos como enteros para evitar errores de tipo
+                if ([int]$current -ne [int]$expectedValues[$key]) {
+                        $allMatch = $false
+                        break # Si uno falla, ya no es necesario seguir
+                }
+            }
+    
+            return $allMatch
         }
         RestartNeeded  = "Session"
     },
@@ -335,6 +367,30 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Acelerar Indexacion de Busqueda (Desactivar Backoff)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Obliga al indexador de Windows a trabajar a maxima velocidad (sin pausas) incluso si estas usando el PC. Garantiza que los archivos nuevos aparezcan en la busqueda al instante. (Puede aumentar el uso de CPU durante la indexacion)."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+        RegistryKey    = "DisableBackoff"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
+	[PSCustomObject]@{
+        Name           = "Forzar Modo de Busqueda Clasico (Maximo Rendimiento)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Desactiva el indexado 'Mejorado' (que escanea todo el disco y ralentiza la busqueda). Fuerza el modo 'Clasico' que solo indexa bibliotecas y escritorio, resultando en una base de datos mas ligera y busquedas instantaneas."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Search"
+        RegistryKey    = "EnableEnhancedSearchMode"
+        EnabledValue   = 0  # 0 = Clásico (Rápido), 1 = Mejorado (Lento)
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
+    },
 
 	# --- Categoria: Windows 11 UI y Nuevas Funciones ---
     [PSCustomObject]@{
@@ -380,6 +436,18 @@ $script:SystemTweaks = @(
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         RegistryKey    = "Start_IrisRecommendations"
+        EnabledValue   = 0
+        DefaultValue   = 1
+        RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+    [PSCustomObject]@{
+        Name           = "Deshabilitar Search Highlights (Dibujos en Busqueda)"
+        Category       = "Windows 11 UI"
+        Description    = "Elimina los iconos animados, doodles de Bing y contenido sugerido del cuadro de busqueda en la barra de tareas y el menu inicio. Limpia la interfaz y evita conexiones innecesarias."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+        RegistryKey    = "EnableSearchHighlights"
         EnabledValue   = 0
         DefaultValue   = 1
         RegistryType   = "DWord"
@@ -979,6 +1047,41 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Desactivar Telemetria de Busqueda (Bing/Cortana)"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Bloquea totalmente la conexion a internet del menu inicio. Evita que Windows envie lo que escribes a Microsoft y elimina el retraso (lag) de red al buscar archivos locales."
+        Method         = "Command"
+        EnableCommand  = {
+            # Desactiva Bing Search en HKLM (Maquina)
+            $pathLM = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+            if (-not (Test-Path $pathLM)) { New-Item -Path $pathLM -Force | Out-Null }
+            Set-ItemProperty -Path $pathLM -Name "DisableWebSearch" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $pathLM -Name "ConnectedSearchUseWeb" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $pathLM -Name "AllowCortana" -Value 0 -Type DWord -Force
+            
+            # Desactiva Bing Search en HKCU (Usuario)
+            $pathCU = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search"
+            if (-not (Test-Path $pathCU)) { New-Item -Path $pathCU -Force | Out-Null }
+            Set-ItemProperty -Path $pathCU -Name "BingSearchEnabled" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $pathCU -Name "CortanaConsent" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            # Revierte cambios HKLM
+            $pathLM = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+            Remove-ItemProperty -Path $pathLM -Name "DisableWebSearch" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $pathLM -Name "ConnectedSearchUseWeb" -ErrorAction SilentlyContinue
+            
+            # Revierte cambios HKCU
+            $pathCU = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search"
+            Set-ItemProperty -Path $pathCU -Name "BingSearchEnabled" -Value 1 -Type DWord -Force
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "DisableWebSearch" -ErrorAction SilentlyContinue).DisableWebSearch
+            return ($val -eq 1)
+        }
+        RestartNeeded  = "Explorer"
+    },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
     [PSCustomObject]@{
@@ -1231,47 +1334,78 @@ $script:SystemTweaks = @(
         RestartNeeded  = "None"
     },
 
-	# --- Categoria: Extras (Nuevos) ---
+	# --- Categoria: Extras ---
     [PSCustomObject]@{
         Name           = "Desinstalar OneDrive Completamente"
         Category       = "Extras"
-        Description    = "ADVERTENCIA: Desinstala OneDrive y elimina sus datos locales. Mueve los archivos de OneDrive a la carpeta de usuario antes de proceder."
+        Description    = "ADVERTENCIA: Desinstala OneDrive buscando el desinstalador en múltiples rutas y elimina sus datos locales. Mueve los archivos importantes fuera de la carpeta OneDrive antes de proceder."
         Method         = "Command"
         EnableCommand  = {
-            # --- PASO 1 (NUEVO Y CRITICO): Deshabilitar OneDrive via Directiva de Grupo ---
+            # --- PASO 1: Deshabilitar OneDrive via Directiva de Grupo (Previene reinstalación automática) ---
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             Set-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
 
-            # --- PASO 2: Desinstalacion y Limpieza Profunda ---
+            # --- PASO 2: Detener el proceso ---
+            Write-Host "   - Deteniendo procesos de OneDrive..." -ForegroundColor Gray
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
-            if (Test-Path "$env:SystemRoot\System32\OneDriveSetup.exe") { Start-Process -FilePath "$env:SystemRoot\System32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait }
-            if (Test-Path "$env:SystemRoot\SysWOW64\OneDriveSetup.exe") { Start-Process -FilePath "$env:SystemRoot\SysWOW64\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait }
+
+            # --- PASO 3: Búsqueda dinámica y ejecución del desinstalador ---
+            $installerPath = $null
+            $possiblePaths = @(
+                "$env:SystemRoot\SysWOW64\OneDriveSetup.exe",
+                "$env:SystemRoot\System32\OneDriveSetup.exe",
+                "$env:LOCALAPPDATA\Microsoft\OneDrive\Update\OneDriveSetup.exe",
+                "$env:LOCALAPPDATA\Microsoft\OneDrive\OneDriveSetup.exe",
+                "$env:ProgramFiles\Microsoft OneDrive\OneDriveSetup.exe",
+                "$env:ProgramFiles (x86)\Microsoft OneDrive\OneDriveSetup.exe"
+            )
+
+            foreach ($path in $possiblePaths) {
+                if (Test-Path $path) {
+                    $installerPath = $path
+                    break
+                }
+            }
+
+            if ($installerPath) {
+                Write-Host "   - Desinstalador encontrado en: $installerPath" -ForegroundColor Cyan
+                Start-Process -FilePath $installerPath -ArgumentList "/uninstall" -Wait
+            } else {
+                Write-Warning "   - No se encontró el desinstalador oficial. Se procederá con la limpieza manual forzada."
+            }
             
-            # Limpieza de registro y carpetas
+            # --- PASO 4: Limpieza de Registro (Iconos del Explorador) ---
+            Write-Host "   - Limpiando claves de registro..." -ForegroundColor Gray
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
             
+            # Ocultar del panel de navegación por si acaso quedó algo
             $clsidPath = "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
             if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
             Set-ItemProperty -Path $clsidPath -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force
 
-            Get-ScheduledTask -TaskPath '\' -TaskName 'OneDrive*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+            # --- PASO 5: Limpieza de Archivos y Tareas ---
+            Write-Host "   - Eliminando archivos residuales y tareas..." -ForegroundColor Gray
+            Get-ScheduledTask -TaskPath '\' -TaskName 'OneDrive*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+            
+            # Eliminación de carpetas de datos (Ojo: No borra la carpeta de documentos del usuario, solo la app)
             Remove-Item -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk" -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:USERPROFILE\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:PROGRAMDATA\Microsoft OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\OneDriveTemp" -Recurse -Force -ErrorAction SilentlyContinue
         }
         DisableCommand = { 
-            # Para reactivar, se elimina la directiva y se avisa para reinstalacion manual
+            # Para reactivar, eliminamos la directiva que lo bloquea
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
             if (Test-Path $policyPath) { Remove-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Force -ErrorAction SilentlyContinue }
-            Write-Warning "La directiva que bloquea OneDrive ha sido eliminada."
-            Write-Warning "La reinstalacion de OneDrive debe hacerse manualmente descargando el instalador desde el sitio de Microsoft." 
+            
+            Write-Warning "La directiva de bloqueo ha sido eliminada."
+            Write-Warning "Debes descargar e instalar OneDrive manualmente desde el sitio web de Microsoft para recuperarlo." 
         }
         CheckCommand   = {
-            # --- DETECCION DEFINITIVA ---
-            # El ajuste esta 'Activado' (desinstalado) si la directiva de bloqueo esta activa.
+            # Se considera "Activado" (es decir, el Tweak aplicado y OneDrive eliminado) si la directiva existe
             $policyValue = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -ErrorAction SilentlyContinue).DisableFileSyncNGSC
             return ($null -ne $policyValue -and $policyValue -eq 1)
         }
