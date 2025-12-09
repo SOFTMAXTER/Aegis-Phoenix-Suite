@@ -1338,7 +1338,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Desinstalar OneDrive Completamente"
         Category       = "Extras"
-        Description    = "ADVERTENCIA: Desinstala OneDrive buscando el desinstalador en múltiples rutas y elimina sus datos locales. Mueve los archivos importantes fuera de la carpeta OneDrive antes de proceder."
+        Description    = "ADVERTENCIA: Desinstala OneDrive buscando el desinstalador en multiples rutas y elimina sus datos locales. Mueve los archivos importantes fuera de la carpeta OneDrive antes de proceder."
         Method         = "Command"
         EnableCommand  = {
             # --- PASO 1: Deshabilitar OneDrive via Directiva de Grupo (Previene reinstalación automática) ---
