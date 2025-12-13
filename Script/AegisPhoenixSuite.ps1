@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.5
+    4.8.6
 #>
 
-$script:Version = "4.8.5"
+$script:Version = "4.8.6"
 
 function Write-Log {
     [CmdletBinding()]
@@ -1472,12 +1472,26 @@ function Get-RemovableApps {
     $apps = @()
     $baseFilter = { $_.IsFramework -eq $false -and $_.IsResourcePackage -eq $false }
 
+    # Helper para construir el objeto
     $objectBuilder = {
         param($app)
+        
+        # --- LÓGICA: Detectar si es Recomendado ---
+        $isRec = $false
+        if ($null -ne $script:RecommendedBloatwareList) {
+            foreach ($recItem in $script:RecommendedBloatwareList) {
+                if ($app.Name -like "*$recItem*") {
+                    $isRec = $true
+                    break
+                }
+            }
+        }
+
         [PSCustomObject]@{
             Name              = $app.Name
             PackageName       = $app.PackageFullName
             PackageFamilyName = $app.PackageFamilyName
+            IsRecommended     = $isRec  # Propiedad añadida
         }
     }
 
@@ -1492,21 +1506,20 @@ function Get-RemovableApps {
         }
     }
     elseif ($Type -eq 'ThirdParty_AllUsers') {
-        # Ahora solo busca apps no-Microsoft que esten firmadas como parte del SISTEMA (tipico del bloatware de fabricante).
         $apps = Get-AppxPackage -AllUsers | Where-Object { 
             $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -eq 'System' -and (& $baseFilter) 
         } | ForEach-Object { & $objectBuilder $_ }
     }
     elseif ($Type -eq 'ThirdParty_CurrentUser') {
-        # Ahora solo busca apps no-Microsoft que el usuario instalo desde la TIENDA o de forma manual (Developer).
         $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
         $apps = Get-AppxPackage -User $currentUser | Where-Object { 
             $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -in ('Store', 'Developer') -and (& $baseFilter) 
         } | ForEach-Object { & $objectBuilder $_ }
     }
     
+    # Ordenar: Primero los recomendados, luego alfabéticamente
     Write-Host "[OK] Se encontraron $($apps.Count) aplicaciones." -ForegroundColor Green
-    return $apps | Sort-Object Name
+    return $apps | Sort-Object IsRecommended, Name -Descending
 }
 
 # --- FUNCIoN 4: La Interfaz de Seleccion (Reutilizable) ---
@@ -1518,28 +1531,45 @@ function Show-AppSelectionMenu {
         [array]$AppList
     )
 
-    $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false }
+    # Inicializar selección si no existe
+    if ($null -eq $AppList[0].Selected) {
+        $AppList | ForEach-Object { $_ | Add-Member -NotePropertyName 'Selected' -NotePropertyValue $false -Force }
+    }
 
     $choice = ''
     while ($choice.ToUpper() -ne 'E' -and $choice.ToUpper() -ne 'V') {
         Clear-Host
         Write-Host "Eliminacion Selectiva de Aplicaciones" -ForegroundColor Cyan
         Write-Host "Escribe el numero para marcar/desmarcar una aplicacion."
+        Write-Host "Las aplicaciones en VERDE son seguras de borrar (Recomendadas)." -ForegroundColor Gray
+        Write-Host ""
         
         for ($i = 0; $i -lt $AppList.Count; $i++) {
-            $status = if ($AppList[$i].Selected) { "[X]" } else { "[ ]" }
-            Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $AppList[$i].Name)
+            $item = $AppList[$i]
+            $status = if ($item.Selected) { "[X]" } else { "[ ]" }
+            
+            # --- VISUALIZACIÓN INTELIGENTE ---
+            if ($item.IsRecommended) {
+                # Apps recomendadas en Verde con etiqueta
+                Write-Host ("   [{0,2}] {1} " -f ($i + 1), $status) -NoNewline
+                Write-Host $item.Name -ForegroundColor Green -NoNewline
+                Write-Host " [RECOMENDADO]" -ForegroundColor DarkGreen
+            } else {
+                # Apps normales en Blanco
+                Write-Host ("   [{0,2}] {1} {2}" -f ($i + 1), $status, $item.Name)
+            }
         }
-		
-	    $selectedCount = $AppList.Where({$_.Selected}).Count
+        
+        $selectedCount = $AppList.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
-			Write-Host ""
+            Write-Host ""
             Write-Host "   ($selectedCount elemento(s) seleccionado(s))" -ForegroundColor Cyan
         }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
         Write-Host "   [Numero] Marcar/Desmarcar  [E] Eliminar seleccionados"
         Write-Host "   [T] Seleccionar Todos      [N] No seleccionar ninguno"
+        Write-Host "   [R] Seleccionar SOLO Recomendados" -ForegroundColor Green
         Write-Host ""
         Write-Host "   [V] Volver..." -ForegroundColor Red
         Write-Host ""
@@ -1548,10 +1578,18 @@ function Show-AppSelectionMenu {
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $AppList.Count) {
             $index = [int]$choice - 1
             $AppList[$index].Selected = -not $AppList[$index].Selected
-        } elseif ($choice.ToUpper() -eq 'T') {
+        } 
+        elseif ($choice.ToUpper() -eq 'T') {
             $AppList.ForEach({$_.Selected = $true})
-        } elseif ($choice.ToUpper() -eq 'N') {
+        } 
+        elseif ($choice.ToUpper() -eq 'N') {
             $AppList.ForEach({$_.Selected = $false})
+        }
+        elseif ($choice.ToUpper() -eq 'R') {
+            # --- ACCIÓN NUEVA: Seleccionar solo recomendados ---
+            $AppList.ForEach({
+                if ($_.IsRecommended) { $_.Selected = $true } else { $_.Selected = $false }
+            })
         }
     }
 
