@@ -406,7 +406,7 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
-        Name           = "Alineación Clasica de Barra de Tareas (Izquierda)"
+        Name           = "Alineacion Clasica de Barra de Tareas (Izquierda)"
         Category       = "Windows 11 UI"
         Description    = "Mueve el boton de Inicio y los iconos a la izquierda, restaurando el flujo de trabajo clasico de Windows 10/7."
         Method         = "Registry"
