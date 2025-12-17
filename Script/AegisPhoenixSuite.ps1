@@ -721,6 +721,24 @@ function Manage-SystemServices {
         [System.Windows.Forms.MessageBox]::Show("Operacion completada.", "Exito", 0, 64)
     }
 
+    # --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Evita que la barra espaciadora haga scroll hacia abajo
+            $e.SuppressKeyPress = $true 
+            
+            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
+            foreach ($row in $sender.SelectedRows) {
+                # Invierte el valor actual (True -> False / False -> True)
+                # Nota: Verificamos si la celda es de solo lectura (como en Bloatware protegido)
+                if (-not $row.Cells["Check"].ReadOnly) {
+                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
+                }
+            }
+        }
+    })
+
     $btnDisable.Add_Click({ & $ApplyAction -Mode 'Disable' })
     $btnRestore.Add_Click({ & $ApplyAction -Mode 'Restore' })
 
@@ -1899,6 +1917,24 @@ function Show-BloatwareMenu {
             # Marcar si es Naranja (Recomendado)
             if ($row.DefaultCellStyle.ForeColor -eq [System.Drawing.Color]::Orange) {
                 $row.Cells["Check"].Value = $true
+            }
+        }
+    })
+
+# --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Evita que la barra espaciadora haga scroll hacia abajo
+            $e.SuppressKeyPress = $true 
+            
+            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
+            foreach ($row in $sender.SelectedRows) {
+                # Invierte el valor actual (True -> False / False -> True)
+                # Nota: Verificamos si la celda es de solo lectura (como en Bloatware protegido)
+                if (-not $row.Cells["Check"].ReadOnly) {
+                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
+                }
             }
         }
     })
@@ -5525,8 +5561,11 @@ function Show-DriverMenu {
     $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $grid.RowHeadersVisible = $false
     $grid.AllowUserToAddRows = $false
+    
+    # Habilitar Selección Múltiple para facilitar el uso
     $grid.SelectionMode = "FullRowSelect"
-    $grid.MultiSelect = $false
+    $grid.MultiSelect = $true 
+    
     $grid.AutoSizeColumnsMode = "Fill"
 
     # Estilos
@@ -5574,6 +5613,25 @@ function Show-DriverMenu {
     
     $form.Controls.Add($grid)
 
+    # --- EVENTO DE TECLADO (Barra Espaciadora) ---
+    # Este bloque debe ir DESPUÉS de añadir el grid al formulario
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Detener el comportamiento por defecto (bajar scroll)
+            $e.SuppressKeyPress = $true 
+            
+            # Recorrer todas las filas seleccionadas (soporta multiselección)
+            foreach ($row in $sender.SelectedRows) {
+                # Invertir el valor del checkbox
+                $currentState = $row.Cells["Check"].Value
+                # Manejar valores nulos por seguridad
+                if ($currentState -eq $null) { $currentState = $false }
+                $row.Cells["Check"].Value = -not $currentState
+            }
+        }
+    })
+
     # --- 4. BARRA DE ESTADO ---
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Location = New-Object System.Drawing.Point(20, 490)
@@ -5587,7 +5645,7 @@ function Show-DriverMenu {
     $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
     $form.Controls.Add($lblStatus)
 
-    # --- 5. BOTONES DE ACCION ---
+    # --- 5. BOTONES DE ACCIÓN ---
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Marcar Todo"
     $btnSelectAll.Location = New-Object System.Drawing.Point(20, 560)
@@ -5616,7 +5674,7 @@ function Show-DriverMenu {
     $btnRestore.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnRestore)
 
-    # --- LOGICA: ESCANEAR ---
+    # --- LÓGICA: ESCANEAR ---
     $ScanDrivers = {
         $grid.Rows.Clear()
         $lblStatus.Text = "Escaneando drivers instalados..."
@@ -5626,7 +5684,9 @@ function Show-DriverMenu {
         try {
             $drivers = Get-WindowsDriver -Online -ErrorAction Stop | Where-Object { $_.ProviderName -ne 'Microsoft' }
             foreach ($d in $drivers) {
-                $grid.Rows.Add($false, $d.Driver, $d.ProviderName, $d.ClassName, $d.Version, $d.Date) | Out-Null
+                # Convertimos fecha si es posible, o string plano
+                $dDate = try { $d.Date.ToString("yyyy-MM-dd") } catch { $d.Date }
+                $grid.Rows.Add($false, $d.Driver, $d.ProviderName, $d.ClassName, $d.Version, $dDate) | Out-Null
             }
             $lblStatus.Text = "Se encontraron $($drivers.Count) drivers de terceros."
             $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
@@ -5643,14 +5703,14 @@ function Show-DriverMenu {
     $form.Add_Shown({ & $ScanDrivers })
     $btnRefresh.Add_Click({ & $ScanDrivers })
 
-    # --- LOGICA: BACKUP SELECTIVO ---
+    # --- LÓGICA: BACKUP SELECTIVO ---
     $btnBackup.Add_Click({
         $targets = @()
         foreach ($row in $grid.Rows) {
             if ($row.Cells["Check"].Value -eq $true) { $targets += $row.Cells["InfName"].Value }
         }
 
-        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No has seleccionado ningun driver.", "Aviso", 0, 48); return }
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No has seleccionado ningún driver.", "Aviso", 0, 48); return }
 
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.Description = "Carpeta destino para $($targets.Count) drivers"
@@ -5684,9 +5744,9 @@ function Show-DriverMenu {
         [System.Windows.Forms.MessageBox]::Show("Exportacion completada.`nDrivers: $($targets.Count)`nErrores: $errors", "Informe", 0, 64)
     })
 
-    # --- LOGICA: RESTORE CON DIALOGO PERSONALIZADO ---
+    # --- LÓGICA: RESTORE CON DIÁLOGO PERSONALIZADO ---
     $btnRestore.Add_Click({
-        # Crear Dialogo Modal Personalizado
+        # Crear Diálogo Modal Personalizado
         $dlg = New-Object System.Windows.Forms.Form
         $dlg.Text = "Metodo de Restauracion"
         $dlg.Size = New-Object System.Drawing.Size(450, 180)
@@ -5711,7 +5771,7 @@ function Show-DriverMenu {
         $btnFolder.BackColor = [System.Drawing.Color]::SeaGreen
         $btnFolder.FlatStyle = "Flat"
         $btnFolder.ForeColor = [System.Drawing.Color]::White
-        $btnFolder.DialogResult = [System.Windows.Forms.DialogResult]::Yes # YES = Carpeta
+        $btnFolder.DialogResult = [System.Windows.Forms.DialogResult]::Yes 
         $dlg.Controls.Add($btnFolder)
 
         $btnFiles = New-Object System.Windows.Forms.Button
@@ -5721,10 +5781,10 @@ function Show-DriverMenu {
         $btnFiles.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
         $btnFiles.FlatStyle = "Flat"
         $btnFiles.ForeColor = [System.Drawing.Color]::White
-        $btnFiles.DialogResult = [System.Windows.Forms.DialogResult]::No # NO = Archivos
+        $btnFiles.DialogResult = [System.Windows.Forms.DialogResult]::No 
         $dlg.Controls.Add($btnFiles)
 
-        # Mostrar Dialogo
+        # Mostrar Diálogo
         $result = $dlg.ShowDialog($form)
         $filesToInstall = @()
 
@@ -5742,7 +5802,7 @@ function Show-DriverMenu {
             # MODO ARCHIVOS
             $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
             $fileDialog.Title = "Selecciona archivos .INF"
-            $fileDialog.Filter = "Informacion de instalacion (*.inf)|*.inf"
+            $fileDialog.Filter = "Información de instalación (*.inf)|*.inf"
             $fileDialog.Multiselect = $true
             if ($fileDialog.ShowDialog() -ne 'OK') { return }
             $filesToInstall = $fileDialog.FileNames
@@ -5750,11 +5810,11 @@ function Show-DriverMenu {
         else { return } # Cancelado
 
         if ($filesToInstall.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("No se encontraron archivos validos.", "Aviso", 0, 48)
+            [System.Windows.Forms.MessageBox]::Show("No se encontraron archivos válidos.", "Aviso", 0, 48)
             return
         }
 
-        # Ejecucion
+        # Ejecución
         $progressBar.Value = 0
         $progressBar.Maximum = $filesToInstall.Count
         $btnRestore.Enabled = $false
@@ -6183,7 +6243,7 @@ function Show-ScheduledTasks {
     # --- 1. CONFIGURACION DEL FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Aegis Phoenix - Tareas Programadas de Terceros"
-    $form.Size = New-Object System.Drawing.Size(950, 700)
+    $form.Size = New-Object System.Drawing.Size(980, 700)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
@@ -6200,12 +6260,12 @@ function Show-ScheduledTasks {
 
     $lblSearch = New-Object System.Windows.Forms.Label
     $lblSearch.Text = "Buscar:"
-    $lblSearch.Location = New-Object System.Drawing.Point(350, 23)
+    $lblSearch.Location = New-Object System.Drawing.Point(380, 23)
     $lblSearch.AutoSize = $true
     $form.Controls.Add($lblSearch)
 
     $txtSearch = New-Object System.Windows.Forms.TextBox
-    $txtSearch.Location = New-Object System.Drawing.Point(400, 20)
+    $txtSearch.Location = New-Object System.Drawing.Point(430, 20)
     $txtSearch.Width = 250
     $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $txtSearch.ForeColor = [System.Drawing.Color]::Yellow
@@ -6214,7 +6274,7 @@ function Show-ScheduledTasks {
 
     $btnRefresh = New-Object System.Windows.Forms.Button
     $btnRefresh.Text = "Refrescar"
-    $btnRefresh.Location = New-Object System.Drawing.Point(670, 18)
+    $btnRefresh.Location = New-Object System.Drawing.Point(700, 18)
     $btnRefresh.Size = New-Object System.Drawing.Size(100, 26)
     $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnRefresh.ForeColor = [System.Drawing.Color]::White
@@ -6224,7 +6284,7 @@ function Show-ScheduledTasks {
     # --- 3. DATAGRIDVIEW ---
     $grid = New-Object System.Windows.Forms.DataGridView
     $grid.Location = New-Object System.Drawing.Point(20, 60)
-    $grid.Size = New-Object System.Drawing.Size(890, 420)
+    $grid.Size = New-Object System.Drawing.Size(920, 420)
     $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $grid.BorderStyle = "None"
     $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
@@ -6234,7 +6294,7 @@ function Show-ScheduledTasks {
     $grid.MultiSelect = $false
     $grid.AutoSizeColumnsMode = "Fill"
     
-    # Optimizacion de buffer
+    # Optimización de buffer
     $type = $grid.GetType()
     $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
     $prop.SetValue($grid, $true, $null)
@@ -6291,39 +6351,21 @@ function Show-ScheduledTasks {
     $grpDesc.Text = "Detalles de Ejecucion"
     $grpDesc.ForeColor = [System.Drawing.Color]::LightGray
     $grpDesc.Location = New-Object System.Drawing.Point(20, 490)
-    $grpDesc.Size = New-Object System.Drawing.Size(890, 80)
+    $grpDesc.Size = New-Object System.Drawing.Size(920, 80)
     $form.Controls.Add($grpDesc)
 
     $txtDetails = New-Object System.Windows.Forms.TextBox
     $txtDetails.Location = New-Object System.Drawing.Point(15, 30)
-    $txtDetails.Size = New-Object System.Drawing.Size(860, 40)
+    $txtDetails.Size = New-Object System.Drawing.Size(890, 40)
     $txtDetails.ReadOnly = $true
     $txtDetails.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $txtDetails.ForeColor = [System.Drawing.Color]::Yellow
     $txtDetails.BorderStyle = "FixedSingle"
     $grpDesc.Controls.Add($txtDetails)
 
-    # --- 5. BOTONES DE ACCION ---
-    $btnEnable = New-Object System.Windows.Forms.Button
-    $btnEnable.Text = "HABILITAR SELECCIONADAS"
-    $btnEnable.Location = New-Object System.Drawing.Point(380, 590)
-    $btnEnable.Size = New-Object System.Drawing.Size(240, 40)
-    $btnEnable.BackColor = [System.Drawing.Color]::SeaGreen
-    $btnEnable.ForeColor = [System.Drawing.Color]::White
-    $btnEnable.FlatStyle = "Flat"
-    $btnEnable.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($btnEnable)
-
-    $btnDisable = New-Object System.Windows.Forms.Button
-    $btnDisable.Text = "DESHABILITAR SELECCIONADAS"
-    $btnDisable.Location = New-Object System.Drawing.Point(670, 590)
-    $btnDisable.Size = New-Object System.Drawing.Size(240, 40)
-    $btnDisable.BackColor = [System.Drawing.Color]::Crimson
-    $btnDisable.ForeColor = [System.Drawing.Color]::White
-    $btnDisable.FlatStyle = "Flat"
-    $btnDisable.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($btnDisable)
-
+    # --- 5. BOTONES DE ACCION (Reorganizados para caber 3) ---
+    
+    # Boton Marcar Todo
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Marcar Todo"
     $btnSelectAll.Location = New-Object System.Drawing.Point(20, 595)
@@ -6331,6 +6373,39 @@ function Show-ScheduledTasks {
     $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnSelectAll.FlatStyle = "Flat"
     $form.Controls.Add($btnSelectAll)
+
+    # Boton HABILITAR
+    $btnEnable = New-Object System.Windows.Forms.Button
+    $btnEnable.Text = "HABILITAR"
+    $btnEnable.Location = New-Object System.Drawing.Point(280, 590)
+    $btnEnable.Size = New-Object System.Drawing.Size(200, 40)
+    $btnEnable.BackColor = [System.Drawing.Color]::SeaGreen
+    $btnEnable.ForeColor = [System.Drawing.Color]::White
+    $btnEnable.FlatStyle = "Flat"
+    $btnEnable.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnEnable)
+
+    # Boton DESHABILITAR
+    $btnDisable = New-Object System.Windows.Forms.Button
+    $btnDisable.Text = "DESHABILITAR"
+    $btnDisable.Location = New-Object System.Drawing.Point(500, 590)
+    $btnDisable.Size = New-Object System.Drawing.Size(200, 40)
+    $btnDisable.BackColor = [System.Drawing.Color]::OrangeRed
+    $btnDisable.ForeColor = [System.Drawing.Color]::White
+    $btnDisable.FlatStyle = "Flat"
+    $btnDisable.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnDisable)
+
+    # Boton ELIMINAR (Nuevo)
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "ELIMINAR TAREA"
+    $btnDelete.Location = New-Object System.Drawing.Point(720, 590)
+    $btnDelete.Size = New-Object System.Drawing.Size(220, 40)
+    $btnDelete.BackColor = [System.Drawing.Color]::Maroon # Rojo oscuro para peligro
+    $btnDelete.ForeColor = [System.Drawing.Color]::White
+    $btnDelete.FlatStyle = "Flat"
+    $btnDelete.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnDelete)
 
     # --- VARIABLES Y CACHE ---
     $script:TaskCache = @{}
@@ -6342,40 +6417,37 @@ function Show-ScheduledTasks {
         $script:TaskCache.Clear()
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         
-        # Filtro Inteligente (Misma logica que CLI)
+        # Filtro Inteligente
         $allTasks = Get-ScheduledTask | Where-Object {
             ($_.TaskPath -notlike '\Microsoft\*') -or 
             ($_.TaskPath -like '\Microsoft\*' -and $_.Author -notlike 'Microsoft*')
         }
 
-        # Filtro de Búsqueda (Texto)
+        # Filtro de Búsqueda
         $searchText = $txtSearch.Text.Trim()
         if (-not [string]::IsNullOrWhiteSpace($searchText)) {
             $allTasks = $allTasks | Where-Object { $_.TaskName -match $searchText }
         }
 
         foreach ($task in $allTasks) {
-            # ID único basado en ruta y nombre
             $taskId = "$($task.TaskPath)|$($task.TaskName)"
             $script:TaskCache[$taskId] = $task
 
             $rowId = $grid.Rows.Add()
             $row = $grid.Rows[$rowId]
             
-            # Guardamos ID oculto en la celda del nombre (Tag) o usamos el diccionario
             $row.Cells["Name"].Value = $task.TaskName
-            $row.Cells["Name"].Tag = $taskId # Guardamos ID en el Tag
+            $row.Cells["Name"].Tag = $taskId 
             
             $row.Cells["Author"].Value = $task.Author
             $row.Cells["Path"].Value = $task.TaskPath
 
-            # Estado Visual
             if ($task.State -eq 'Disabled') {
                 $row.Cells["Status"].Value = "Deshabilitado"
                 $row.Cells["Status"].Style.ForeColor = [System.Drawing.Color]::Salmon
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::White
             } else {
-                $row.Cells["Status"].Value = "Habilitado" # Ready o Running
+                $row.Cells["Status"].Value = "Habilitado"
                 $row.Cells["Status"].Style.ForeColor = [System.Drawing.Color]::LightGreen
                 if ($task.State -eq 'Running') {
                     $row.Cells["Status"].Value = "Ejecutando"
@@ -6400,7 +6472,6 @@ function Show-ScheduledTasks {
             
             if ($null -ne $taskId -and $script:TaskCache.ContainsKey($taskId)) {
                 $t = $script:TaskCache[$taskId]
-                # Intentamos obtener la accion para mostrarla
                 $action = ($t.Actions | Select-Object -First 1)
                 if ($action) {
                     $txtDetails.Text = "Ejecuta: $($action.Execute) $($action.Arguments)"
@@ -6417,9 +6488,9 @@ function Show-ScheduledTasks {
         $grid.ResumeLayout()
     })
 
-    # Logica de Aplicacion
+    # Lógica General (Habilitar/Deshabilitar/Eliminar)
     $Apply = {
-        param($Mode) # 'Enable' o 'Disable'
+        param($Mode) # 'Enable', 'Disable', 'Delete'
         
         $targets = @()
         foreach ($row in $grid.Rows) {
@@ -6430,8 +6501,25 @@ function Show-ScheduledTasks {
 
         if ($targets.Count -eq 0) { return }
 
-        $verb = if ($Mode -eq 'Enable') { "HABILITAR" } else { "DESHABILITAR" }
-        if ([System.Windows.Forms.MessageBox]::Show("¿$verb $($targets.Count) tareas?", "Confirmar", 4, 32) -ne 'Yes') { return }
+        # Configurar mensajes y advertencias segun accion
+        $verb = ""
+        $icon = [System.Windows.Forms.MessageBoxIcon]::Question
+        
+        switch ($Mode) {
+            'Enable'  { $verb = "HABILITAR" }
+            'Disable' { $verb = "DESHABILITAR" }
+            'Delete'  { 
+                $verb = "ELIMINAR PERMANENTEMENTE" 
+                $icon = [System.Windows.Forms.MessageBoxIcon]::Warning
+            }
+        }
+
+        $msg = "¿Estas seguro de $verb $($targets.Count) tareas seleccionadas?"
+        if ($Mode -eq 'Delete') {
+            $msg += "`n`n¡Esta accion NO se puede deshacer!"
+        }
+
+        if ([System.Windows.Forms.MessageBox]::Show($msg, "Confirmar Accion", 6, $icon) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
@@ -6439,9 +6527,15 @@ function Show-ScheduledTasks {
             try {
                 if ($Mode -eq 'Enable') { 
                     Enable-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -ErrorAction Stop 
-                } else { 
+                } 
+                elseif ($Mode -eq 'Disable') { 
                     Disable-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -ErrorAction Stop 
                 }
+                elseif ($Mode -eq 'Delete') {
+                    # Lógica de eliminación
+                    Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction Stop
+                }
+                
                 Write-Log -LogLevel ACTION -Message "TASKS GUI: $verb $($t.TaskName)"
             } catch {
                 Write-Log -LogLevel ERROR -Message "Error con tarea $($t.TaskName): $_"
@@ -6449,11 +6543,31 @@ function Show-ScheduledTasks {
         }
 
         & $LoadGrid
-        [System.Windows.Forms.MessageBox]::Show("Proceso completado.", "Éxito", 0, 64)
+        [System.Windows.Forms.MessageBox]::Show("Proceso completado.", "Exito", 0, 64)
     }
 
+    # --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Evita que la barra espaciadora haga scroll hacia abajo
+            $e.SuppressKeyPress = $true 
+            
+            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
+            foreach ($row in $sender.SelectedRows) {
+                # Invierte el valor actual (True -> False / False -> True)
+                # Nota: Verificamos si la celda es de solo lectura (como en Bloatware protegido)
+                if (-not $row.Cells["Check"].ReadOnly) {
+                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
+                }
+            }
+        }
+    })
+
+    # Asignar eventos a botones
     $btnEnable.Add_Click({ & $Apply -Mode 'Enable' })
     $btnDisable.Add_Click({ & $Apply -Mode 'Disable' })
+    $btnDelete.Add_Click({ & $Apply -Mode 'Delete' })
 
     $form.ShowDialog() | Out-Null
     $form.Dispose()
@@ -7437,6 +7551,24 @@ function Show-TweakManagerMenu {
         }
     }
 
+    # --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Evita que la barra espaciadora haga scroll hacia abajo
+            $e.SuppressKeyPress = $true 
+            
+            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
+            foreach ($row in $sender.SelectedRows) {
+                # Invierte el valor actual (True -> False / False -> True)
+                # Nota: Verificamos si la celda es de solo lectura (como en Bloatware protegido)
+                if (-not $row.Cells["Check"].ReadOnly) {
+                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
+                }
+            }
+        }
+    })
+	
     $btnEnable.Add_Click({ & $Apply -Mode 'Enable' })
     $btnRestore.Add_Click({ & $Apply -Mode 'Disable' })
 
