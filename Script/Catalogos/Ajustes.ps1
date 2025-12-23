@@ -211,22 +211,53 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Activar Plan de Energia de Maximo Rendimiento Definitivo"
         Category       = "Rendimiento del Sistema"
-        Description    = "Activa el plan de energia de maximo rendimiento, ideal para juegos y estaciones de trabajo. Aumenta el consumo."
+        Description    = "Activa el plan 'Ultimate Performance'. ADVERTENCIA: En portatiles puede causar alto consumo de bateria y calor excesivo."
         Method         = "Command"
         EnableCommand  = {
-			$ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
-			powercfg -duplicatescheme $ultimatePlanGuid | Out-Null;
-			powercfg /setactive $ultimatePlanGuid
-			}
+            # --- PROTECCIÓN PARA PORTÁTILES ---
+            $isPortable = $false
+            try {
+                # Método 1: Batería
+                if (Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue) { $isPortable = $true }
+                
+                # Método 2: Chasis (Tipos 8, 9, 10, 14, etc. son portátiles)
+                $chassis = Get-CimInstance -ClassName Win32_SystemEnclosure -ErrorAction SilentlyContinue
+                if ($chassis.ChassisTypes -match '^(8|9|10|11|12|14|30|31|32)$') { $isPortable = $true }
+            } catch {}
+
+            if ($isPortable) {
+                # Requiere cargar WinForms si no está cargado (normalmente ya lo está por el menú padre)
+                Add-Type -AssemblyName System.Windows.Forms
+                $msg = "Se ha detectado que este equipo es un PORTÁTIL.`n`nActivar el modo 'Máximo Rendimiento' impedira que el procesador reduzca su velocidad, lo que causara:`n- Drenaje rápido de bateria.`n- Mayor temperatura (riesgo en mochilas).`n`n¿Estas seguro de querer activarlo?"
+                $warn = [System.Windows.Forms.MessageBox]::Show($msg, "Advertencia de Energía", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+                
+                if ($warn -ne 'Yes') { 
+                    Write-Warning "Activacion cancelada por el usuario (Proteccion de Portátil)."
+                    return 
+                }
+            }
+
+            # Código original de activación
+            $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+            # Intentar duplicar el esquema si no existe
+            $check = powercfg /list
+            if ($check -notmatch $ultimatePlanGuid) {
+                powercfg -duplicatescheme $ultimatePlanGuid | Out-Null
+            }
+            powercfg /setactive $ultimatePlanGuid
+            Write-Host "Plan de Máximo Rendimiento Activado."
+        }
         DisableCommand = {
-			$balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e";
-			powercfg /setactive $balancedPlanGuid
-			}
+            # Volver a Equilibrado (Balanced)
+            $balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e"
+            powercfg /setactive $balancedPlanGuid
+            Write-Host "Restaurado a Plan Equilibrado."
+        }
         CheckCommand   = {
-			$ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
-			$activeScheme = powercfg /getactivescheme;
-			return ($activeScheme -match $ultimatePlanGuid)
-			}
+            $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+            $activeScheme = powercfg /getactivescheme
+            return ($activeScheme -match $ultimatePlanGuid)
+        }
         RestartNeeded  = "None"
     },
     [PSCustomObject]@{
