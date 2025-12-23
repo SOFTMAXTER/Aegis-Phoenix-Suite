@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.8
+    4.8.9
 #>
 
-$script:Version = "4.8.8"
+$script:Version = "4.8.9"
 
 function Write-Log {
     [CmdletBinding()]
@@ -264,7 +264,7 @@ function Create-RestorePoint {
     # 1. Verificamos y aseguramos que la Proteccion del Sistema este habilitada en C:
     try {
         Write-Host "[INFO] Verificando el estado de la Proteccion del Sistema en la unidad C:..." -ForegroundColor Gray
-        Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+        Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction Stop
     } catch {
         Write-Error "No se pudo habilitar la Proteccion del Sistema en la unidad C:. Esta funcion es necesaria para crear puntos de restauracion."
         Write-Error "Por favor, habilitala manualmente desde 'Propiedades del Sistema > Proteccion del Sistema'. Error: $($_.Exception.Message)"
@@ -1585,26 +1585,15 @@ function Show-CleaningMenu {
                             if (Test-Path $reg) { Set-ItemProperty -Path $reg -Name "StateFlags0099" -Value 2 -Type DWord -Force -ErrorAction SilentlyContinue }
                         }
                         
-                        # 3. Ejecutar CleanMgr (LoGICA BLINDADA .NET)
-                        $pInfo = New-Object System.Diagnostics.ProcessStartInfo
-                        $pInfo.FileName = "cleanmgr.exe"
-                        $pInfo.Arguments = "/sagerun:99"
-                        $pInfo.UseShellExecute = $true  # <--- EL FIX VERIFICADO
-                        $pInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+                        # 3. Ejecutar CleanMgr (MODO NATIVO ROBUSTO)
+                        Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:99" -Wait -WindowStyle Normal
                         
-                        $proc = [System.Diagnostics.Process]::Start($pInfo)
-                        
-                        # Bucle de espera activo que no congela la GUI
-                        while (-not $proc.HasExited) {
-                            $proc.WaitForExit(500) | Out-Null 
-                            [System.Windows.Forms.Application]::DoEvents()
-                        }
-                        
-                        # 4. Windows.old (Limpieza manual final)
-                        if (Test-Path "C:\Windows.old") {
+                        # 4. Windows.old (Limpieza manual final con mejora de variables de entorno)
+                        $winOldPath = "$env:SystemDrive\Windows.old"
+                        if (Test-Path $winOldPath) {
                             $lblStatus.Text = "Eliminando Windows.old (puede tardar)..."
                             [System.Windows.Forms.Application]::DoEvents()
-                            & cmd.exe /c "takeown /F C:\Windows.old /R /D S && icacls C:\Windows.old /grant *S-1-5-32-544:F /T /C /Q && rd /s /q C:\Windows.old" 2>$null
+                            & cmd.exe /c "takeown /F `"$winOldPath`" /R /D S && icacls `"$winOldPath`" /grant *S-1-5-32-544:F /T /C /Q && rd /s /q `"$winOldPath`"" 2>$null
                         }
                     } catch {
                         Write-Log -LogLevel ERROR -Message "Error en Deep Clean GUI: $_"
@@ -2365,9 +2354,34 @@ function Manage-StartupApps {
 # MODULO DE Reparacion del sistema (SFC/DISM/CHKDSK)
 # ===================================================================
 function Repair-SystemFiles {
-    Write-Log -LogLevel INFO -Message "Usuario inicio la secuencia de reparacion del sistema (SFC/DISM/CHKDSK)."
-    Write-Host "`n[+] Iniciando la secuencia de reparacion del sistema." -ForegroundColor Cyan
-    Write-Host "Este proceso consta de varias etapas de diagnostico y reparacion." -ForegroundColor Yellow
+    Clear-Host
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host "      Verificacion y Reparacion de Archivos de Sistema " -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Esta utilidad ejecutara secuencialmente:" -ForegroundColor Yellow
+    Write-Host "   1. DISM ScanHealth    (Diagnostico de imagen)"
+    Write-Host "   2. DISM RestoreHealth (Reparacion de imagen - Si es necesario)"
+    Write-Host "   3. SFC /Scannow       (Reparacion de archivos de sistema)"
+    Write-Host "   4. CHKDSK             (Analisis de disco fisico - Opcional)"
+    Write-Host ""
+    Write-Host "   [TIEMPO ESTIMADO]: 15 a 45 minutos." -ForegroundColor Gray
+    Write-Host "   [ADVERTENCIA]: El sistema puede ir lento durante el proceso." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "   [C] CONTINUAR con la reparacion" -ForegroundColor Green
+    Write-Host "   [V] VOLVER al menu anterior" -ForegroundColor Red
+    Write-Host ""
+
+    $choice = Read-Host "Elige una opcion"
+
+    # --- 1. Salida Rapida (Logica de Inventory) ---
+    if ($choice.ToUpper() -ne 'C') {
+        return
+    }
+
+    # --- Inicio del proceso real ---
+    Write-Log -LogLevel INFO -Message "Usuario confirmo inicio de la secuencia de reparacion (SFC/DISM/CHKDSK)."
+    Write-Host "`n[+] Iniciando la secuencia de reparacion..." -ForegroundColor Cyan
     
     $repairsMade = $false
     $imageIsRepairable = $false
@@ -2419,46 +2433,44 @@ function Repair-SystemFiles {
     # Verificacion de reparaciones SFC
     $cbsLogPath = "$env:windir\Logs\CBS\CBS.log"
     if (Test-Path $cbsLogPath) {
-        $sfcEntries = Get-Content $cbsLogPath | Select-String -Pattern "\[SR\]"
-        # Regex compatible con Español e Inglés
-        if ($sfcEntries -match "Repairing file|Fixed|Repaired|Reparando archivo|Reparado") {
-            $repairsMade = $true
-        }
+        # Usamos try/catch por si el log esta bloqueado
+        try {
+            $sfcEntries = Get-Content $cbsLogPath -ErrorAction SilentlyContinue | Select-String -Pattern "\[SR\]"
+            if ($sfcEntries -match "Repairing file|Fixed|Repaired|Reparando archivo|Reparado") {
+                $repairsMade = $true
+            }
+        } catch {}
     }
 
     # --- PASO 4 (UNIVERSAL): CHKDSK PROFUNDO ---
     Write-Host "`n[+] PASO 4/4 (OPCIONAL): Analisis Profundo de Disco (CHKDSK /r /f /b /x)" -ForegroundColor Cyan
     Write-Host "    Este comando busca sectores fisicos defectuosos y re-evalua todo el disco." -ForegroundColor Gray
     Write-Warning "Esta operacion requiere reiniciar y puede tardar VARIAS HORAS."
-    Write-Warning "Durante el analisis (pantalla negra al inicio), NO podras usar el equipo."
+    Write-Warning "Durante el analisis, NO podras usar el equipo."
     
     $chkdskChoice = Read-Host "`n¿Deseas programar este analisis profundo para el proximo reinicio? (S/N)"
     
     if ($chkdskChoice.ToUpper() -eq 'S') {
         try {
-            Write-Host "Programando CHKDSK en unidad C:..." -ForegroundColor Yellow
+            Write-Host "Programando CHKDSK en unidad $env:SystemDrive..." -ForegroundColor Yellow
             
             # --- DETECCION INTELIGENTE DE IDIOMA ---
-            # Detectamos el idioma del sistema para enviar la tecla correcta (Y, S, O, J, etc.)
             $sysLang = (Get-UICulture).TwoLetterISOLanguageName.ToUpper()
-            $yesKey = "Y" # Valor por defecto (Inglés y mayoria de idiomas)
+            $yesKey = "Y" 
 
             switch ($sysLang) {
-                "ES" { $yesKey = "S" } # Español
-                "FR" { $yesKey = "O" } # Francés (Oui)
-                "DE" { $yesKey = "J" } # Alemán (Ja)
-                "IT" { $yesKey = "S" } # Italiano (Si)
-                "PT" { $yesKey = "S" } # Portugués (Sim)
+                "ES" { $yesKey = "S" } 
+                "FR" { $yesKey = "O" } 
+                "DE" { $yesKey = "J" } 
+                "IT" { $yesKey = "S" } 
+                "PT" { $yesKey = "S" } 
             }
-            # ---------------------------------------
-
-            # Ejecutamos con la tecla detectada
-            $result = cmd.exe /c "echo $yesKey | chkdsk C: /f /r /b /x" 2>&1
             
-            # Validacion robusta: Codigo 0 o mensaje de éxito en ES o EN
+            $result = cmd.exe /c "echo $yesKey | chkdsk $env:SystemDrive /f /r /b /x" 2>&1
+            
             if ($LASTEXITCODE -eq 0 -or $result -match "se comprobar|checked the next time") {
                 Write-Host "[OK] CHKDSK programado exitosamente ($sysLang detected -> '$yesKey')." -ForegroundColor Green
-                Write-Log -LogLevel ACTION -Message "REPAIR: Se programo CHKDSK /f /r /b  /x para el proximo reinicio (Idioma: $sysLang)."
+                Write-Log -LogLevel ACTION -Message "REPAIR: Se programo CHKDSK /f /r /b  /x para el proximo reinicio."
                 $chkdskScheduled = $true
                 $repairsMade = $true 
             } else {
@@ -2481,7 +2493,7 @@ function Repair-SystemFiles {
             "Se realizaron reparaciones en el sistema. Se recomienda reiniciar." 
         }
         
-        Write-Host "[RECOMENDACIoN] $msg" -ForegroundColor Cyan
+        Write-Host "[RECOMENDACION] $msg" -ForegroundColor Cyan
         $choice = Read-Host "`n¿Deseas reiniciar ahora? (S/N)"
         if ($choice.ToUpper() -eq 'S') {
             Write-Host "Reiniciando el sistema en 60 segundos..." -ForegroundColor Yellow
@@ -2600,15 +2612,26 @@ function Clear-SystemCaches {
 # MODULO DE Optimizacion de unidades
 # ===================================================================
 function Optimize-Drives {
-	Write-Log -LogLevel INFO -Message "Usuario inicio la optimizacion de unidades."
-    $drive = Get-Volume -DriveLetter C
-    if ($drive.DriveType -eq "SSD") {
-        Optimize-Volume -DriveLetter C -ReTrim -Verbose
-		Write-Log -LogLevel ACTION -Message "Optimizando unidad C: via ReTrim (SSD)."
-    }
-    else {
-        Optimize-Volume -DriveLetter C -Defrag -Verbose
-		Write-Log -LogLevel ACTION -Message "Optimizando unidad C: via Defrag (HDD)."
+    Write-Log -LogLevel INFO -Message "Usuario inicio la optimizacion de unidades."
+    
+    # Obtener solo la letra de la unidad (ej: "C") quitando los dos puntos si existen
+    $sysDriveLetter = $env:SystemDrive.Replace(":", "")
+    
+    try {
+        $drive = Get-Volume -DriveLetter $sysDriveLetter -ErrorAction Stop
+        
+        if ($drive.DriveType -eq "SSD") {
+            Write-Host "Detectado SSD en $env:SystemDrive. Ejecutando TRIM..." -ForegroundColor Cyan
+            Optimize-Volume -DriveLetter $sysDriveLetter -ReTrim -Verbose
+            Write-Log -LogLevel ACTION -Message "Optimizando unidad $env:SystemDrive via ReTrim (SSD)."
+        }
+        else {
+            Write-Host "Detectado HDD en $env:SystemDrive. Ejecutando Desfragmentación..." -ForegroundColor Cyan
+            Optimize-Volume -DriveLetter $sysDriveLetter -Defrag -Verbose
+            Write-Log -LogLevel ACTION -Message "Optimizando unidad $env:SystemDrive via Defrag (HDD)."
+        }
+    } catch {
+        Write-Error "Error al optimizar la unidad $env:SystemDrive : $_"
     }
 }
 
@@ -2638,170 +2661,710 @@ function Generate-SystemReport {
 }
 
 # ===================================================================
-# --- MoDULO DE DIAGNoSTICO Y REPARACIoN DE RED ---
+# --- MoDULO DE DIAGNoSTICO Y REPARACION DE RED ---
 # ===================================================================
-function Invoke-ShowIpConfig {
-    Write-Host "`n[+] Mostrando configuracion de red detallada (ipconfig /all)..." -ForegroundColor Cyan
-    ipconfig.exe /all
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-function Invoke-PingTest {
-    Write-Host "`n[+] Realizando prueba de conectividad a los servidores DNS de Google (8.8.8.8)..." -ForegroundColor Cyan
-    Test-NetConnection -ComputerName "8.8.8.8" -WarningAction SilentlyContinue
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-function Invoke-DnsResolutionTest {
-    Write-Host "`n[+] Realizando prueba de resolucion de nombres de dominio (google.com)..." -ForegroundColor Cyan
-    Resolve-DnsName -Name "google.com" -ErrorAction SilentlyContinue | Format-Table
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-function Invoke-TraceRoute {
-    Write-Host "`n[+] Trazando la ruta de red hacia 8.8.8.8 (puede tardar un momento)..." -ForegroundColor Cyan
-    Test-NetConnection -ComputerName "8.8.8.8" -TraceRoute -WarningAction SilentlyContinue
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-function Invoke-FlushDnsCache {
-    param([switch]$Force) # Anadimos el parametro -Force
-
-    Write-Host "`n[+] Limpiando la cache de resolucion de DNS..." -ForegroundColor Cyan
-    
-    # Si se usa -Force O el usuario confirma, procedemos.
-    if ($Force -or (Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
-        ipconfig.exe /flushdns
-        # --- VERIFICACION DE EXITO ---
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Cache de DNS limpiada exitosamente." -ForegroundColor Green
-        } else {
-            Write-Error "FALLO: El comando para limpiar la cache de DNS no se completo correctamente."
-        }
-    } else {
-        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
-    }
-
-    # Si no se usa -Force, pausamos. Si se usa, continuamos sin pausa.
-    if (-not $Force) {
-        Read-Host "`nPresiona Enter para continuar..."
-    }
-}
-
-function Invoke-RenewIpAddress {
-    Write-Host "`n[+] Liberando y renovando la direccion IP..." -ForegroundColor Cyan
-    if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
-        $releaseSuccess = $false
-        $renewSuccess = $false
-        
-        Write-Host " - Liberando IP actual (ipconfig /release)..." -ForegroundColor Gray
-        ipconfig.exe /release
-        # --- VERIFICACION DE EXITO ---
-        if ($LASTEXITCODE -eq 0) { $releaseSuccess = $true }
-
-        Write-Host " - Solicitando nueva IP (ipconfig /renew)..." -ForegroundColor Gray
-        ipconfig.exe /renew
-        # --- VERIFICACION DE EXITO ---
-        if ($LASTEXITCODE -eq 0) { $renewSuccess = $true }
-
-        if ($releaseSuccess -and $renewSuccess) {
-            Write-Host "[OK] Proceso de renovacion de IP completado." -ForegroundColor Green
-        } else {
-            Write-Error "FALLO: Una o mas operaciones de renovacion de IP no se completaron correctamente."
-        }
-    } else {
-        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
-    }
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-function Invoke-ResetNetworkStacks {
-    Write-Host "`n[+] Restableciendo la Pila de Red (Winsock y TCP/IP)..." -ForegroundColor Red
-    Write-Warning "ADVERTENCIA! Esta accion requiere reiniciar el equipo para completarse."
-    if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -eq 'S') {
-        $winsockSuccess = $false
-        $tcpSuccess = $false
-        $errorStrings = @("Error", "Failed", "Acceso denegado", "Access denied")
-
-        Write-Host " - Restableciendo el catalogo de Winsock..." -ForegroundColor Gray
-        # Capturamos toda la salida (estandar y error)
-        $winsockOutput = netsh.exe winsock reset 2>&1
-        
-        # Verificamos el codigo de salida Y que no haya texto de error
-        if ($LASTEXITCODE -eq 0 -and ($winsockOutput -notmatch ($errorStrings -join '|'))) {
-            $winsockSuccess = $true
-        } else {
-            Write-Warning "  -> Salida de Winsock: $winsockOutput"
-        }
-
-        Write-Host " - Restableciendo la pila TCP/IP..." -ForegroundColor Gray
-        $tcpOutput = netsh.exe int ip reset 2>&1
-        
-        if ($LASTEXITCODE -eq 0 -and ($tcpOutput -notmatch ($errorStrings -join '|'))) {
-            $tcpSuccess = $true
-        } else {
-            Write-Warning "  -> Salida de TCP/IP: $tcpOutput"
-        }
-
-        if ($winsockSuccess -and $tcpSuccess) {
-            Write-Host "[OK] Pila de red restablecida. Por favor, reinicia tu equipo." -ForegroundColor Green
-        } else {
-            Write-Error "FALLO: Uno o mas comandos de restablecimiento de red no se completaron correctamente. Revisa la salida."
-        }
-    } else {
-        Write-Host "[INFO] Operacion cancelada." -ForegroundColor Yellow
-    }
-    Read-Host "`nPresiona Enter para continuar..."
-}
-
-# --- Funcion del Menu Principal del Modulo de Red ---
 function Show-NetworkDiagnosticsMenu {
-    $netChoice = ''
-    do {
-        Clear-Host
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "          Modulo de Diagnostico y Reparacion de Red    " -ForegroundColor Cyan
-        Write-Host "=======================================================" -ForegroundColor Cyan
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Aegis Phoenix - Centro de Diagnostico de Red"
+    $form.Size = New-Object System.Drawing.Size(980, 700)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $form.ForeColor = [System.Drawing.Color]::White
+
+    # --- 2. PANELES ---
+    $pnlLeft = New-Object System.Windows.Forms.Panel
+    $pnlLeft.Location = New-Object System.Drawing.Point(10, 10)
+    $pnlLeft.Size = New-Object System.Drawing.Size(280, 640)
+    $pnlLeft.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 40)
+    $form.Controls.Add($pnlLeft)
+
+    # --- SECCION 1: ESTADO ---
+    $grpStatus = New-Object System.Windows.Forms.GroupBox
+    $grpStatus.Text = "Estado de Conexion"
+    $grpStatus.ForeColor = [System.Drawing.Color]::LightGray
+    $grpStatus.Location = New-Object System.Drawing.Point(10, 10)
+    $grpStatus.Size = New-Object System.Drawing.Size(260, 70)
+    $pnlLeft.Controls.Add($grpStatus)
+
+    $lblConnStatus = New-Object System.Windows.Forms.Label
+    $lblConnStatus.Text = "Iniciando..."
+    $lblConnStatus.Location = New-Object System.Drawing.Point(15, 30)
+    $lblConnStatus.AutoSize = $true
+    $lblConnStatus.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $grpStatus.Controls.Add($lblConnStatus)
+
+    # --- SECCION 2: DIAGNOSTICO ---
+    $grpDiag = New-Object System.Windows.Forms.GroupBox
+    $grpDiag.Text = "Herramientas de Lectura"
+    $grpDiag.ForeColor = [System.Drawing.Color]::Cyan
+    $grpDiag.Location = New-Object System.Drawing.Point(10, 100)
+    $grpDiag.Size = New-Object System.Drawing.Size(260, 230)
+    $pnlLeft.Controls.Add($grpDiag)
+
+    $btnIpConfig = New-Object System.Windows.Forms.Button
+    $btnIpConfig.Text = "Ver IP Completa (ipconfig)"
+    $btnIpConfig.Location = New-Object System.Drawing.Point(15, 30)
+    $btnIpConfig.Size = New-Object System.Drawing.Size(230, 35)
+    $btnIpConfig.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnIpConfig.ForeColor = [System.Drawing.Color]::White
+    $btnIpConfig.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnIpConfig)
+
+    $btnPing = New-Object System.Windows.Forms.Button
+    $btnPing.Text = "Prueba de Ping (Google)"
+    $btnPing.Location = New-Object System.Drawing.Point(15, 75)
+    $btnPing.Size = New-Object System.Drawing.Size(230, 35)
+    $btnPing.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnPing.ForeColor = [System.Drawing.Color]::White
+    $btnPing.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnPing)
+
+    $btnDns = New-Object System.Windows.Forms.Button
+    $btnDns.Text = "Resolucion DNS (nslookup)"
+    $btnDns.Location = New-Object System.Drawing.Point(15, 120)
+    $btnDns.Size = New-Object System.Drawing.Size(230, 35)
+    $btnDns.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnDns.ForeColor = [System.Drawing.Color]::White
+    $btnDns.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnDns)
+
+    $btnTrace = New-Object System.Windows.Forms.Button
+    $btnTrace.Text = "Trazar Ruta (Tracert)"
+    $btnTrace.Location = New-Object System.Drawing.Point(15, 165)
+    $btnTrace.Size = New-Object System.Drawing.Size(230, 35)
+    $btnTrace.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnTrace.ForeColor = [System.Drawing.Color]::White
+    $btnTrace.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnTrace)
+
+    # --- SECCION 3: REPARACION ---
+    $grpRepair = New-Object System.Windows.Forms.GroupBox
+    $grpRepair.Text = "Acciones de Reparacion"
+    $grpRepair.ForeColor = [System.Drawing.Color]::Orange
+    $grpRepair.Location = New-Object System.Drawing.Point(10, 350)
+    $grpRepair.Size = New-Object System.Drawing.Size(260, 180)
+    $pnlLeft.Controls.Add($grpRepair)
+
+    $btnFlush = New-Object System.Windows.Forms.Button
+    $btnFlush.Text = "Limpiar Cache DNS"
+    $btnFlush.Location = New-Object System.Drawing.Point(15, 30)
+    $btnFlush.Size = New-Object System.Drawing.Size(230, 35)
+    $btnFlush.BackColor = [System.Drawing.Color]::FromArgb(70, 50, 50)
+    $btnFlush.ForeColor = [System.Drawing.Color]::White
+    $btnFlush.FlatStyle = "Flat"
+    $grpRepair.Controls.Add($btnFlush)
+
+    $btnRenew = New-Object System.Windows.Forms.Button
+    $btnRenew.Text = "Renovar IP (Release/Renew)"
+    $btnRenew.Location = New-Object System.Drawing.Point(15, 75)
+    $btnRenew.Size = New-Object System.Drawing.Size(230, 35)
+    $btnRenew.BackColor = [System.Drawing.Color]::FromArgb(70, 50, 50)
+    $btnRenew.ForeColor = [System.Drawing.Color]::White
+    $btnRenew.FlatStyle = "Flat"
+    $grpRepair.Controls.Add($btnRenew)
+
+    $btnReset = New-Object System.Windows.Forms.Button
+    $btnReset.Text = "Reset Completo de Red"
+    $btnReset.Location = New-Object System.Drawing.Point(15, 120)
+    $btnReset.Size = New-Object System.Drawing.Size(230, 35)
+    $btnReset.BackColor = [System.Drawing.Color]::Maroon
+    $btnReset.ForeColor = [System.Drawing.Color]::White
+    $btnReset.FlatStyle = "Flat"
+    $btnReset.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $grpRepair.Controls.Add($btnReset)
+
+    $btnClearLog = New-Object System.Windows.Forms.Button
+    $btnClearLog.Text = "Limpiar Pantalla"
+    $btnClearLog.Location = New-Object System.Drawing.Point(10, 590)
+    $btnClearLog.Size = New-Object System.Drawing.Size(260, 30)
+    $btnClearLog.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $btnClearLog.FlatStyle = "Flat"
+    $btnClearLog.ForeColor = [System.Drawing.Color]::White
+    $pnlLeft.Controls.Add($btnClearLog)
+
+    # --- 3. CONSOLA VIRTUAL (OUTPUT) ---
+    $consoleBox = New-Object System.Windows.Forms.RichTextBox
+    $consoleBox.Location = New-Object System.Drawing.Point(300, 10)
+    $consoleBox.Size = New-Object System.Drawing.Size(650, 640)
+    $consoleBox.BackColor = [System.Drawing.Color]::FromArgb(10, 10, 15)
+    $consoleBox.ForeColor = [System.Drawing.Color]::LightGreen
+    $consoleBox.Font = New-Object System.Drawing.Font("Consolas", 10)
+    $consoleBox.ReadOnly = $true
+    $consoleBox.ScrollBars = "Vertical"
+    $form.Controls.Add($consoleBox)
+
+    # --- TOOLTIPS (DESCRIPCIONES EMERGENTES) ---
+    $tt = New-Object System.Windows.Forms.ToolTip
+    $tt.AutoPopDelay = 5000
+    $tt.InitialDelay = 800
+    $tt.ReshowDelay = 500
+    $tt.ShowAlways = $true
+
+    # Asignacion de textos (Sin acentos para consistencia)
+    $tt.SetToolTip($btnIpConfig, "Muestra tu direccion IP local, mascara de subred y puerta de enlace.")
+    $tt.SetToolTip($btnPing, "Envia paquetes a Google (8.8.8.8) para verificar si tienes salida a Internet.")
+    $tt.SetToolTip($btnDns, "Prueba si tu sistema puede traducir nombres (ej. google.com) a direcciones IP.")
+    $tt.SetToolTip($btnTrace, "Muestra la ruta y saltos que toman tus datos hasta llegar a Google.")
+    
+    $tt.SetToolTip($btnFlush, "Borra la memoria temporal de nombres DNS. util si no puedes entrar a ciertas webs.")
+    $tt.SetToolTip($btnRenew, "Desconecta y vuelve a solicitar una direccion IP al router (DCHP).")
+    $tt.SetToolTip($btnReset, "ADVERTENCIA: Restablece Winsock y TCP/IP a fabrica. Requiere reiniciar el PC.")
+    
+    $tt.SetToolTip($btnClearLog, "Borra todo el texto de la consola de la derecha.")
+    $tt.SetToolTip($lblConnStatus, "Estado actual de tu conexion a Internet.")
+
+    # --- FUNCIONES HELPER ---
+    
+    $LogToBox = {
+        param($Msg, $Color = "LightGreen", $IsHeader = $false)
         
-        Write-Host "Comprobando estado de la conexion..." -ForegroundColor Gray
-        if (Test-NetConnection -ComputerName "1.1.1.1" -InformationLevel Quiet -WarningAction SilentlyContinue) {
-            Write-Host "Estado de la Conexion: " -NoNewline
-			Write-Host "CONECTADO A INTERNET" -ForegroundColor Green
+        $consoleBox.SelectionStart = $consoleBox.TextLength
+        $consoleBox.SelectionLength = 0
+        $consoleBox.SelectionColor = [System.Drawing.Color]::FromName($Color)
+        
+        $time = Get-Date -Format "HH:mm:ss"
+        
+        if ($IsHeader) {
+            $consoleBox.AppendText("`r`n" + ("=" * 60) + "`r`n")
+            $consoleBox.AppendText(" [$time]  $Msg`r`n")
+            $consoleBox.AppendText(("=" * 60) + "`r`n")
         } else {
-            Write-Host "Estado de la Conexion: " -NoNewline
-			Write-Host "SIN CONEXION A INTERNET" -ForegroundColor Red
+            if ($Msg -match "^\s*$") { 
+                $consoleBox.AppendText("$Msg`r`n") 
+            } else {
+                if ($Msg.StartsWith(" ")) {
+                    $consoleBox.AppendText("$Msg`r`n") 
+                } else {
+                    $consoleBox.AppendText(" [$time] $Msg`r`n") 
+                }
+            }
+        }
+        $consoleBox.ScrollToCaret()
+    }
+
+    $RunAsyncProcess = {
+        param($Exe, $CmdArgs, $Title, $ClearConsole = $true)
+        
+        if ($ClearConsole) { $consoleBox.Clear() }
+        
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        & $LogToBox -Msg "INICIANDO: $Title" -IsHeader $true -Color "Cyan"
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pinfo.FileName = $Exe
+        $pinfo.Arguments = $CmdArgs
+        $pinfo.RedirectStandardOutput = $true
+        $pinfo.RedirectStandardError = $true
+        $pinfo.UseShellExecute = $false
+        $pinfo.CreateNoWindow = $true
+        
+        $oemEncoding = [System.Text.Encoding]::GetEncoding([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
+        $pinfo.StandardOutputEncoding = $oemEncoding
+        $pinfo.StandardErrorEncoding = $oemEncoding
+
+        try {
+            $p = New-Object System.Diagnostics.Process
+            $p.StartInfo = $pinfo
+            $p.Start() | Out-Null
+
+            while (-not $p.HasExited) {
+                $line = $p.StandardOutput.ReadLine()
+                if ($null -ne $line) {
+                    $lineColor = "White"
+                    if ($line -match "Error|Fallo|Unreachable|agotado|timed out") { $lineColor = "Salmon" }
+                    if ($line -match "Reply|Respuesta|Pinging") { $lineColor = "LightGreen" }
+                    
+                    $consoleBox.SelectionStart = $consoleBox.TextLength
+                    $consoleBox.SelectionLength = 0
+                    $consoleBox.SelectionColor = [System.Drawing.Color]::FromName($lineColor)
+                    $consoleBox.AppendText("$line`r`n")
+                    $consoleBox.ScrollToCaret()
+                    
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+            }
+            
+            $rest = $p.StandardOutput.ReadToEnd()
+            if ($rest) { $consoleBox.AppendText("$rest`r`n") }
+            
+            $err = $p.StandardError.ReadToEnd()
+            if (-not [string]::IsNullOrWhiteSpace($err)) {
+                if ($err -match "Respuesta no autoritativa|Non-authoritative") {
+                    $consoleBox.SelectionColor = [System.Drawing.Color]::Cyan
+                    $consoleBox.AppendText("NOTA: $err`r`n") 
+                } else {
+                    $consoleBox.SelectionColor = [System.Drawing.Color]::Salmon
+                    $consoleBox.AppendText("ERROR DE SISTEMA: $err`r`n") 
+                }
+            }
+
+        } catch {
+            & $LogToBox -Msg "Error critico al ejecutar el proceso: $_" -Color "Red"
         }
 
-        Write-Host ""
-        Write-Host "--- Acciones de Diagnostico ---" -ForegroundColor Yellow
-        Write-Host "   [1] Ver configuracion IP detallada (ipconfig /all)"
-        Write-Host "   [2] Probar conectividad a Internet (ping)"
-        Write-Host "   [3] Probar resolucion de DNS (nslookup)"
-        Write-Host "   [4] Trazar ruta de red (tracert)"
-        Write-Host ""
-        Write-Host "--- Acciones de Reparacion ---" -ForegroundColor Red
-        Write-Host "   [5] Limpiar cache de DNS"
-        Write-Host "   [6] Renovar concesion de IP"
-        Write-Host "   [7] Restablecer la Pila de Red (Requiere Reinicio)"
-        Write-Host ""
-        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
-        Write-Host ""
-        
-        $netChoice = Read-Host "Selecciona una opcion"
-        Write-Log -LogLevel INFO -Message "NETWORK: Usuario selecciono la opcion '$netChoice'."
-		
-        switch ($netChoice.ToUpper()) {
-            '1' { Invoke-ShowIpConfig }
-            '2' { Invoke-PingTest }
-            '3' { Invoke-DnsResolutionTest }
-            '4' { Invoke-TraceRoute }
-            '5' { Invoke-FlushDnsCache }
-            '6' { Invoke-RenewIpAddress }
-            '7' { Invoke-ResetNetworkStacks }
-            'V' { continue }
-            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        & $LogToBox -Msg "Proceso finalizado." -Color "Gray" -IsHeader $false
+    }
+
+    # --- EVENTOS ---
+
+    $btnIpConfig.Add_Click({
+        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/all" -Title "Configuracion IP Detallada"
+    })
+
+    $btnPing.Add_Click({
+        & $RunAsyncProcess -Exe "ping.exe" -CmdArgs "8.8.8.8" -Title "Prueba de Conectividad (Google DNS)"
+    })
+
+    $btnDns.Add_Click({
+        & $RunAsyncProcess -Exe "nslookup.exe" -CmdArgs "google.com" -Title "Resolucion de Nombres (DNS)"
+    })
+
+    $btnTrace.Add_Click({
+        & $RunAsyncProcess -Exe "tracert.exe" -CmdArgs "-d 8.8.8.8" -Title "Traza de Ruta (Tracert)"
+    })
+
+    $btnFlush.Add_Click({
+        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/flushdns" -Title "Limpiar Cache DNS"
+    })
+
+    $btnRenew.Add_Click({
+        if ([System.Windows.Forms.MessageBox]::Show("Esto desconectara internet momentaneamente. ¿Continuar?", "Confirmar", 'YesNo', 'Warning') -ne 'Yes') { return }
+        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/release" -Title "Paso 1: Liberar IP" -ClearConsole $true
+        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/renew" -Title "Paso 2: Renovar IP" -ClearConsole $false
+        & $StartStatusCheck
+    })
+
+    $btnReset.Add_Click({
+        $msg = "ADVERTENCIA CRITICA:`n`nEsto restablecera Winsock y la pila TCP/IP a fabrica.`nEs necesario REINICIAR el equipo para completar.`n`n¿Deseas continuar?"
+        if ([System.Windows.Forms.MessageBox]::Show($msg, "Reset Completo de Red", 'YesNo', 'Error') -eq 'Yes') {
+            & $RunAsyncProcess -Exe "netsh.exe" -CmdArgs "winsock reset" -Title "Paso 1: Reset Winsock" -ClearConsole $true
+            & $RunAsyncProcess -Exe "netsh.exe" -CmdArgs "int ip reset" -Title "Paso 2: Reset TCP/IP" -ClearConsole $false
+            [System.Windows.Forms.MessageBox]::Show("Reset completado.`nPor favor, reinicia tu equipo ahora.", "Reinicio Requerido", 'OK', 'Information')
         }
-    } while ($netChoice.ToUpper() -ne 'V')
+    })
+
+    $btnClearLog.Add_Click({ $consoleBox.Clear() })
+
+    # --- LOGICA DE INICIO ---
+    $timerCheck = New-Object System.Windows.Forms.Timer
+    $timerCheck.Interval = 500
+    
+    $StartStatusCheck = {
+        $lblConnStatus.Text = "Verificando..."
+        $lblConnStatus.ForeColor = [System.Drawing.Color]::Yellow
+        
+        $script:NetJob = Start-Job -ScriptBlock {
+            $ping = New-Object System.Net.NetworkInformation.Ping
+            try {
+                $reply = $ping.Send("8.8.8.8", 2000)
+                return ($reply.Status -eq "Success")
+            } catch { return $false }
+        }
+        $timerCheck.Start()
+    }
+
+    $timerCheck.Add_Tick({
+        if ($script:NetJob.State -eq 'Completed' -or $script:NetJob.State -eq 'Failed') {
+            $timerCheck.Stop()
+            $result = Receive-Job -Job $script:NetJob -ErrorAction SilentlyContinue
+            Remove-Job -Job $script:NetJob -Force
+            
+            if ($result -eq $true) {
+                $lblConnStatus.Text = "CONECTADO"
+                $lblConnStatus.ForeColor = [System.Drawing.Color]::LightGreen
+                & $LogToBox -Msg "Estado Inicial: Conectado a Internet." -Color "Gray"
+            } else {
+                $lblConnStatus.Text = "SIN CONEXION"
+                $lblConnStatus.ForeColor = [System.Drawing.Color]::Salmon
+                & $LogToBox -Msg "Estado Inicial: Sin acceso a Internet." -Color "Salmon"
+            }
+        }
+    })
+
+    $form.Add_Shown({ 
+        & $LogToBox -Msg "Bienvenido al Centro de Diagnostico." -Color "White"
+        & $StartStatusCheck
+    })
+
+    $form.ShowDialog() | Out-Null
+    $form.Dispose()
+    
+    Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue
+}
+
+# ===================================================================
+# --- MoDULO DE Gestor de Claves Wi-Fi ---
+# ===================================================================
+function Show-WifiManager {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Aegis Phoenix - Gestor de Claves Wi-Fi"
+    $form.Size = New-Object System.Drawing.Size(980, 700)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $form.ForeColor = [System.Drawing.Color]::White
+
+    # --- 2. PANEL SUPERIOR ---
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = "Redes Wi-Fi Guardadas"
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblTitle.AutoSize = $true
+    $form.Controls.Add($lblTitle)
+
+    $lblSearch = New-Object System.Windows.Forms.Label
+    $lblSearch.Text = "Buscar:"
+    $lblSearch.Location = New-Object System.Drawing.Point(380, 23)
+    $lblSearch.AutoSize = $true
+    $form.Controls.Add($lblSearch)
+
+    $txtSearch = New-Object System.Windows.Forms.TextBox
+    $txtSearch.Location = New-Object System.Drawing.Point(430, 20)
+    $txtSearch.Width = 250
+    $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $txtSearch.ForeColor = [System.Drawing.Color]::Yellow
+    $txtSearch.BorderStyle = "FixedSingle"
+    $form.Controls.Add($txtSearch)
+
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = "Refrescar"
+    $btnRefresh.Location = New-Object System.Drawing.Point(700, 18)
+    $btnRefresh.Size = New-Object System.Drawing.Size(100, 26)
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnRefresh.ForeColor = [System.Drawing.Color]::White
+    $btnRefresh.FlatStyle = "Flat"
+    $form.Controls.Add($btnRefresh)
+
+    # --- 3. DATAGRIDVIEW ---
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Location = New-Object System.Drawing.Point(20, 60)
+    $grid.Size = New-Object System.Drawing.Size(920, 420)
+    $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $grid.BorderStyle = "None"
+    $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $grid.RowHeadersVisible = $false
+    $grid.AllowUserToAddRows = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.MultiSelect = $true
+    $grid.AutoSizeColumnsMode = "Fill"
+    
+    # Optimizacion grafica
+    $type = $grid.GetType()
+    $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
+    $prop.SetValue($grid, $true, $null)
+
+    # Estilos
+    $defaultStyle = New-Object System.Windows.Forms.DataGridViewCellStyle
+    $defaultStyle.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $defaultStyle.ForeColor = [System.Drawing.Color]::White
+    $defaultStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(80, 80, 80)
+    $defaultStyle.SelectionForeColor = [System.Drawing.Color]::White
+    $grid.DefaultCellStyle = $defaultStyle
+    $grid.ColumnHeadersDefaultCellStyle = $defaultStyle
+    $grid.EnableHeadersVisualStyles = $false
+
+    # Columnas
+    $colCheck = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $colCheck.HeaderText = "X"
+    $colCheck.Width = 30
+    $colCheck.Name = "Check"
+    $grid.Columns.Add($colCheck) | Out-Null
+
+    $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colName.HeaderText = "SSID (Nombre de Red)"
+    $colName.Name = "Name"
+    $colName.ReadOnly = $true
+    $colName.Width = 250
+    $grid.Columns.Add($colName) | Out-Null
+
+    $colAuth = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colAuth.HeaderText = "Autenticacion"
+    $colAuth.Name = "Auth"
+    $colAuth.ReadOnly = $true
+    $colAuth.Width = 150
+    $grid.Columns.Add($colAuth) | Out-Null
+
+    $colPass = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colPass.HeaderText = "Contrasena (Clave)"
+    $colPass.Name = "Password"
+    $colPass.ReadOnly = $true
+    $colPass.Width = 250
+    $grid.Columns.Add($colPass) | Out-Null
+
+    $form.Controls.Add($grid)
+
+    # --- 4. BARRA DE ESTADO ---
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(20, 490)
+    $progressBar.Size = New-Object System.Drawing.Size(920, 20)
+    $form.Controls.Add($progressBar)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = "Listo."
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 520)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
+    $form.Controls.Add($lblStatus)
+
+    # --- 5. BOTONES DE ACCION ---
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Marcar Todo"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 560)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(100, 30)
+    $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnSelectAll.FlatStyle = "Flat"
+    $form.Controls.Add($btnSelectAll)
+
+    # Boton EXPORTAR
+    $btnBackup = New-Object System.Windows.Forms.Button
+    $btnBackup.Text = "EXPORTAR (Backup)"
+    $btnBackup.Location = New-Object System.Drawing.Point(140, 550)
+    $btnBackup.Size = New-Object System.Drawing.Size(260, 50)
+    $btnBackup.BackColor = [System.Drawing.Color]::SeaGreen
+    $btnBackup.ForeColor = [System.Drawing.Color]::White
+    $btnBackup.FlatStyle = "Flat"
+    $btnBackup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnBackup)
+
+    # Boton RESTAURAR
+    $btnRestore = New-Object System.Windows.Forms.Button
+    $btnRestore.Text = "RESTAURAR XML"
+    $btnRestore.Location = New-Object System.Drawing.Point(410, 550)
+    $btnRestore.Size = New-Object System.Drawing.Size(260, 50)
+    $btnRestore.BackColor = [System.Drawing.Color]::FromArgb(70, 70, 70)
+    $btnRestore.ForeColor = [System.Drawing.Color]::White
+    $btnRestore.FlatStyle = "Flat"
+    $btnRestore.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnRestore)
+
+    # Boton ELIMINAR (Nuevo)
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "ELIMINAR SELECCIONADOS"
+    $btnDelete.Location = New-Object System.Drawing.Point(680, 550)
+    $btnDelete.Size = New-Object System.Drawing.Size(260, 50)
+    $btnDelete.BackColor = [System.Drawing.Color]::Crimson
+    $btnDelete.ForeColor = [System.Drawing.Color]::White
+    $btnDelete.FlatStyle = "Flat"
+    $btnDelete.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnDelete)
+
+    # --- VARIABLES Y CACHE ---
+    $script:WifiCache = @{}
+
+    # --- LOGICA: ESCANEAR Y LEER PASSWORDS ---
+    $ScanWifi = {
+        $grid.Rows.Clear()
+        $script:WifiCache.Clear()
+        $lblStatus.Text = "Recuperando perfiles Wi-Fi y desencriptando claves..."
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $tempDir = Join-Path $env:TEMP "AegisWifiTemp"
+        if (Test-Path $tempDir) { Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+
+        try {
+            $proc = Start-Process -FilePath "netsh.exe" -ArgumentList "wlan export profile key=clear folder=`"$tempDir`"" -WindowStyle Hidden -PassThru -Wait
+            
+            $xmlFiles = Get-ChildItem -Path $tempDir -Filter "*.xml"
+            foreach ($file in $xmlFiles) {
+                try {
+                    [xml]$xmlContent = Get-Content $file.FullName
+                    $ssid = $xmlContent.WLANProfile.name
+                    $auth = $xmlContent.WLANProfile.MSM.security.authEncryption.authentication
+                    $pass = $xmlContent.WLANProfile.MSM.security.sharedKey.keyMaterial
+                    if ([string]::IsNullOrWhiteSpace($pass)) { $pass = "(Sin clave / Enterprise)" }
+
+                    $script:WifiCache[$ssid] = [PSCustomObject]@{
+                        Name = $ssid
+                        Auth = $auth
+                        Password = $pass
+                    }
+                } catch {}
+            }
+        } catch {
+            $lblStatus.Text = "Error al leer perfiles Wi-Fi."
+        } finally {
+            Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # Poblar Grid
+        $searchText = $txtSearch.Text.Trim()
+        foreach ($key in $script:WifiCache.Keys) {
+            $item = $script:WifiCache[$key]
+            if ([string]::IsNullOrWhiteSpace($searchText) -or $item.Name -match $searchText) {
+                $rowId = $grid.Rows.Add()
+                $row = $grid.Rows[$rowId]
+                $row.Cells["Name"].Value = $item.Name
+                $row.Cells["Auth"].Value = $item.Auth
+                $row.Cells["Password"].Value = $item.Password
+                
+                if ($item.Password -ne "(Sin clave / Enterprise)") {
+                    $row.Cells["Password"].Style.ForeColor = [System.Drawing.Color]::LightGreen
+                } else {
+                    $row.Cells["Password"].Style.ForeColor = [System.Drawing.Color]::Gray
+                }
+            }
+        }
+
+        $lblStatus.Text = "Se encontraron $($grid.Rows.Count) redes Wi-Fi."
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        $grid.ClearSelection()
+    }
+
+    # --- EVENTOS ---
+    
+    $form.Add_Shown({ & $ScanWifi })
+    $btnRefresh.Add_Click({ & $ScanWifi })
+    $txtSearch.Add_KeyUp({ & $ScanWifi })
+
+    # Evento: Clic en celda
+    $grid.Add_CellClick({
+        param($sender, $e)
+        if ($e.RowIndex -ge 0 -and $e.ColumnIndex -ne 0) {
+            $row = $grid.Rows[$e.RowIndex]
+            $val = $row.Cells["Check"].Value
+            if ($val -eq $null) { $val = $false }
+            $row.Cells["Check"].Value = -not $val
+        }
+    })
+
+    # Evento: Barra Espaciadora
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            $e.SuppressKeyPress = $true 
+            foreach ($row in $sender.SelectedRows) {
+                $curr = $row.Cells["Check"].Value
+                if ($curr -eq $null) { $curr = $false }
+                $row.Cells["Check"].Value = -not $curr
+            }
+        }
+    })
+
+    $btnSelectAll.Add_Click({
+        foreach ($row in $grid.Rows) { 
+            $curr = $row.Cells["Check"].Value
+            if ($curr -eq $null) { $curr = $false }
+            $row.Cells["Check"].Value = -not $curr 
+        }
+    })
+
+    # 3. BACKUP (EXPORTAR)
+    $btnBackup.Add_Click({
+        $targets = @()
+        foreach ($row in $grid.Rows) {
+            if ($row.Cells["Check"].Value -eq $true) { $targets += $row.Cells["Name"].Value }
+        }
+
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona al menos una red.", "Aviso", 0, 48); return }
+
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = "Carpeta destino para el backup"
+        if ($dialog.ShowDialog() -ne 'OK') { return }
+        $destPath = $dialog.SelectedPath
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0
+        $progressBar.Maximum = $targets.Count
+        $count = 0
+
+        foreach ($ssid in $targets) {
+            $count++
+            $lblStatus.Text = "Exportando ($count/$($targets.Count)): $ssid..."
+            $progressBar.Value = $count
+            [System.Windows.Forms.Application]::DoEvents()
+            $cmd = "netsh wlan export profile name=`"$ssid`" key=clear folder=`"$destPath`""
+            Start-Process "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -Wait
+        }
+
+        $lblStatus.Text = "Proceso finalizado."
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        [System.Windows.Forms.MessageBox]::Show("Backup completado en: $destPath", "Exito", 0, 64)
+    })
+
+    # 4. RESTORE (IMPORTAR)
+    $btnRestore.Add_Click({
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        $dialog.Title = "Selecciona archivos XML Wi-Fi"
+        $dialog.Filter = "Archivos XML (*.xml)|*.xml"
+        $dialog.Multiselect = $true
+        if ($dialog.ShowDialog() -ne 'OK') { return }
+        $files = $dialog.FileNames
+
+        if ($files.Count -eq 0) { return }
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0
+        $progressBar.Maximum = $files.Count
+        $count = 0
+        
+        foreach ($file in $files) {
+            $count++
+            $fName = [System.IO.Path]::GetFileName($file)
+            $lblStatus.Text = "Importando: $fName..."
+            $progressBar.Value = $count
+            [System.Windows.Forms.Application]::DoEvents()
+            $cmd = "netsh wlan add profile filename=`"$file`" user=all"
+            Start-Process "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -Wait
+        }
+
+        $lblStatus.Text = "Restauracion completada."
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        [System.Windows.Forms.MessageBox]::Show("Importados $($files.Count) perfiles.", "Exito", 0, 64)
+        & $ScanWifi
+    })
+
+    # 5. ELIMINAR (NUEVO)
+    $btnDelete.Add_Click({
+        $targets = @()
+        foreach ($row in $grid.Rows) {
+            if ($row.Cells["Check"].Value -eq $true) { $targets += $row.Cells["Name"].Value }
+        }
+
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona una red para eliminar.", "Aviso", 0, 48); return }
+
+        if ([System.Windows.Forms.MessageBox]::Show("¿Eliminar $($targets.Count) redes Wi-Fi del sistema?\n\nEsta accion olvidara las contrasenas y no se conectara automaticamente.", "Confirmar Eliminacion", 4, 32) -ne 'Yes') { return }
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0
+        $progressBar.Maximum = $targets.Count
+        $count = 0
+
+        foreach ($ssid in $targets) {
+            $count++
+            $lblStatus.Text = "Eliminando: $ssid..."
+            $progressBar.Value = $count
+            [System.Windows.Forms.Application]::DoEvents()
+            
+            # Comando de borrado nativo
+            $cmd = "netsh wlan delete profile name=`"$ssid`""
+            Start-Process "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -Wait
+        }
+
+        $lblStatus.Text = "Eliminacion completada."
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        [System.Windows.Forms.MessageBox]::Show("Redes eliminadas.", "Exito", 0, 64)
+        
+        # Recargar lista
+        & $ScanWifi
+    })
+
+    $form.ShowDialog() | Out-Null
+    $form.Dispose()
 }
 
 # ===================================================================
@@ -4427,484 +4990,6 @@ by SOFTMAXTER
 }
 
 # ===================================================================
-# --- MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
-# ===================================================================
-function Select-PathDialog {
-    param(
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Folder', 'File')]
-        [string]$DialogType,
-
-        [string]$Title,
-
-        [string]$Filter = "Todos los archivos (*.*)|*.*"
-    )
-    
-    try {
-        Add-Type -AssemblyName System.Windows.Forms
-        if ($DialogType -eq 'Folder') {
-            $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-            $dialog.Description = $Title
-            if ($dialog.ShowDialog() -eq 'OK') {
-                return $dialog.SelectedPath
-            }
-        } elseif ($DialogType -eq 'File') {
-            $dialog = New-Object System.Windows.Forms.OpenFileDialog
-            $dialog.Title = $Title
-            $dialog.Filter = $Filter
-            $dialog.CheckFileExists = $true
-            $dialog.CheckPathExists = $true
-            $dialog.Multiselect = $true # Permitimos seleccionar multiples archivos
-            if ($dialog.ShowDialog() -eq 'OK') {
-                return $dialog.FileNames # Devolvemos un array de nombres de archivo
-            }
-        }
-    } catch {
-        Write-Error "No se pudo mostrar el dialogo de seleccion. Error: $($_.Exception.Message)"
-    }
-    
-    return $null # Devuelve nulo si el usuario cancela
-}
-
-function Invoke-BackupRobocopyVerification {
-    [CmdletBinding()]
-    param(
-        $logFile, $baseRoboCopyArgs, $backupType, $sourcePaths, $destinationPath, $Mode
-    )
-
-    Write-Host "`n[+] Iniciando comprobacion de integridad (modo de solo listado)..." -ForegroundColor Yellow
-    Write-Output "`r`n`r`n================================================`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
-    Write-Output "   INICIO DE LA COMPROBACION DE INTEGRIDAD (RAPIDA)`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
-    Write-Output "================================================`r`n" | Out-File -FilePath $logFile -Append -Encoding UTF8
-
-    $verifyBaseArgs = $baseRoboCopyArgs + "/L"
-    $logArg = "/LOG+:`"$logFile`""
-
-    if ($backupType -eq 'Files') {
-        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
-        foreach ($group in $filesByDirectory) {
-            $sourceDir = $group.Name
-            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
-            Write-Host " - Verificando lote desde '$sourceDir'..." -ForegroundColor Gray
-            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $verifyBaseArgs + $logArg
-            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
-        }
-    } else {
-        $folderArgs = $verifyBaseArgs + "/E"
-        if ($Mode -eq 'Mirror') { $folderArgs = $verifyBaseArgs + "/MIR" }
-        foreach ($sourceFolder in $sourcePaths) {
-            $folderName = Split-Path $sourceFolder -Leaf
-            $destinationFolder = Join-Path $destinationPath $folderName
-            Write-Host "`n[+] Verificando '$folderName' en '$destinationFolder'..." -ForegroundColor Gray
-            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
-            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
-        }
-    }
-    
-    Write-Host "[OK] Comprobacion de integridad finalizada. Revisa el registro para ver los detalles." -ForegroundColor Green
-    Write-Host "   Si no aparecen archivos listados en la seccion de verificacion, la copia es integra." -ForegroundColor Gray
-}
-
-function Invoke-BackupHashVerification {
-    [CmdletBinding()]
-    param(
-        $sourcePaths, $destinationPath, $backupType, $logFile
-    )
-    
-    Write-Host "`n[+] Iniciando comprobacion profunda por Hash (SHA256). Esto puede ser MUY LENTO." -ForegroundColor Yellow
-    
-    $sourceFiles = @()
-    if ($backupType -eq 'Files') {
-        $sourceFiles = $sourcePaths | Get-Item
-    } else {
-        # Usamos ErrorAction SilentlyContinue para saltar archivos bloqueados/sistema
-        $sourcePaths | ForEach-Object { $sourceFiles += Get-ChildItem $_ -Recurse -File -ErrorAction SilentlyContinue }
-    }
-
-    if ($sourceFiles.Count -eq 0) { Write-Warning "No se encontraron archivos de origen para verificar."; return }
-
-    $totalFiles = $sourceFiles.Count
-    $checkedFiles = 0
-    $mismatchedFiles = 0
-    $missingFiles = 0
-    $mismatchedFileList = [System.Collections.Generic.List[string]]::new()
-    $missingFileList = [System.Collections.Generic.List[string]]::new()
-
-    foreach ($sourceFile in $sourceFiles) {
-        $checkedFiles++
-        # Progreso visual simple para no saturar la consola
-        if ($checkedFiles % 10 -eq 0) {
-            Write-Progress -Activity "Verificando hashes de archivos" -Status "Procesando ($checkedFiles/$totalFiles): $($sourceFile.Name)" -PercentComplete (($checkedFiles / $totalFiles) * 100)
-        }
-        
-        $destinationFile = ""
-        if ($backupType -eq 'Folders') {
-             # CORRECCION CRITICA: Ordenamos por longitud descendente para encontrar la ruta mas especifica
-             # Esto evita el error cuando "Videos" esta dentro de "Documentos"
-             $baseSourceFolder = ($sourcePaths | Where-Object { $sourceFile.FullName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Sort-Object Length -Descending | Select-Object -First 1)
-             
-             if ($baseSourceFolder) {
-                 $relativePath = $sourceFile.FullName.Substring($baseSourceFolder.Length)
-                 # Construimos la ruta destino replicando la estructura
-                 $destinationFile = Join-Path (Join-Path $destinationPath (Split-Path $baseSourceFolder -Leaf)) $relativePath
-             }
-        } else {
-             $destinationFile = Join-Path $destinationPath $sourceFile.Name
-        }
-        
-        # Verificacion
-        if (Test-Path $destinationFile) {
-            try {
-                $sourceHash = (Get-FileHash $sourceFile.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
-                $destHash = (Get-FileHash $destinationFile -Algorithm SHA256 -ErrorAction Stop).Hash
-                
-                if ($sourceHash -ne $destHash) {
-                    $mismatchedFiles++
-                    $message = "DISCREPANCIA DE HASH: $($sourceFile.Name)"
-                    Write-Warning $message
-                    $mismatchedFileList.Add("Fuente: $($sourceFile.FullName) | Destino: $destinationFile")
-                }
-            } catch {
-                $message = "ERROR DE LECTURA (Archivo en uso o sin permisos): $($sourceFile.Name)"
-                Write-Warning $message
-                $mismatchedFileList.Add($message)
-            }
-        } else {
-            $missingFiles++
-            # Mensaje mejorado para depuracion: Muestra donde busco y no encontro
-            $message = "ARCHIVO FALTANTE. Buscado en: $destinationFile"
-            Write-Warning $message
-            $missingFileList.Add("Fuente original: $($sourceFile.FullName) | Ruta esperada no encontrada: $destinationFile")
-        }
-    }
-
-    Write-Progress -Activity "Verificacion por Hash" -Completed
-    Write-Host "`n--- RESUMEN DE LA COMPROBACION PROFUNDA ---" -ForegroundColor Cyan
-    Write-Host "Archivos totales verificados: $totalFiles"
-    $mismatchColor = if ($mismatchedFiles -gt 0) { 'Red' } else { 'Green' }
-    Write-Host "Archivos con discrepancias  : $mismatchedFiles" -ForegroundColor $mismatchColor
-    $missingColor = if ($missingFiles -gt 0) { 'Red' } else { 'Green' }
-    Write-Host "Archivos faltantes en destino: $missingFiles" -ForegroundColor $missingColor
-    
-    $logSummary = @"
-
--------------------------------------------------
-   RESUMEN DE LA COMPROBACION PROFUNDA POR HASH
--------------------------------------------------
-Archivos totales verificados: $totalFiles
-Archivos con discrepancias  : $mismatchedFiles
-Archivos faltantes en destino: $missingFiles
-"@
-    if ($mismatchedFileList.Count -gt 0) {
-        $logSummary += "`r`n`r`n--- LISTA DE DISCREPANCIAS ---`r`n"
-        $logSummary += ($mismatchedFileList | Out-String)
-    }
-    if ($missingFileList.Count -gt 0) {
-        $logSummary += "`r`n`r`n--- LISTA DE ARCHIVOS FALTANTES ---`r`n"
-        $logSummary += ($missingFileList | Out-String)
-    }
-    $logSummary | Out-File -FilePath $logFile -Append -Encoding UTF8
-    
-    if ($mismatchedFiles -eq 0 -and $missingFiles -eq 0) {
-        Write-Host "[OK] La integridad de todos los archivos ha sido verificada con exito." -ForegroundColor Green
-    } else {
-        Write-Error "Se encontraron problemas de integridad en la copia de seguridad."
-    }
-}
-
-# --- FUNCION 2: LOGICA PRINCIPAL DEL RESPALDO (ROBOCOPY) ---
-function Invoke-UserDataBackup {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Copy', 'Mirror')]
-        [string]$Mode,
-
-        [string[]]$CustomSourcePath
-    )
-
-    # 1. Determinamos el origen: automatico o personalizado
-    $backupType = 'Folders'
-    $sourcePaths = @()
-    
-    if ($CustomSourcePath) {
-        if ($CustomSourcePath.Count -eq 1 -and (Get-Item $CustomSourcePath[0]).PSIsContainer) {
-            $backupType = 'Folders'
-            $sourcePaths = $CustomSourcePath
-        } else {
-            $backupType = 'Files'
-            $sourcePaths = $CustomSourcePath
-        }
-    } else {
-        $backupType = 'Folders'
-        
-        # --- LOGICA AVANZADA PARA DETECTAR LA RUTA REAL DE 'DESCARGAS' ---
-        # Consultamos el registro 'User Shell Folders' para obtener la ruta real, 
-        # incluso si el usuario la ha movido a otro disco.
-        $regPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
-        $downloadsGuid = "{374DE290-123F-4565-9164-39C4925E467B}" # GUID oficial de Descargas
-        
-        $downloadsPath = try {
-            $regValue = (Get-ItemProperty -Path $regPath -Name $downloadsGuid -ErrorAction SilentlyContinue).$downloadsGuid
-            if ($regValue) {
-                # Expandimos variables de entorno (ej: %USERPROFILE%\Downloads -> C:\Users\Juan\Downloads)
-                [System.Environment]::ExpandEnvironmentVariables($regValue)
-            } else {
-                # Fallback por defecto si no existe la clave
-                Join-Path -Path $env:USERPROFILE -ChildPath "Downloads"
-            }
-        } catch {
-            Join-Path -Path $env:USERPROFILE -ChildPath "Downloads"
-        }
-
-        # Construimos la lista de rutas estandar + descargas inteligente
-        $sourcePaths = @(
-            [System.Environment]::GetFolderPath('Desktop'),
-            [System.Environment]::GetFolderPath('MyDocuments'),
-            [System.Environment]::GetFolderPath('MyPictures'),
-            [System.Environment]::GetFolderPath('MyMusic'),
-            [System.Environment]::GetFolderPath('MyVideos'),
-            $downloadsPath
-        ) | Where-Object { Test-Path $_ } | Select-Object -Unique
-    }
-    
-    # 2. Solicitamos y validamos el destino
-    Write-Host "`n[+] Por favor, selecciona la carpeta de destino para el respaldo..." -ForegroundColor Yellow
-    $destinationPath = Select-PathDialog -DialogType 'Folder' -Title "Paso 2: Elige la Carpeta de Destino del Respaldo"
-    
-    if ([string]::IsNullOrWhiteSpace($destinationPath)) {
-        Write-Warning "No se selecciono una carpeta de destino. Operacion cancelada." ; Start-Sleep -Seconds 2; return
-    }
-
-    # --- VALIDACION ANTI-BUCLE (CRITICO) ---
-    $destFull = (Get-Item -Path $destinationPath).FullName.TrimEnd('\')
-    foreach ($src in $sourcePaths) {
-        if ($backupType -eq 'Folders') {
-            $srcFull = (Get-Item -Path $src).FullName.TrimEnd('\')
-            # Si el destino empieza con la ruta de origen, es una subcarpeta (Riesgo de bucle)
-            if ($destFull.StartsWith($srcFull, [System.StringComparison]::OrdinalIgnoreCase)) {
-                Write-Error "ERROR CRITICO DE CONFIGURACION:"
-                Write-Error "La carpeta de destino ($destFull) esta DENTRO de la carpeta de origen ($srcFull)."
-                Write-Error "Esto causaria un bucle infinito que llenaria tu disco duro."
-                Read-Host "Operacion abortada por seguridad. Presiona Enter..."
-                return
-            }
-        }
-    }
-
-    # Validacion de unidad idéntica (Aviso de seguridad)
-    $sourceDriveLetter = (Get-Item -Path $sourcePaths[0]).PSDrive.Name
-    $destinationDriveLetter = (Get-Item -Path $destinationPath).PSDrive.Name
-    if ($sourceDriveLetter.ToUpper() -eq $destinationDriveLetter.ToUpper()) {
-        Write-Warning "AVISO: El destino esta en la misma unidad fisica que el origen."
-        Write-Warning "Esto protege contra borrados accidentales, pero NO contra fallos fisicos del disco."
-        if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
-            return
-        }
-    }
-    
-    # 3. Calculamos espacio requerido
-    Write-Host "`n[+] Calculando espacio requerido..." -ForegroundColor Yellow
-    $sourceTotalSize = 0
-    try {
-        if ($backupType -eq 'Files') {
-            $sourceTotalSize = ($sourcePaths | Get-Item | Measure-Object -Property Length -Sum).Sum
-        } else {
-            foreach ($folder in $sourcePaths) {
-                $sourceTotalSize += (Get-ChildItem -Path $folder -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-            }
-        }
-    } catch { Write-Warning "Calculo de tamaño aproximado (algunos archivos pueden estar bloqueados)." }
-    
-    $destinationFreeSpace = (Get-Volume -DriveLetter $destinationDriveLetter).SizeRemaining
-    if ($sourceTotalSize -gt $destinationFreeSpace) {
-        $neededGB = [math]::Round($sourceTotalSize / 1GB, 2)
-        $freeGB = [math]::Round($destinationFreeSpace / 1GB, 2)
-        Write-Error "ESPACIO INSUFICIENTE: Requieres ~$neededGB GB pero solo tienes $freeGB GB libres."
-        Read-Host "Operacion abortada. Presiona Enter..."
-        return
-    }
-
-    # 4. Configuracion Robocopy (Optimizado)
-    $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
-    if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
-    $logFile = Join-Path $logDir "Respaldo_Robocopy_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').log"
-
-    # FLAGS DE ROBOCOPY:
-    # /B  : Modo Backup (copia archivos saltando permisos NTFS si eres Admin)
-    # /J  : Unbuffered I/O (Evita llenar la RAM con archivos grandes)
-    # /XD : Excluir directorios basura
-    $baseRoboCopyArgs = @("/COPY:DAT", "/R:2", "/W:3", "/XJ", "/NP", "/TEE", "/B", "/J")
-    $excludeDirs = @("/XD", "`"$destinationPath`"", "System Volume Info", "`$RECYCLE.BIN", "AppData\Local\Temp")
-
-    # 5. Menú de Confirmacion
-    Clear-Host
-    $modeDescription = if ($Mode -eq 'Mirror') { "Sincronizacion (ESPEJO - Borra en destino lo que no esta en origen)" } else { "Respaldo Incremental (Solo copia nuevos/modificados)" }
-    Write-Host "--- RESUMEN DE RESPALDO ---" -ForegroundColor Cyan
-    Write-Host "Modo: $modeDescription"
-    Write-Host "Destino: $destinationPath"
-    Write-Host "Origen(es):"
-    $sourcePaths | ForEach-Object { Write-Host " - $_" }
-    
-    Write-Host ""
-    Write-Host "   [S] Iniciar Respaldo (Sin verificacion)"
-    Write-Host "   [V] Iniciar + Verificacion Rapida (Robocopy /L)"
-    Write-Host "   [H] Iniciar + Verificacion Profunda por Hash (LENTO pero Seguro)" -ForegroundColor Yellow
-    Write-Host "   [N] Cancelar"
-    $confirmChoice = Read-Host "`nElige una opcion"
-
-    $verificationType = 'None'
-    switch ($confirmChoice.ToUpper()) {
-        'S' { $verificationType = 'None' }
-        'V' { $verificationType = 'Fast' }
-        'H' { $verificationType = 'Deep' }
-        'N' { return }
-        default { return }
-    }
-
-    # 6. Ejecucion del Respaldo
-    $logArg = "/LOG+:`"$logFile`""
-    Write-Log -LogLevel ACTION -Message "BACKUP: Iniciando. Modo: $Mode. Destino: $destinationPath"
-
-    if ($backupType -eq 'Files') {
-        # Copia de Archivos Sueltos
-        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
-        foreach ($group in $filesByDirectory) {
-            $sourceDir = $group.Name
-            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
-            # Nota: Exclusiones de directorios (/XD) no aplican bien al modo archivo, se omiten aqui
-            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $baseRoboCopyArgs + $logArg
-            
-            Write-Host "Procesando archivos desde: $sourceDir" -ForegroundColor Gray
-            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
-        }
-    } else {
-        # Copia de Carpetas Completas
-        $folderArgs = $baseRoboCopyArgs
-        if ($Mode -eq 'Mirror') { $folderArgs += "/MIR" } else { $folderArgs += "/E" }
-        $folderArgs += $excludeDirs
-
-        foreach ($sourceFolder in $sourcePaths) {
-            $folderName = Split-Path $sourceFolder -Leaf
-            $destinationFolder = Join-Path $destinationPath $folderName
-            
-            Write-Host "`n[ROBOCOPY] Procesando: $folderName" -ForegroundColor Cyan
-            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
-            
-            # Usamos PassThru para capturar el codigo de salida
-            $proc = Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow -PassThru
-            
-            # Manejo de Codigos de Salida de Robocopy (0-7 es Exito, >=8 es Error)
-            if ($proc.ExitCode -ge 8) {
-                Write-Error "Errores detectados en '$folderName' (Codigo: $($proc.ExitCode)). Revisa el log."
-                Write-Log -LogLevel ERROR -Message "BACKUP: Fallo en '$folderName'. Codigo Robocopy: $($proc.ExitCode)"
-            } elseif ($proc.ExitCode -ge 0) {
-                Write-Host "   -> Completado (Codigo: $($proc.ExitCode))." -ForegroundColor Green
-            }
-        }
-    }
-
-    Write-Host "`n[FIN] Copia finalizada." -ForegroundColor Green
-    
-    # 7. Ejecucion de la Verificacion (Si se selecciono)
-    switch ($verificationType) {
-        'Fast' {
-            Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion rapida."
-            Invoke-BackupRobocopyVerification -logFile $logFile -baseRoboCopyArgs $baseRoboCopyArgs -backupType $backupType -sourcePaths $sourcePaths -destinationPath $destinationPath -Mode $Mode
-        }
-        'Deep' {
-            Write-Log -LogLevel INFO -Message "BACKUP: Iniciando verificacion profunda (Hash SHA256)."
-            # Llama a la funcion auxiliar de Hash (debe estar definida en el script principal)
-            Invoke-BackupHashVerification -sourcePaths $sourcePaths -destinationPath $destinationPath -backupType $backupType -logFile $logFile
-        }
-    }
-    
-    Write-Host "Log guardado en: $logFile"
-    Read-Host "Presiona Enter para volver..."
-}
-
-# --- FUNCION 3: INTERFAZ DE USUARIO DEL MODULO DE RESPALDO ---
-function Show-UserDataBackupMenu {
-    # Funcion interna para no repetir el menu de seleccion de modo
-    function Get-BackupMode {
-        Write-Host ""
-        Write-Host "--- Elige un modo de respaldo ---" -ForegroundColor Yellow
-        Write-Host "   [1] Simple (Copiar y Actualizar)"
-        Write-Host "       Copia archivos nuevos o modificados. No borra nada en el destino." -ForegroundColor Gray
-        Write-Host "   [2] Sincronizacion (Espejo)"
-        Write-Host "       Hace que el destino sea identico al origen. Borra archivos en el destino." -ForegroundColor Red
-        
-        $modeChoice = Read-Host "`nSelecciona el modo"
-        
-        switch ($modeChoice) {
-            '1' { return 'Copy' }
-            '2' { return 'Mirror' }
-            default {
-                Write-Warning "Opcion invalida." ; Start-Sleep -Seconds 2
-                return $null
-            }
-        }
-    }
-
-    $backupChoice = ''
-    do {
-        Clear-Host
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "           Herramienta de Respaldo de Datos de Usuario " -ForegroundColor Cyan
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "--- Elige un tipo de respaldo ---" -ForegroundColor Yellow
-        Write-Host "   [1] Respaldo de Perfil de Usuario (Escritorio, Documentos, etc.)"
-        Write-Host "   [2] Respaldo de Carpeta o Archivo(s) Personalizado"
-        Write-Host ""
-        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
-        Write-Host ""
-        
-        $backupChoice = Read-Host "Selecciona una opcion"
-        
-        switch ($backupChoice.ToUpper()) {
-            '1' {
-				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo de Perfil de Usuario'."
-                $backupMode = Get-BackupMode
-                if ($backupMode) {
-                    Invoke-UserDataBackup -Mode $backupMode
-                }
-            }
-            '2' {
-				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo Personalizado'."
-                $typeChoice = Read-Host "Deseas seleccionar una [C]arpeta o [A]rchivo(s)?"
-                $dialogType = ""
-                $dialogTitle = ""
-
-                if ($typeChoice.ToUpper() -eq 'C') {
-                    $dialogType = 'Folder'
-                    $dialogTitle = "Respaldo Personalizado: Elige la Carpeta de Origen"
-                } elseif ($typeChoice.ToUpper() -eq 'A') {
-                    $dialogType = 'File'
-                    $dialogTitle = "Respaldo Personalizado: Elige el o los Archivo(s) de Origen"
-                } else {
-                    Write-Warning "Opcion invalida."; Start-Sleep -Seconds 2; continue
-                }
-
-                $customPath = Select-PathDialog -DialogType $dialogType -Title $dialogTitle
-
-                if ($customPath) {
-                    $backupMode = Get-BackupMode
-                    if ($backupMode) {
-                        Invoke-UserDataBackup -Mode $backupMode -CustomSourcePath $customPath
-                    }
-                } else {
-                    Write-Warning "No se selecciono ninguna ruta. Operacion cancelada."
-                    Start-Sleep -Seconds 2
-                }
-            }
-            'V' { continue }
-            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
-        }
-    } while ($backupChoice.ToUpper() -ne 'V')
-}
-
-# ===================================================================
 # --- MoDULO DE INVENTARIO PROFESIONAL ---
 # ===================================================================
 
@@ -5343,17 +5428,33 @@ function Show-InventoryMenu {
     Write-Host "--- Generador de Reportes de Inventario Profesional ---" -ForegroundColor Cyan
     Write-Host "Este modulo recopila una gran cantidad de datos y los exporta en varios formatos."
     Write-Host ""
-	Write-Host "   [1] Archivo de Texto (.txt) - Completo y detallado."
+    Write-Host "   [1] Archivo de Texto (.txt) - Completo y detallado."
     Write-Host "   [2] Pagina Web (.html)      - Reporte profesional e interactivo."
     Write-Host "   [3] Hojas de Calculo (.csv) - Multiples archivos para analisis de datos."
+    Write-Host ""
+    Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+    Write-Host ""
 
-    $formatChoice = Read-Host "`nElige una opcion"
-	Write-Log -LogLevel INFO -Message "INVENTORY: Usuario selecciono generar reporte en formato '$formatChoice'."
+    $formatChoice = Read-Host "Elige una opcion"
+
+    if ($formatChoice.ToUpper() -eq 'V') {
+        return
+    }
+	
+    if ($formatChoice -notin @('1','2','3')) {
+        Write-Warning "Opcion no valida."
+        Start-Sleep -Seconds 1
+        return
+    }
+
+    Write-Log -LogLevel INFO -Message "INVENTORY: Usuario selecciono generar reporte en formato '$formatChoice'."
+    
     $parentDir = Split-Path -Parent $PSScriptRoot
     $reportDir = Join-Path -Path $parentDir -ChildPath "Reportes"
     if (-not (Test-Path $reportDir)) { New-Item -Path $reportDir -ItemType Directory -Force | Out-Null }
     
     $inventoryData = Get-SystemInventoryData
+    
     $title = "Reporte de Inventario - Aegis Phoenix Suite - $($inventoryData.ReportDate)"
     $reportBaseName = "Reporte_Inventario_$($inventoryData.System.Hostname)_$(Get-Date -Format 'yyyy-MM-dd_HH-mm')"
 
@@ -5365,23 +5466,23 @@ function Show-InventoryMenu {
             $reportContent += "Reporte de Inventario - Aegis Phoenix Suite - $($inventoryData.ReportDate)"
             $reportContent += "================================================="
             
-            # --- SECCIoN: SISTEMA Y CPU (Formato manual para mejor claridad) ---
+            # --- SECCION: SISTEMA Y CPU ---
             $reportContent += ""
             $reportContent += "=== SISTEMA OPERATIVO Y CPU ==="
-			$reportContent += ""
+            $reportContent += ""
             $reportContent += "WindowsVersion   : $($inventoryData.System.WindowsVersion)"
             $reportContent += "Hostname         : $($inventoryData.System.Hostname)"
             $reportContent += "Procesador       : $($inventoryData.System.Procesador)"
             $reportContent += "Nucleos          : $($inventoryData.System.Nucleos)"
             $reportContent += "MemoriaTotalGB   : $($inventoryData.System.MemoriaTotalGB)"
-			$reportContent += "MemoriaMaxGB     : $($inventoryData.System.MemoriaMaxGB)"
+            $reportContent += "MemoriaMaxGB     : $($inventoryData.System.MemoriaMaxGB)"
             $reportContent += "MemoriaEnUsoPorc : $($inventoryData.System.MemoriaEnUsoPorc)"
             $reportContent += "Uptime           : $($inventoryData.System.Uptime)"
             
-            # --- SECCIoN: HARDWARE (Formato manual) ---
+            # --- SECCION: HARDWARE ---
             $reportContent += ""
             $reportContent += "=== HARDWARE DETALLADO ==="
-			$reportContent += ""
+            $reportContent += ""
             $reportContent += "Placa Base       : $($inventoryData.Hardware.PlacaBase.Manufacturer) $($inventoryData.Hardware.PlacaBase.Product)"
             $reportContent += "BIOS             : $($inventoryData.Hardware.BIOS)"
                 foreach ($gpu in $inventoryData.Hardware.GPU) {
@@ -5412,32 +5513,32 @@ function Show-InventoryMenu {
 
             $reportContent += ""
             $reportContent += "=== PLAN DE ENERGIA ACTIVO ==="
-			$reportContent += ""
+            $reportContent += ""
             $reportContent += $inventoryData.PowerPlan
 
             $reportContent += ""
             $reportContent += "=== PUERTOS DE RED ABIERTOS (ESCUCHANDO) ==="
             $reportContent += ($inventoryData.ListeningPorts | Format-Table -Wrap | Out-String).TrimEnd()
 
-            # --- SECCIoN: SEGURIDAD
+            # --- SECCION: SEGURIDAD
             $reportContent += ""
             $reportContent += "=== ESTADO DE SEGURIDAD ==="
-			$reportContent += ""
+            $reportContent += ""
             $reportContent += "Antivirus : $(if ($inventoryData.Security.Antivirus) { ($inventoryData.Security.Antivirus.displayName -join ', ') } else { 'No Detectado' })"
             $reportContent += "Firewall  : $(($inventoryData.Security.Firewall | ForEach-Object { "$($_.Name): $(if($_.Enabled){'Activado'}else{'Desactivado'})" }) -join ' | ')"
             $reportContent += "BitLocker : $($inventoryData.Security.BitLocker)"
 
-            # --- SECCIoN: DISCOS
+            # --- SECCION: DISCOS
             $reportContent += ""
             $reportContent += "=== DISCOS ==="
             $reportContent += ($inventoryData.Disks | Format-Table | Out-String).TrimEnd()
-			
-			# --- Añadimos la seccion de salud de discos fisicos ---
+            
+            # --- SECCION: SALUD DISCOS
             $reportContent += ""
             $reportContent += "=== DIAGNOSTICO DE SALUD DE DISCOS (S.M.A.R.T.) ==="
             $reportContent += ($inventoryData.PhysicalDisks | Format-Table | Out-String).TrimEnd()
 
-            # --- SECCIoN: RED
+            # --- SECCION: RED
             $reportContent += ""
             $reportContent += "=== RED ==="
             $reportContent += ($inventoryData.Network | Format-Table -Wrap | Out-String).TrimEnd()
@@ -5450,12 +5551,12 @@ function Show-InventoryMenu {
             $reportContent += "=== PROCESOS DE MAYOR CONSUMO (MEMORIA) ==="
             $reportContent += ($inventoryData.OSConfig.TopMemory | Format-Table | Out-String).TrimEnd()
 
-            # --- SECCIoN: ACTUALIZACIONES
+            # --- SECCION: ACTUALIZACIONES
             $reportContent += ""
             $reportContent += "=== ULTIMAS ACTUALIZACIONES INSTALADAS ==="
             $reportContent += ($inventoryData.OSConfig.Hotfixes | Format-Table -Wrap | Out-String).TrimEnd()
 
-            # --- SECCIoN: SOFTWARE
+            # --- SECCION: SOFTWARE
             $reportContent += ""
             $reportContent += "=== SOFTWARE INSTALADO ($($inventoryData.Software.Count)) ==="
             foreach ($app in $inventoryData.Software) {
@@ -5508,13 +5609,14 @@ function Show-InventoryMenu {
             [System.IO.File]::WriteAllBytes((Join-Path $reportDir "$($reportBaseName)_Hotfixes.csv"), $allBytes)
             $reportPath = $reportDir
         }
-        default { Write-Warning "Opcion no valida."; return }
-        }
+    }
+
     Write-Host "`n[OK] Reporte(s) generado(s) exitosamente en: '$reportPath'" -ForegroundColor Green
-    if ($formatChoice -ne '3') { Start-Process $reportPath
-	    } else {
-		    Start-Process $reportDir
-	}
+    if ($formatChoice -ne '3') { 
+        Start-Process $reportPath
+    } else {
+        Start-Process $reportDir
+    }
     Read-Host "`nPresiona Enter para volver..."
 }
 
@@ -5848,6 +5950,489 @@ function Show-DriverMenu {
 }
 
 # ===================================================================
+# --- MODULO DE RESPALDO DE DATOS DE USUARIO (ROBOCOPY) ---
+# ===================================================================
+function Select-PathDialog {
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Folder', 'File')]
+        [string]$DialogType,
+
+        [string]$Title,
+
+        [string]$Filter = "Todos los archivos (*.*)|*.*"
+    )
+    
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        if ($DialogType -eq 'Folder') {
+            $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dialog.Description = $Title
+            if ($dialog.ShowDialog() -eq 'OK') {
+                return $dialog.SelectedPath
+            }
+        } elseif ($DialogType -eq 'File') {
+            $dialog = New-Object System.Windows.Forms.OpenFileDialog
+            $dialog.Title = $Title
+            $dialog.Filter = $Filter
+            $dialog.CheckFileExists = $true
+            $dialog.CheckPathExists = $true
+            $dialog.Multiselect = $true 
+            if ($dialog.ShowDialog() -eq 'OK') {
+                return $dialog.FileNames 
+            }
+        }
+    } catch {
+        Write-Error "No se pudo mostrar el dialogo. Error: $($_.Exception.Message)"
+    }
+    
+    return $null 
+}
+
+function Invoke-BackupRobocopyVerification {
+    [CmdletBinding()]
+    param($logFile, $baseRoboCopyArgs, $backupType, $sourcePaths, $destinationPath, $Mode)
+
+    Write-Host "`n[+] Iniciando comprobacion de integridad (RAPIDA /L)..." -ForegroundColor Yellow
+    $verifyBaseArgs = $baseRoboCopyArgs + "/L"
+    $logArg = "/LOG+:`"$logFile`""
+
+    if ($backupType -eq 'Files') {
+        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
+        foreach ($group in $filesByDirectory) {
+            $sourceDir = $group.Name
+            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
+            Write-Host " - Verificando lote desde '$sourceDir'..." -ForegroundColor Gray
+            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $verifyBaseArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    } else {
+        $folderArgs = $verifyBaseArgs + "/E"
+        if ($Mode -eq 'Mirror') { $folderArgs = $verifyBaseArgs + "/MIR" }
+        foreach ($sourceFolder in $sourcePaths) {
+            $folderName = Split-Path $sourceFolder -Leaf
+            $destinationFolder = Join-Path $destinationPath $folderName
+            Write-Host "`n[+] Verificando '$folderName'..." -ForegroundColor Gray
+            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    }
+    Write-Host "[OK] Verificacion finalizada. Revisa el log." -ForegroundColor Green
+}
+
+function Invoke-BackupHashVerification {
+    [CmdletBinding()]
+    param($sourcePaths, $destinationPath, $backupType, $logFile)
+    
+    Write-Host "`n[+] Iniciando comprobacion profunda por Hash (SHA256)..." -ForegroundColor Yellow
+    
+    $sourceFiles = @()
+    if ($backupType -eq 'Files') {
+        $sourceFiles = $sourcePaths | Get-Item
+    } else {
+        $sourcePaths | ForEach-Object { $sourceFiles += Get-ChildItem $_ -Recurse -File -ErrorAction SilentlyContinue }
+    }
+
+    if ($sourceFiles.Count -eq 0) { Write-Warning "Sin archivos para verificar."; return }
+
+    $totalFiles = $sourceFiles.Count
+    $checkedFiles = 0; $mismatchedFiles = 0; $missingFiles = 0
+    $details = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($sourceFile in $sourceFiles) {
+        $checkedFiles++
+        # Progreso en la misma linea para no saturar
+        if ($checkedFiles % 5 -eq 0) { 
+            Write-Progress -Activity "Calculando Hash (SHA256)" -Status "Archivo $checkedFiles de $totalFiles" -PercentComplete (($checkedFiles / $totalFiles) * 100)
+        }
+        
+        $destinationFile = ""
+        if ($backupType -eq 'Folders') {
+             $baseSourceFolder = ($sourcePaths | Where-Object { $sourceFile.FullName.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object Length -Descending | Select-Object -First 1)
+             if ($baseSourceFolder) {
+                 $relativePath = $sourceFile.FullName.Substring($baseSourceFolder.Length)
+                 $destinationFile = Join-Path (Join-Path $destinationPath (Split-Path $baseSourceFolder -Leaf)) $relativePath
+             }
+        } else { $destinationFile = Join-Path $destinationPath $sourceFile.Name }
+        
+        if (Test-Path $destinationFile) {
+            try {
+                $h1 = (Get-FileHash $sourceFile.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                $h2 = (Get-FileHash $destinationFile -Algorithm SHA256 -ErrorAction Stop).Hash
+                
+                if ($h1 -ne $h2) { 
+                    $mismatchedFiles++
+                    Write-Host "`n[!] DISCREPANCIA: $($sourceFile.Name)" -ForegroundColor Red
+                    $details.Add("DIFF: $($sourceFile.FullName)") 
+                }
+            } catch { 
+                # Ignorar desktop.ini bloqueados, es normal
+                if ($sourceFile.Name -ne "desktop.ini") {
+                    $details.Add("ERROR LEER: $($sourceFile.Name)") 
+                }
+            }
+        } else { 
+            $missingFiles++
+            Write-Host "`n[!] FALTANTE: $($sourceFile.Name)" -ForegroundColor Red
+            $details.Add("FALTANTE: $destinationFile") 
+        }
+    }
+    Write-Progress -Activity "Calculando Hash (SHA256)" -Completed
+    
+    $logTxt = "`r`n--- RESUMEN HASH ---`r`nTotal: $totalFiles | Diferentes: $mismatchedFiles | Faltan: $missingFiles`r`n"
+    if ($details.Count -gt 0) { $logTxt += ($details | Out-String) }
+    $logTxt | Out-File -FilePath $logFile -Append -Encoding UTF8
+    
+    if ($mismatchedFiles -eq 0 -and $missingFiles -eq 0) { 
+        Write-Host "[OK] Integridad Hash Correcta." -ForegroundColor Green 
+    } else { 
+        # Lanzamos una excepcion controlada para que el modulo principal sepa que fallo
+        throw "HASH_FAILURE" 
+    }
+}
+
+function Invoke-UserDataBackup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Copy', 'Mirror', 'Move')] # <--- AGREGADO 'Move'
+        [string]$Mode,
+
+        [string[]]$CustomSourcePath
+    )
+
+    # 1. Determinamos el origen
+    $backupType = 'Folders'
+    $sourcePaths = @()
+    
+    if ($CustomSourcePath) {
+        if ($CustomSourcePath.Count -eq 1 -and (Get-Item $CustomSourcePath[0]).PSIsContainer) {
+            $backupType = 'Folders'
+            $sourcePaths = $CustomSourcePath
+        } else {
+            $backupType = 'Files'
+            $sourcePaths = $CustomSourcePath
+        }
+    } else {
+        $backupType = 'Folders'
+        
+        # Obtener ruta real de Descargas
+		$regPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        
+        # Helper para leer registro de forma segura
+        function Get-UserFolder { param($Name, $Guid, $Default) 
+            try {
+                $val = (Get-ItemProperty -Path $regPath -Name $Guid -ErrorAction SilentlyContinue).$Guid
+                if (-not $val) { $val = (Get-ItemProperty -Path $regPath -Name $Name -ErrorAction SilentlyContinue).$Name }
+                if ($val) { return [System.Environment]::ExpandEnvironmentVariables($val) }
+                return [System.Environment]::GetFolderPath($Default)
+            } catch { return [System.Environment]::GetFolderPath($Default) }
+        }
+
+        # Candidatos para el menú Checkbox
+        $candidates = @(
+            [PSCustomObject]@{ Id=1; Name="Escritorio"; Path=(Get-UserFolder -Name 'Desktop' -Default 'Desktop'); Selected=$true },
+            [PSCustomObject]@{ Id=2; Name="Documentos"; Path=(Get-UserFolder -Name 'Personal' -Default 'MyDocuments'); Selected=$true },
+            [PSCustomObject]@{ Id=3; Name="Imagenes";   Path=(Get-UserFolder -Name 'My Pictures' -Default 'MyPictures'); Selected=$true },
+            [PSCustomObject]@{ Id=4; Name="Musica";     Path=(Get-UserFolder -Name 'My Music' -Default 'MyMusic'); Selected=$true },
+            [PSCustomObject]@{ Id=5; Name="Videos";     Path=(Get-UserFolder -Name 'My Video' -Default 'MyVideos'); Selected=$true },
+            [PSCustomObject]@{ Id=6; Name="Descargas";  Path=(Get-UserFolder -Guid '{374DE290-123F-4565-9164-39C4925E467B}' -Default 'UserProfile') + "\Downloads"; Selected=$true }
+        )
+
+        # --- MENU INTERACTIVO CHECKBOX (CLI) ---
+        $selectionDone = $false
+        do {
+            Clear-Host
+            Write-Host "==========================================" -ForegroundColor Cyan
+            Write-Host "   SELECCION DE CARPETAS A RESPALDAR      " -ForegroundColor Cyan
+            Write-Host "==========================================" -ForegroundColor Cyan
+            Write-Host " Marca o desmarca las carpetas usando su numero."
+            Write-Host ""
+
+            foreach ($item in $candidates) {
+                if ($item.Selected) { Write-Host "   [$($item.Id)] [X] $($item.Name)" -ForegroundColor Green }
+                else { Write-Host "   [$($item.Id)] [ ] $($item.Name)" -ForegroundColor Gray }
+            }
+            Write-Host ""
+            Write-Host "   [C] CONTINUAR con la seleccion actual" -ForegroundColor Yellow
+            Write-Host "   [X] CANCELAR operacion" -ForegroundColor Red
+            Write-Host ""
+            
+            $inputKey = Read-Host " Elige una opcion"
+            
+            if ($inputKey.ToUpper() -eq 'C') { $selectionDone = $true }
+            elseif ($inputKey.ToUpper() -eq 'X') { Write-Host "Cancelado."; Start-Sleep -Seconds 1; return }
+            else {
+                if ($inputKey -match '^\d+$') {
+                    $id = [int]$inputKey
+                    $target = $candidates | Where-Object { $_.Id -eq $id }
+                    if ($target) { $target.Selected = -not $target.Selected }
+                }
+            }
+        } until ($selectionDone)
+
+        $sourcePaths = $candidates | Where-Object { $_.Selected -eq $true -and (Test-Path $_.Path) } | Select-Object -ExpandProperty Path
+
+        if ($sourcePaths.Count -eq 0) {
+            Write-Warning "No seleccionaste ninguna carpeta. Volviendo..."
+            Start-Sleep -Seconds 2
+            return
+        }
+    }
+    
+    # 2. Solicitamos destino
+    Write-Host "`n[+] Por favor, selecciona la carpeta de destino para el respaldo..." -ForegroundColor Yellow
+    $destinationPath = Select-PathDialog -DialogType 'Folder' -Title "Paso 2: Elige la Carpeta de Destino"
+    
+    if ([string]::IsNullOrWhiteSpace($destinationPath)) {
+        Write-Warning "No se selecciono destino. Cancelado." ; Start-Sleep -Seconds 2; return
+    }
+
+    # --- VALIDACIONES ---
+    # A) Validar Bucle Infinito
+	$destFull = (Get-Item -Path $destinationPath).FullName.TrimEnd('\')
+    foreach ($src in $sourcePaths) {
+        if ($backupType -eq 'Folders') {
+            $srcFull = (Get-Item -Path $src).FullName.TrimEnd('\')
+            if ($destFull.StartsWith($srcFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Error "`n[ERROR CRITICO] El destino esta DENTRO del origen."
+                Write-Error "Esto causaria un bucle infinito que llenaria el disco."
+                Read-Host "Operacion abortada. Presiona Enter..."; return
+            }
+        }
+    }
+
+    # B) Validar Unidad Idéntica
+    try {
+        $srcDrive = Split-Path $sourcePaths[0] -Qualifier -ErrorAction SilentlyContinue
+        $destDrive = Split-Path $destinationPath -Qualifier -ErrorAction SilentlyContinue
+        
+        if ($srcDrive -and $destDrive -and ($srcDrive -eq $destDrive)) {
+            Write-Warning "AVISO: Origen y Destino estan en la misma unidad fisica ($srcDrive)."
+            if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
+        }
+    } catch {}
+    
+    # 3. Calculo de espacio
+	Clear-Host
+    Write-Host "`n[+] Calculando espacio requerido..." -ForegroundColor Yellow
+    $sourceTotalSize = 0
+    try {
+        if ($backupType -eq 'Files') {
+            $sourceTotalSize = ($sourcePaths | Get-Item | Measure-Object -Property Length -Sum).Sum
+        } else {
+            foreach ($folder in $sourcePaths) {
+                $sourceTotalSize += (Get-ChildItem -Path $folder -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            }
+        }
+    } catch { Write-Warning "Calculo aproximado." }
+    
+    $destDriveLetter = Split-Path $destinationPath -Qualifier
+    $driveInfo = Get-Volume | Where-Object { ($_.DriveLetter + ":") -eq $destDriveLetter }
+    $destinationFreeSpace = if ($driveInfo) { $driveInfo.SizeRemaining } else { [long]::MaxValue }
+
+    if ($sourceTotalSize -gt $destinationFreeSpace) {
+        $neededGB = [math]::Round($sourceTotalSize / 1GB, 2)
+        $freeGB = [math]::Round($destinationFreeSpace / 1GB, 2)
+        Write-Host "`n[ERROR] ESPACIO INSUFICIENTE: Requieres ~$neededGB GB pero solo tienes $freeGB GB libres." -ForegroundColor Red
+        Read-Host "Operacion abortada. Presiona Enter..."
+        return
+    }
+
+    # 4. Configurar Robocopy
+	$logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
+    if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+    $logFile = Join-Path $logDir "Respaldo_Robocopy_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').log"
+
+    $baseRoboCopyArgs = @("/COPY:DAT", "/R:2", "/W:3", "/XJ", "/NP", "/TEE", "/B", "/J", "/MT:8")
+    $excludeDirs = @("/XD", "`"$destinationPath`"", "System Volume Info", "`$RECYCLE.BIN", "AppData\Local\Temp")
+
+    # --- ACTUALIZACIÓN DE DESCRIPCIÓN DE MODO ---
+    $modeDescription = switch ($Mode) {
+        'Mirror' { "Sincronizacion (ESPEJO - Borra en destino)" }
+        'Move'   { "Mover (CORTAR y PEGAR - Borra en origen)" }
+        default  { "Respaldo Incremental (Copia)" }
+    }
+    
+    Write-Host "--- RESUMEN DE RESPALDO ---" -ForegroundColor Cyan
+    Write-Host "Modo: $modeDescription"
+    Write-Host "Destino: $destinationPath"
+    Write-Host "Origen(es):"
+    $sourcePaths | ForEach-Object { Write-Host " - $_" }
+
+	if ($Mode -eq 'Move') {
+        Write-Host "`n[ADVERTENCIA EXTREMA] Se selecciono MOVER." -ForegroundColor Red
+        Write-Host "Los archivos se borraran del origen una vez copiados al destino."
+        Write-Host "Asegurate de que el destino sea correcto."
+    }
+
+    Write-Host ""
+    Write-Host "   [S] Iniciar Operacion"
+    Write-Host "   [V] Iniciar + Verificacion Rapida (/L)"
+    Write-Host "   [H] Iniciar + Verificacion Hash (LENTO)" -ForegroundColor Yellow
+    Write-Host "   [N] Cancelar"
+    $confirmChoice = Read-Host "`nElige una opcion"
+
+    $verificationType = 'None'
+    switch ($confirmChoice.ToUpper()) {
+        'S' { $verificationType = 'None' }
+        'V' { $verificationType = 'Fast' }
+        'H' { $verificationType = 'Deep' }
+        'N' { return }
+        default { return }
+    }
+
+    # 6. Ejecucion
+    $logArg = "/LOG+:`"$logFile`""
+    Write-Log -LogLevel ACTION -Message "BACKUP: Iniciando ($Mode) en $destinationPath"
+
+    if ($backupType -eq 'Files') {
+        $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
+        
+        # --- LÓGICA MOVER ARCHIVOS ---
+        $currentFileArgs = $baseRoboCopyArgs
+        if ($Mode -eq 'Move') { $currentFileArgs += "/MOV" } # /MOV mueve archivos
+
+        foreach ($group in $filesByDirectory) {
+            $sourceDir = $group.Name
+            $fileNames = $group.Group | ForEach-Object { "`"$($_.Name)`"" }
+            $currentArgs = @("`"$sourceDir`"", "`"$destinationPath`"") + $fileNames + $currentFileArgs + $logArg
+            Write-Host "Procesando archivos desde: $sourceDir" -ForegroundColor Gray
+            Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
+        }
+    } else {
+        # --- LÓGICA MOVER CARPETAS ---
+        $folderArgs = $baseRoboCopyArgs
+        if ($Mode -eq 'Mirror') { 
+            $folderArgs += "/MIR" 
+        } 
+        elseif ($Mode -eq 'Move') { 
+            $folderArgs += "/MOVE" # Mueve carpeta y contenido
+            $folderArgs += "/E"    # Asegura subcarpetas vacías
+        } 
+        else { 
+            $folderArgs += "/E" 
+        }
+        $folderArgs += $excludeDirs
+
+        foreach ($sourceFolder in $sourcePaths) {
+            $folderName = Split-Path $sourceFolder -Leaf
+            $destinationFolder = Join-Path $destinationPath $folderName
+            
+            Write-Host "`n[ROBOCOPY] Procesando: $folderName" -ForegroundColor Cyan
+            $currentArgs = @("`"$sourceFolder`"", "`"$destinationFolder`"") + $folderArgs + $logArg
+            
+            $proc = Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow -PassThru
+            
+            if ($proc.ExitCode -ge 8) {
+                Write-Host "   [!] Errores detectados (Cod: $($proc.ExitCode))." -ForegroundColor Red
+            } else {
+                Write-Host "   -> Completado." -ForegroundColor Green
+            }
+        }
+    }
+
+    Write-Host "`n[FIN] Operacion finalizada." -ForegroundColor Green
+    
+    # 7. Verificaciones
+    switch ($verificationType) {
+        'Fast' {
+            Invoke-BackupRobocopyVerification -logFile $logFile -baseRoboCopyArgs $baseRoboCopyArgs -backupType $backupType -sourcePaths $sourcePaths -destinationPath $destinationPath -Mode $Mode
+        }
+        'Deep' {
+            Invoke-BackupHashVerification -sourcePaths $sourcePaths -destinationPath $destinationPath -backupType $backupType -logFile $logFile
+        }
+    }
+    
+    Write-Host "Log: $logFile"
+    Read-Host "Presiona Enter para volver..."
+}
+
+# --- FUNCION: INTERFAZ DE USUARIO DEL MODULO DE RESPALDO ---
+function Show-UserDataBackupMenu {
+    # Funcion interna para no repetir el menu de seleccion de modo
+    function Get-BackupMode {
+        Write-Host ""
+        Write-Host "--- Elige un modo de respaldo ---" -ForegroundColor Yellow
+        Write-Host "   [1] Simple (Copiar y Actualizar)"
+        Write-Host "       Copia archivos nuevos o modificados. No borra nada en el destino." -ForegroundColor Gray
+        Write-Host "   [2] Sincronizacion (Espejo)"
+        Write-Host "       Hace que el destino sea identico al origen. Borra archivos EXTRAS en el destino." -ForegroundColor Red
+        Write-Host "   [3] Mover (Cortar y Pegar)"
+        Write-Host "       Mueve los archivos al destino y los BORRA del origen. Libera espacio." -ForegroundColor Cyan
+        
+        $modeChoice = Read-Host "`nSelecciona el modo"
+        
+        switch ($modeChoice) {
+            '1' { return 'Copy' }
+            '2' { return 'Mirror' }
+            '3' { return 'Move' }
+            default {
+                Write-Warning "Opcion invalida." ; Start-Sleep -Seconds 2
+                return $null
+            }
+        }
+    }
+
+    $backupChoice = ''
+    do {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "           Herramienta de Respaldo de Datos de Usuario " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "--- Elige un tipo de respaldo ---" -ForegroundColor Yellow
+        Write-Host "   [1] Respaldo de Perfil de Usuario (Escritorio, Documentos, etc.)"
+        Write-Host "   [2] Respaldo de Carpeta o Archivo(s) Personalizado"
+        Write-Host ""
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $backupChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($backupChoice.ToUpper()) {
+            '1' {
+				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo de Perfil de Usuario'."
+                $backupMode = Get-BackupMode
+                if ($backupMode) {
+                    Invoke-UserDataBackup -Mode $backupMode
+                }
+            }
+            '2' {
+				Write-Log -LogLevel INFO -Message "BACKUP: Usuario selecciono 'Respaldo Personalizado'."
+                $typeChoice = Read-Host "Deseas seleccionar una [C]arpeta o [A]rchivo(s)?"
+                $dialogType = ""
+                $dialogTitle = ""
+
+                if ($typeChoice.ToUpper() -eq 'C') {
+                    $dialogType = 'Folder'
+                    $dialogTitle = "Respaldo Personalizado: Elige la Carpeta de Origen"
+                } elseif ($typeChoice.ToUpper() -eq 'A') {
+                    $dialogType = 'File'
+                    $dialogTitle = "Respaldo Personalizado: Elige el o los Archivo(s) de Origen"
+                } else {
+                    Write-Warning "Opcion invalida."; Start-Sleep -Seconds 2; continue
+                }
+
+                $customPath = Select-PathDialog -DialogType $dialogType -Title $dialogTitle
+
+                if ($customPath) {
+                    $backupMode = Get-BackupMode
+                    if ($backupMode) {
+                        Invoke-UserDataBackup -Mode $backupMode -CustomSourcePath $customPath
+                    }
+                } else {
+                    Write-Warning "No se selecciono ninguna ruta. Operacion cancelada."
+                    Start-Sleep -Seconds 2
+                }
+            }
+            'V' { continue }
+            default { Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 2 }
+        }
+    } while ($backupChoice.ToUpper() -ne 'V')
+}
+
+# ===================================================================
 # --- MoDULO DE REUBICACIoN DE CARPETAS DE USUARIO ---
 # ===================================================================
 function Move-UserProfileFolders {
@@ -5855,6 +6440,41 @@ function Move-UserProfileFolders {
     param()
 
     Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Reubicacion de Carpetas de Usuario."
+
+    # --- UTILIDAD PARA MANTENER LA CONSOLA VISIBLE (MEJORADO) ---
+    if (-not ([System.Management.Automation.PSTypeName]'Win32ConsoleUtils').Type) {
+        try {
+            Add-Type -TypeDefinition @"
+            using System;
+            using System.Runtime.InteropServices;
+            public class Win32ConsoleUtils {
+                [DllImport("kernel32.dll")]
+                public static extern IntPtr GetConsoleWindow();
+                
+                [DllImport("user32.dll")]
+                public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                
+                [DllImport("user32.dll")]
+                public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+                [DllImport("user32.dll", SetLastError = true)]
+                public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+                // Constantes para SetWindowPos
+                public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+                public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+                public const uint SWP_NOSIZE = 0x0001;
+                public const uint SWP_NOMOVE = 0x0002;
+                public const uint SWP_SHOWWINDOW = 0x0040;
+                
+                // Constante para ShowWindow
+                public const int SW_RESTORE = 9;
+            }
+"@ -ErrorAction Stop
+        } catch { 
+            # Ignorar si el tipo ya existe
+        }
+    }
 
     $folderMappings = @{
         'Escritorio' = @{ RegValue = 'Desktop'; DefaultName = 'Desktop' }
@@ -5868,6 +6488,7 @@ function Move-UserProfileFolders {
 
     Write-Host "`n[+] Paso 1: Selecciona la carpeta RAIZ donde se crearan las nuevas carpetas de usuario." -ForegroundColor Yellow
     Write-Host "    (Ejemplo: Si seleccionas 'D:\MisDatos', se crearan 'D:\MisDatos\Escritorio', 'D:\MisDatos\Documentos', etc.)" -ForegroundColor Gray
+    
     $newBasePath = Select-PathDialog -DialogType Folder -Title "Selecciona la NUEVA UBICACION BASE para tus carpetas"
     
     if ([string]::IsNullOrWhiteSpace($newBasePath)) {
@@ -5892,6 +6513,7 @@ function Move-UserProfileFolders {
         }
     }
 
+    # --- MENU DE SELECCION ---
     $choice = ''
     while ($choice.ToUpper() -ne 'C' -and $choice.ToUpper() -ne 'V') {
         Clear-Host
@@ -5899,7 +6521,6 @@ function Move-UserProfileFolders {
         Write-Host "      Selecciona las Carpetas de Usuario a Reubicar    " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "Nueva Ubicacion Base: $newBasePath" -ForegroundColor Yellow
-        Write-Host "Marca las carpetas que deseas mover a esta nueva ubicacion."
         Write-Host ""
         
         for ($i = 0; $i -lt $folderItems.Count; $i++) {
@@ -5947,290 +6568,226 @@ function Move-UserProfileFolders {
         return
     }
 
+    # --- CALCULO DE ESPACIO AUTOMATICO ---
     Clear-Host
-    Write-Host "--- RESUMEN DE LA REUBICACION ---" -ForegroundColor Cyan
-    Write-Host "Nueva Ubicacion Base: $newBasePath"
-    Write-Host "Se modificaran las siguientes carpetas:" -ForegroundColor Yellow
-    
-    $operations = @()
+	Write-Host "`n[+] Calculando espacio necesario..." -ForegroundColor Yellow
+    $totalRequiredBytes = 0
     foreach ($folder in $foldersToProcess) {
-        $regValueName = $folderMappings[$folder.Name].RegValue
-        $currentPathReg = (Get-ItemProperty -Path $registryPath -Name $regValueName -ErrorAction SilentlyContinue).($regValueName)
-        $currentPathExpanded = try { [Environment]::ExpandEnvironmentVariables($currentPathReg) } catch { $currentPathReg }
-        $newFolderName = $folderMappings[$folder.Name].DefaultName
-        $newFullPath = Join-Path -Path $newBasePath -ChildPath $newFolderName
+        $regVal = $folderMappings[$folder.Name].RegValue
+        $pathRaw = (Get-ItemProperty -Path $registryPath -Name $regVal -ErrorAction SilentlyContinue).($regVal)
+        $pathExpanded = try { [Environment]::ExpandEnvironmentVariables($pathRaw) } catch { $pathRaw }
+        try {
+            $size = (Get-ChildItem -Path $pathExpanded -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            $totalRequiredBytes += $size
+        } catch {}
+    }
 
-        Write-Host " - $($folder.Name)"
-        Write-Host "     Ruta Actual Registrada: $currentPathExpanded" -ForegroundColor Gray
-        Write-Host "     NUEVA Ruta a Registrar: $newFullPath" -ForegroundColor Green
+    try {
+        $destDrive = Split-Path $newBasePath -Qualifier
+        $volumeInfo = Get-Volume | Where-Object { ($_.DriveLetter + ":") -eq $destDrive }
+        $freeSpaceBytes = $volumeInfo.SizeRemaining
+    } catch { $freeSpaceBytes = [long]::MaxValue }
+
+    $reqGB = [math]::Round($totalRequiredBytes / 1GB, 2)
+    $freeGB = [math]::Round($freeSpaceBytes / 1GB, 2)
+
+    if ($totalRequiredBytes -gt $freeSpaceBytes) {
+        Write-Host "`n[ERROR CRITICO] ESPACIO INSUFICIENTE EN DESTINO" -ForegroundColor Red
+        Write-Host "Se requieren: ~$reqGB GB | Disponibles: ~$freeGB GB" -ForegroundColor White
+        Read-Host "Operacion abortada. Presiona Enter..."
+        return
+    } else {
+        Write-Host "`n[OK] Espacio suficiente verificado." -ForegroundColor Green
+        Write-Host "Requerido: $reqGB GB | Disponible: $freeGB GB" -ForegroundColor Gray
+    }
+
+    # --- MENU DE ACCION ---
+	Write-Host "`n--- TIPO DE ACCION ---" -ForegroundColor Cyan
+    Write-Host "   [1] Mover Archivos Y Actualizar Registro (Recomendado)"
+    Write-Host "   [2] Solo Actualizar Registro (Si ya moviste archivos manualmente)"
+    
+    $actionInput = Read-Host "`nElige opcion (1/2)"
+    if ($actionInput -ne '1' -and $actionInput -ne '2') { return }
+    $actionType = if ($actionInput -eq '1') { 'MoveAndRegister' } else { 'RegisterOnly' }
+
+    $verificationMode = 'None'
+    if ($actionType -eq 'MoveAndRegister') {
+        Write-Host "`n--- NIVEL DE VERIFICACION ---" -ForegroundColor Yellow
+        Write-Host "   [N] Ninguna (Mover directo - Mas rapido)"
+        Write-Host "   [S] Simulacion (/L) - Ver que pasara antes de mover"
+        Write-Host "   [H] Verificacion Hash (LENTO - Copia -> Verifica -> Borra origen)"
         
-        $operations += [PSCustomObject]@{
-            Name = $folder.Name
-            RegValueName = $regValueName
-            CurrentPath = $currentPathExpanded
-            NewPath = $newFullPath
+        $verifyInput = Read-Host "`nElige opcion"
+        switch ($verifyInput.ToUpper()) {
+            'S' { $verificationMode = 'Simulation' }
+            'H' { $verificationMode = 'Hash' }
+            default { $verificationMode = 'None' }
         }
     }
 
-    Write-Warning "`n¡ADVERTENCIA MUY IMPORTANTE!"
-    Write-Warning "- Cierra TODAS las aplicaciones que puedan estar usando archivos de estas carpetas."
-    Write-Warning "- Si eliges 'Mover y Registrar', el proceso puede tardar MUCHO tiempo."
-    Write-Warning "- NO interrumpas el proceso una vez iniciado."
+    if ($verificationMode -eq 'Simulation') {
+        Write-Host "`n[SIMULACION] Ejecutando Robocopy /L para previsualizar..." -ForegroundColor Cyan
+        foreach ($folder in $foldersToProcess) {
+            $regName = $folderMappings[$folder.Name].RegValue
+            $currentPath = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
+            $src = try { [Environment]::ExpandEnvironmentVariables($currentPath) } catch { $currentPath }
+            $dest = Join-Path $newBasePath $folderMappings[$folder.Name].DefaultName
+            
+            Start-Process "robocopy.exe" -ArgumentList "`"$src`" `"$dest`" /L /E /NP /NJH /NJS" -Wait -PassThru -NoNewWindow
+        }
+        Write-Host "`nSimulacion completada. Revisa la salida arriba." -ForegroundColor Yellow
+        if ((Read-Host "¿Deseas proceder con el movimiento REAL? (S/N)").ToUpper() -ne 'S') { return }
+        $verificationMode = 'None' 
+    }
 
     Write-Host ""
-    Write-Host "--- TIPO DE ACCION ---" -ForegroundColor Yellow
-    Write-Host "   [M] Mover Archivos Y Actualizar Registro (Accion Completa, Lenta)"
-    Write-Host "   [R] Solo Actualizar Registro (Rapido - ¡ASEGURATE de que los archivos ya estan en el destino" -ForegroundColor Red
-    Write-Host "       o el destino esta vacio!)" -ForegroundColor Red
-    Write-Host "   [N] Cancelar"
+	Write-Warning "Cerrando aplicaciones y explorador..."
+    $confirmation = Read-Host "¿Confirmar inicio? (SI/NO)"
+    if ($confirmation -ne 'SI') { return }
+
+    # --- [SEGURIDAD] CERRAR EXPLORER Y FORZAR VISIBILIDAD ---
+    Write-Host "Cerrando el Explorador de Windows..." -ForegroundColor Yellow
+    Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
     
-    $actionChoice = Read-Host "`nElige el tipo de accion a realizar"
-    $actionType = ''
-
-    switch ($actionChoice.ToUpper()) {
-        'M' { $actionType = 'MoveAndRegister' }
-        'R' { $actionType = 'RegisterOnly' }
-        default {
-            Write-Host "Operacion cancelada por el usuario." -ForegroundColor Yellow
-            Start-Sleep -Seconds 2
-            return
+    # Esperamos un momento para que el sistema reaccione al cierre
+    Start-Sleep -Seconds 1
+    
+    # --- [FIX CRÍTICO] FORZAR LA CONSOLA AL FRENTE (TOPMOST) ---
+    try {
+        $hWnd = [Win32ConsoleUtils]::GetConsoleWindow()
+        if ($hWnd -ne [IntPtr]::Zero) {
+            # 1. Asegurar que no esté minimizada
+            [Win32ConsoleUtils]::ShowWindow($hWnd, [Win32ConsoleUtils]::SW_RESTORE) 
+            
+            # 2. Forzar "Siempre visible" (TopMost) para que no se pierda tras el fondo
+            # HWND_TOPMOST (-1) coloca la ventana sobre todas las demás no-topmost
+            [Win32ConsoleUtils]::SetWindowPos($hWnd, [Win32ConsoleUtils]::HWND_TOPMOST, 0, 0, 0, 0, ([Win32ConsoleUtils]::SWP_NOMOVE -bor [Win32ConsoleUtils]::SWP_NOSIZE -bor [Win32ConsoleUtils]::SWP_SHOWWINDOW)) | Out-Null
+            
+            # 3. Dar foco
+            [Win32ConsoleUtils]::SetForegroundWindow($hWnd) | Out-Null
+            
         }
+    } catch {
     }
 
-    Write-Warning "`nConfirmacion Final:"
-    $confirmation = Read-Host "¿Estas COMPLETAMENTE SEGURO de continuar con la accion '$actionType'? (Escribe 'SI' para confirmar)"
-    if ($confirmation -ne 'SI') {
-        Write-Host "Operacion cancelada por el usuario." -ForegroundColor Yellow
-        Start-Sleep -Seconds 2
-        return
-    }
-
-    Write-Host "`n[+] Iniciando proceso. NO CIERRES ESTA VENTANA..." -ForegroundColor Yellow
-    Write-Log -LogLevel INFO -Message "REUBICACION: Iniciando proceso con accion '$actionType' para $($operations.Count) carpetas hacia '$newBasePath'."
     $globalSuccess = $true
-    $explorerRestartNeeded = $false
-
-    foreach ($op in $operations) {
-        Write-Host "`n--- Procesando Carpeta: $($op.Name) ---" -ForegroundColor Cyan
+    
+    foreach ($op in $foldersToProcess) {
+        $regName = $folderMappings[$op.Name].RegValue
+        $rawPath = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
+        $srcPath = [Environment]::ExpandEnvironmentVariables($rawPath)
         
-        # 1. Crear directorio de destino (Siempre necesario)
-        Write-Host "  [1/3] Asegurando directorio de destino '$($op.NewPath)'..." -ForegroundColor Gray
-        $destinationDirCreated = $false
-        try {
-            if (-not (Test-Path $op.NewPath)) {
-                New-Item -Path $op.NewPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
-                 Write-Host "  -> Directorio creado." -ForegroundColor Green
-            } else {
-                 Write-Host "  -> Directorio ya existe." -ForegroundColor Gray
-            }
-            $destinationDirCreated = $true
-        } catch {
-            Write-Error "  -> FALLO al crear el directorio de destino. Omitiendo carpeta '$($op.Name)'. Error: $($_.Exception.Message)"
-            Write-Log -LogLevel ERROR -Message "REUBICACION: Fallo al crear directorio '$($op.NewPath)'. Carpeta '$($op.Name)' omitida. Error: $($_.Exception.Message)"
-            $globalSuccess = $false
+        # Validación de existencia de origen
+        if (-not (Test-Path $srcPath)) {
+            Write-Warning "   [OMITIDO] La carpeta de origen no existe en disco: $srcPath"
             continue
         }
 
-        # 2. Mover contenido (Solo si se eligio la accion completa)
-        $robocopySucceeded = $true # Asumimos exito si no se mueve nada
+        $destPath = Join-Path $newBasePath $folderMappings[$op.Name].DefaultName
+
+        Write-Host "`nProcesando: $($op.Name)..." -ForegroundColor Cyan
+
+        # 1. Crear Directorio
+        if (-not (Test-Path $destPath)) { New-Item -Path $destPath -ItemType Directory -Force | Out-Null }
+
+        # 2. Mover/Copiar
+        $filesMoved = $true
         if ($actionType -eq 'MoveAndRegister') {
-            Write-Host "  [2/3] Moviendo contenido desde '$($op.CurrentPath)'..." -ForegroundColor Gray
-            Write-Warning "      (Esto puede tardar. Se abrira una ventana de Robocopy por cada carpeta)"
-            
-            $robocopyLogDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
-            $robocopyLogFile = Join-Path $robocopyLogDir "Robocopy_Move_$($op.Name)_$(Get-Date -Format 'yyyyMMddHHmmss').log"
-            $robocopyArgs = @(
-                "`"$($op.CurrentPath)`"" # Origen
-                "`"$($op.NewPath)`""    # Destino
-                "/MOVE"                 # Mueve archivos Y directorios (los elimina del origen)
-                "/E"                    # Copia subdirectorios, incluidos los vacios
-                "/COPY:DAT"             # Copia Datos, Atributos, Timestamps
-                "/DCOPY:T"              # Copia Timestamps de directorios
-                "/R:2"                  # Numero de reintentos en caso de fallo
-                "/W:5"                  # Tiempo de espera entre reintentos
-                "/MT:8"                 # Usa 8 hilos para copiar (puede acelerar en discos rapidos)
-                "/NJH"                  # No Job Header
-                "/NJS"                  # No Job Summary
-                "/NP"                   # No Progress
-                "/TEE"                  # Muestra en consola Y en log
-                "/LOG:`"$robocopyLogFile`"" # Guarda el log detallado
-            )
-            
-            Write-Log -LogLevel ACTION -Message "REUBICACION: Iniciando Robocopy /MOVE para '$($op.Name)' de '$($op.CurrentPath)' a '$($op.NewPath)'."
-            
-            $processInfo = Start-Process "robocopy.exe" -ArgumentList $robocopyArgs -Wait -PassThru -WindowStyle Minimized
-            
-            if ($processInfo.ExitCode -ge 8) {
-                Write-Error "  -> FALLO Robocopy al mover '$($op.Name)' (Codigo de salida: $($processInfo.ExitCode))."
-                Write-Error "     Los archivos pueden estar parcialmente movidos. Revisa el log: $robocopyLogFile"
-                Write-Log -LogLevel ERROR -Message "REUBICACION: Robocopy fallo para '$($op.Name)' (Codigo: $($processInfo.ExitCode)). Log: $robocopyLogFile"
-                $globalSuccess = $false
-                $robocopySucceeded = $false 
-                # NO continuamos con el cambio de registro si el movimiento fallo
-                continue 
-            } else {
-                 Write-Host "  -> Movimiento completado (Codigo Robocopy: $($processInfo.ExitCode))." -ForegroundColor Green
-                 Write-Log -LogLevel ACTION -Message "REUBICACION: Robocopy completado para '$($op.Name)' (Codigo: $($processInfo.ExitCode)). Log: $robocopyLogFile"
-            }
-        } else { # Si $actionType es 'RegisterOnly'
-             Write-Host "  [2/3] Omitiendo movimiento masivo de archivos." -ForegroundColor Gray
-             
-             # --- MEJORA: COPIAR Y CONFIGURAR DESKTOP.INI ---
-             Write-Host "      - Verificando y copiando 'desktop.ini' para mantener los iconos..." -ForegroundColor Gray
-             
-             $srcIni = Join-Path $op.CurrentPath "desktop.ini"
-             $destIni = Join-Path $op.NewPath "desktop.ini"
+            $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
+            if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
+            $logFile = Join-Path $logDir "Move_$($op.Name).log"
 
-             try {
-                 if (Test-Path $srcIni -PathType Leaf) {
-                     # Copiamos el archivo forzando la sobrescritura si existe
-                     Copy-Item -Path $srcIni -Destination $destIni -Force -ErrorAction Stop
-                     
-                     # Aplicamos atributos de Oculto y Sistema al archivo (necesario para que Windows lo respete)
-                     $fileItem = Get-Item $destIni -Force
-                     $fileItem.Attributes = 'Hidden', 'System'
-                     
-                     # TRUCO CRITICO DE WINDOWS:
-                     # Para que Windows lea el desktop.ini, la CARPETA contenedora debe ser 'ReadOnly' o 'System'.
-                     # Esto no impide escribir en ella, es solo una bandera para el Explorador.
-                     $folderItem = Get-Item $op.NewPath -Force
-                     $folderItem.Attributes = 'ReadOnly'
-                     
-                     Write-Host "      [OK] Icono y nombre personalizado (desktop.ini) restaurados." -ForegroundColor Green
-                 } else {
-                     Write-Host "      [INFO] No se encontro 'desktop.ini' en el origen. La carpeta tendra icono generico." -ForegroundColor Gray
-                 }
-             } catch {
-                 Write-Warning "      [AVISO] No se pudo copiar o configurar desktop.ini: $($_.Exception.Message)"
-             }
-        }
-
-        # 3. Actualizar el Registro (Si la creacion del dir fue exitosa Y (Robocopy fue exitoso O se eligio 'Solo Registrar'))
-        if ($destinationDirCreated -and $robocopySucceeded) {
-            Write-Host "  [3/3] Actualizando la ruta en el Registro..." -ForegroundColor Gray
-            try {
-                Set-ItemProperty -Path $registryPath -Name $op.RegValueName -Value $op.NewPath -Type ExpandString -Force -ErrorAction Stop
-                Write-Host "  -> Registro actualizado exitosamente." -ForegroundColor Green
-                Write-Log -LogLevel ACTION -Message "REUBICACION: Registro actualizado para '$($op.Name)' a '$($op.NewPath)'."
-                $explorerRestartNeeded = $true
-            } catch {
-                Write-Error "  -> FALLO CRITICO al actualizar el registro para '$($op.Name)'. Error: $($_.Exception.Message)"
-                # Distinguir el mensaje de error segun la accion
-                if ($actionType -eq 'MoveAndRegister') {
-                    Write-Error "     La carpeta se movio, pero Windows aun apunta a la ubicacion antigua."
-                } else {
-                    Write-Error "     Windows no pudo ser actualizado para apuntar a la nueva ubicacion."
-                }
-                Write-Log -LogLevel ERROR -Message "REUBICACION CRITICO: Fallo al actualizar registro para '$($op.Name)' a '$($op.NewPath)'. Error: $($_.Exception.Message)"
-                $globalSuccess = $false
-            }
-        } else {
-             Write-Warning "  [3/3] Omitiendo actualizacion de registro debido a error previo en este paso."
-        }
-    }
-
-    Write-Host "`n--- PROCESO DE REUBICACION FINALIZADO ---" -ForegroundColor Cyan
-    if ($globalSuccess) {
-        Write-Host "[EXITO] Todas las carpetas seleccionadas se han procesado." -ForegroundColor Green
-        Write-Log -LogLevel INFO -Message "REUBICACION: Proceso finalizado con exito aparente para las carpetas seleccionadas (Accion: $actionType)."
-    } else {
-        Write-Error "[FALLO PARCIAL] Ocurrieron errores durante el proceso. Revisa los mensajes anteriores y los logs."
-        Write-Log -LogLevel ERROR -Message "REUBICACION: Proceso finalizado con uno o mas errores (Accion: $actionType)."
-    }
-
-    if ($explorerRestartNeeded) {
-        Write-Host "\nEs necesario reiniciar el Explorador de Windows (o cerrar sesion y volver a iniciar) para que los cambios surtan efecto." -ForegroundColor Yellow
-        $restartChoice = Read-Host "¿Deseas reiniciar el Explorador ahora? (S/N)"
-        if ($restartChoice.ToUpper() -eq 'S') {
-            Invoke-ExplorerRestart
-        }
-    }
-
-    Read-Host "`nPresiona Enter para volver al menu..."
-}
-
-function Show-AdminMenu {
-    $adminChoice = ''
-    do {
-		Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Administracion de Sistema."
-        Clear-Host
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host "            Modulo de Administracion de Sistema        " -ForegroundColor Cyan
-        Write-Host "=======================================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "   [1] Limpiar Registros de Eventos de Windows"
-        Write-Host "       (Elimina eventos de Aplicacion, Seguridad, Sistema, etc.)" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "   [2] Gestionar Tareas Programadas de Terceros"
-        Write-Host "       (Activa o desactiva tareas que no son de Microsoft)" -ForegroundColor Gray
-        Write-Host ""
-		Write-Host "   [3] Reubicar Carpetas de Usuario (Escritorio, Documentos, etc.)" -ForegroundColor Yellow
-        Write-Host "       (Mueve tus carpetas personales a otra unidad o ubicacion)" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
-        Write-Host ""
-        
-        $adminChoice = Read-Host "Selecciona una opcion"
-        
-        switch ($adminChoice.ToUpper()) {
-            '1' {
-                if ((Read-Host "`nADVERTENCIA: Esto eliminara permanentemente los registros de eventos. ¿Estas seguro? (S/N)").ToUpper() -eq 'S') {
+            if ($verificationMode -eq 'Hash') {
+                # MODO SEGURO: Copiar -> Verificar -> Borrar
+                Write-Host "   [HASH] Copiando archivos (Modo Seguro)..." -ForegroundColor Yellow
+                $args = @("`"$srcPath`"", "`"$destPath`"", "/MOVE", "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/J", "/R:2", "/W:2", "/NP", "/LOG:`"$logFile`"")
+                Start-Process "robocopy.exe" -ArgumentList $args -Wait -WindowStyle Hidden
+                
+                # Verificar Hash Manualmente (adaptado para renombres)
+                Write-Host "   [HASH] Verificando integridad..." -ForegroundColor Yellow
+                $hashError = $false
+                
+                try {
+                    $sourceFiles = Get-ChildItem -Path $srcPath -Recurse -File -Force -ErrorAction SilentlyContinue
+                    $totalCheck = $sourceFiles.Count
+                    $currentCheck = 0
                     
-                    $targetLogs = @("Application", "Security", "System", "Setup")
-                    Write-Host ""
-
-                    foreach ($logName in $targetLogs) {
-                        $logExists = Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue
-
-                        if ($logExists) {
-                            Write-Host "[+] Intentando limpiar el registro '$logName'..." -ForegroundColor Gray
-                            try {
-                                $success = $false
-                                if ($logName -eq 'Setup') {
-                                    # 1. Ejecutamos wevtutil SIN el parametro /q para maxima compatibilidad.
-                                    wevtutil.exe clear-log $logName
-                                    
-                                    # 2. VERIFICAMOS EL CoDIGO DE SALIDA. Si es 0, todo fue bien.
-                                    if ($LASTEXITCODE -eq 0) {
-                                        $success = $true
-                                    } else {
-                                        # 3. Si falla, creamos un error explicito para que el bloque 'catch' lo capture.
-                                        throw "wevtutil.exe fallo con el codigo de salida $LASTEXITCODE."
-                                    }
-                                }
-                                else {
-                                    Clear-EventLog -LogName $logName -ErrorAction Stop
-                                    $success = $true
-                                }
-
-                                # 4. El mensaje de exito SoLO se muestra si la variable $success es verdadera.
-                                if ($success) {
-                                    Write-Host "[OK] Registro '$logName' limpiado exitosamente." -ForegroundColor Green
-                                    Write-Log -LogLevel ACTION -Message "Registro de eventos '$logName' limpiado por el usuario."
-                                }
-                            }
-                            catch {
-                                Write-Warning "No se pudo limpiar el registro '$logName'. Error: $($_.Exception.Message)"
-                                Write-Log -LogLevel WARN -Message "Fallo al limpiar el registro '$logName'. Motivo: $($_.Exception.Message)"
-                            }
-                        }
-                        else {
-                            Write-Host "[INFO] Registro '$logName' no encontrado en este sistema. Omitido." -ForegroundColor Yellow
+                    foreach ($file in $sourceFiles) {
+                        $currentCheck++
+                        if ($currentCheck % 50 -eq 0) { Write-Progress -Activity "Verificando Hash" -Status "$currentCheck / $totalCheck" -PercentComplete (($currentCheck / $totalCheck) * 100) }
+                        
+                        $relativePath = $file.FullName.Substring($srcPath.Length)
+                        $targetFile = Join-Path $destPath $relativePath
+                        
+                        if (Test-Path $targetFile) {
+                            $h1 = (Get-FileHash $file.FullName -Algorithm SHA256).Hash
+                            $h2 = (Get-FileHash $targetFile -Algorithm SHA256).Hash
+                            if ($h1 -ne $h2) { $hashError = $true; Write-Warning "Hash incorrecto: $($file.Name)"; break }
+                        } else {
+                            $hashError = $true; Write-Warning "Falta en destino: $($file.Name)"; break
                         }
                     }
+                    Write-Progress -Activity "Verificando Hash" -Completed
+                } catch {
+                    $hashError = $true
+                    Write-Warning "Error leyendo archivos para hash."
+                }
+                
+                if (-not $hashError) {
+                    Write-Host "   [HASH] Integridad OK. Eliminando origen..." -ForegroundColor Green
+                    Remove-Item -Path "$srcPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+                } else {
+                    Write-Host "   [ALERTA] INTEGRIDAD FALLIDA. No se actualizara el registro." -ForegroundColor Red
+                    $filesMoved = $false
+                    $globalSuccess = $false
+                }
+            } else {
+                # MODO ESTANDAR: Mover directo (/MOVE)
+                Write-Host "   [MOVE] Moviendo archivos..." -ForegroundColor Gray
+				$args = @("`"$srcPath`"", "`"$destPath`"", "/MOVE", "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/J", "/R:2", "/W:2", "/NP", "/LOG:`"$logFile`"")
+                $p = Start-Process "robocopy.exe" -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
+                if ($p.ExitCode -ge 8) { 
+                    Write-Error "   Error Robocopy (Cod $($p.ExitCode))."
+                    $filesMoved = $false
+                    $globalSuccess = $false
                 }
             }
-            '2' { Show-ScheduledTasks }
-			'3' { Move-UserProfileFolders }
-            'V' { continue }
-            default {
-                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+        } else {
+            # Solo registro: copiar desktop.ini
+            $ini = Join-Path $srcPath "desktop.ini"
+            if (Test-Path $ini) { Copy-Item $ini (Join-Path $destPath "desktop.ini") -Force -ErrorAction SilentlyContinue }
+        }
+
+        # 3. Registro
+        if ($filesMoved) {
+            try {
+                Set-ItemProperty -Path $registryPath -Name $regName -Value $destPath -Type ExpandString -Force
+                Write-Host "   Registro actualizado." -ForegroundColor Green
+                
+                # --- MAGIA DE ICONOS ---
+                $srcIni = Join-Path $srcPath "desktop.ini"
+                $destIni = Join-Path $destPath "desktop.ini"
+                if ((Test-Path $srcIni) -and (-not (Test-Path $destIni))) {
+                    Copy-Item $srcIni $destIni -Force -ErrorAction SilentlyContinue
+                }
+                
+                if (Test-Path $destIni) { (Get-Item $destIni -Force).Attributes = 'Hidden', 'System' }
+                # CRITICO: La carpeta contenedora debe ser ReadOnly
+                (Get-Item $destPath -Force).Attributes = 'ReadOnly'
+                
+                Write-Log -LogLevel ACTION -Message "Registro actualizado para $($op.Name) -> $destPath"
+            } catch {
+                Write-Error "   Error actualizando registro: $_"
             }
         }
-        if ($adminChoice.ToUpper() -ne 'V') {
-            Read-Host "`nPresiona Enter para continuar..."
-        }
-    } while ($adminChoice.ToUpper() -ne 'V')
+    }
+
+    # --- [SEGURIDAD] RESTAURAR EXPLORER ---
+    Write-Host "`nRestaurando escritorio..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 1
+    Invoke-ExplorerRestart
+
+    Read-Host "`nPresiona Enter para volver..."
 }
 
 # ===================================================================
@@ -6519,7 +7076,7 @@ function Show-ScheduledTasks {
             $msg += "`n`n¡Esta accion NO se puede deshacer!"
         }
 
-        if ([System.Windows.Forms.MessageBox]::Show($msg, "Confirmar Accion", 6, $icon) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show($msg, "Confirmar Accion", 4, $icon) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
@@ -6934,8 +7491,18 @@ function Ensure-ChocolateyIsInstalled {
 }
 
 function Invoke-SoftwareSearchAndInstall {
-    $searchTerm = Read-Host "Introduce el nombre del software a buscar"
-    if ([string]::IsNullOrWhiteSpace($searchTerm)) { return }
+    Clear-Host
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "   BUSQUEDA DE SOFTWARE ($($script:SoftwareEngine))" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "Escribe el nombre del programa (ej: chrome, vlc)" -ForegroundColor Gray
+    Write-Host "O escribe 'V' para volver atras." -ForegroundColor Yellow
+    Write-Host ""
+
+    $searchTerm = Read-Host "Nombre del software"
+    
+    # Salida rapida explicita
+    if ([string]::IsNullOrWhiteSpace($searchTerm) -or $searchTerm.ToUpper() -eq 'V') { return }
 	Write-Log -LogLevel INFO -Message "SOFTWARE: Iniciando busqueda de '$searchTerm' con el motor '$($script:SoftwareEngine)'."	
 
     try {
@@ -7661,6 +8228,89 @@ function Rebuild-SearchIndex {
 }
 
 # --- FUNCIONES DE MENU PRINCIPAL ---
+function Show-AdminMenu {
+    $adminChoice = ''
+    do {
+		Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Administracion de Sistema."
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "            Modulo de Administracion de Sistema        " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Limpiar Registros de Eventos de Windows"
+        Write-Host "       (Elimina eventos de Aplicacion, Seguridad, Sistema, etc.)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Gestionar Tareas Programadas de Terceros"
+        Write-Host "       (Activa o desactiva tareas que no son de Microsoft)" -ForegroundColor Gray
+        Write-Host ""
+		Write-Host "   [3] Reubicar Carpetas de Usuario (Escritorio, Documentos, etc.)" -ForegroundColor Yellow
+        Write-Host "       (Mueve tus carpetas personales a otra unidad o ubicacion)" -ForegroundColor Gray
+        Write-Host ""
+		Write-Host "   [4] Gestor de Claves Wi-Fi (Ver/Backup/Restore)" -ForegroundColor Cyan
+		Write-Host ""
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $adminChoice = Read-Host "Selecciona una opcion"
+        
+        switch ($adminChoice.ToUpper()) {
+            '1' {
+                if ((Read-Host "`nADVERTENCIA: Esto eliminara permanentemente los registros de eventos. ¿Estas seguro? (S/N)").ToUpper() -eq 'S') {
+                    
+                    $targetLogs = @("Application", "Security", "System", "Setup")
+                    Write-Host ""
+
+                    foreach ($logName in $targetLogs) {
+                        $logExists = Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue
+
+                        if ($logExists) {
+                            Write-Host "[+] Intentando limpiar el registro '$logName'..." -ForegroundColor Gray
+                            try {
+                                $success = $false
+                                if ($logName -eq 'Setup') {
+                                    # 1. Ejecutamos wevtutil SIN el parametro /q para maxima compatibilidad.
+                                    wevtutil.exe clear-log $logName
+                                    
+                                    # 2. VERIFICAMOS EL CoDIGO DE SALIDA. Si es 0, todo fue bien.
+                                    if ($LASTEXITCODE -eq 0) {
+                                        $success = $true
+                                    } else {
+                                        # 3. Si falla, creamos un error explicito para que el bloque 'catch' lo capture.
+                                        throw "wevtutil.exe fallo con el codigo de salida $LASTEXITCODE."
+                                    }
+                                }
+                                else {
+                                    Clear-EventLog -LogName $logName -ErrorAction Stop
+                                    $success = $true
+                                }
+
+                                # 4. El mensaje de exito SoLO se muestra si la variable $success es verdadera.
+                                if ($success) {
+                                    Write-Host "[OK] Registro '$logName' limpiado exitosamente." -ForegroundColor Green
+                                    Write-Log -LogLevel ACTION -Message "Registro de eventos '$logName' limpiado por el usuario."
+                                }
+                            }
+                            catch {
+                                Write-Warning "No se pudo limpiar el registro '$logName'. Error: $($_.Exception.Message)"
+                                Write-Log -LogLevel WARN -Message "Fallo al limpiar el registro '$logName'. Motivo: $($_.Exception.Message)"
+                            }
+                        }
+                        else {
+                            Write-Host "[INFO] Registro '$logName' no encontrado en este sistema. Omitido." -ForegroundColor Yellow
+                        }
+                    }
+                }
+            }
+            '2' { Show-ScheduledTasks }
+			'3' { Move-UserProfileFolders }
+			'4' { Show-WifiManager }
+            'V' { continue }
+            default {
+                Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
+            }
+        }
+    } while ($adminChoice.ToUpper() -ne 'V')
+}
 
 function Show-OptimizationMenu {
 	Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Optimizacion y Limpieza."
