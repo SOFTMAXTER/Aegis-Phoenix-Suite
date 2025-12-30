@@ -76,7 +76,7 @@ $script:SystemTweaks = @(
         CheckCommand = {
             $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
     
-            # Definimos los valores críticos esperados para considerar que está "Activado"
+            # Definimos los valores criticos esperados para considerar que esta "Activado"
             # Basado en tu EnableCommand
             $expectedValues = @{
                 "ControlAnimations"       = 0
@@ -133,14 +133,14 @@ $script:SystemTweaks = @(
         Description    = "Configura el raton para una precision 1:1, eliminando la aceleracion de Windows."
         Method         = "Command"
         EnableCommand  = {
-            # Desactivar aceleración (Plano)
+            # Desactivar aceleracion (Plano)
             # IMPORTANTE: Se fuerza el tipo 'String' para respetar el formato del registro
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "0" -Type String -Force
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "0" -Type String -Force
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "0" -Type String -Force
         }
         DisableCommand = {
-            # Restaurar valores por defecto de Windows (Aceleración Estándar)
+            # Restaurar valores por defecto de Windows (Aceleracion Estandar)
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseSpeed' -Value "1" -Type String -Force
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold1' -Value "6" -Type String -Force
             Set-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -Name 'MouseThreshold2' -Value "10" -Type String -Force
@@ -149,7 +149,7 @@ $script:SystemTweaks = @(
             $props = Get-ItemProperty -Path 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse' -ErrorAction SilentlyContinue
             if ($null -eq $props) { return $false }
         
-            # Convertimos a entero para asegurar comparación numérica segura
+            # Convertimos a entero para asegurar comparacion numerica segura
             $speed = [int]$props.MouseSpeed
             $thresh1 = [int]$props.MouseThreshold1
             $thresh2 = [int]$props.MouseThreshold2
@@ -164,11 +164,11 @@ $script:SystemTweaks = @(
         Description    = "Desactiva la seguridad basada en virtualizacion para ganar FPS. (Protegido: Detecta si usas WSL2/Docker/Sandbox y te advierte que dejaran de funcionar)."
         Method         = "Command"
         EnableCommand  = {
-            # 1. Detección de Conflictos (WSL2 / Virtual Machine Platform)
+            # 1. Deteccion de Conflictos (WSL2 / Virtual Machine Platform)
             $hasConflict = $false
             $conflictList = @()
             
-            # Verificación ligera de características (evitamos cargar todo DISM si es posible)
+            # Verificacion ligera de caracteristicas (evitamos cargar todo DISM si es posible)
             # Buscamos servicios clave de WSL/Hyper-V
             if (Get-Service "LxssManager" -ErrorAction SilentlyContinue) { 
                 $conflictList += "Subsistema Linux (WSL2)"
@@ -191,7 +191,7 @@ $script:SystemTweaks = @(
                 }
             }
 
-            # 3. Ejecución
+            # 3. Ejecucion
             bcdedit /set hypervisorlaunchtype off
             Write-Host "VBS desactivado. Reinicia para ganar rendimiento." -ForegroundColor Green
         }
@@ -209,14 +209,14 @@ $script:SystemTweaks = @(
 	[PSCustomObject]@{
         Name           = "Deshabilitar Barra de Juegos y DVR (Completo)"
         Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva globalmente la Xbox Game Bar y la grabación en segundo plano (DVR) aplicando ajustes de usuario y directivas de sistema. Libera recursos, mejora los FPS y evita que se reactive."
+        Description    = "Desactiva globalmente la Xbox Game Bar y la grabacion en segundo plano (DVR) aplicando ajustes de usuario y directivas de sistema. Libera recursos, mejora los FPS y evita que se reactive."
         Method         = "Command"
         EnableCommand  = {
             # 1. Ajustes de Usuario (HKCU)
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
             
-            # 2. Directiva de Máquina (HKLM) - GPO
+            # 2. Directiva de Maquina (HKLM) - GPO
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             Set-ItemProperty -Path $policyPath -Name "AllowGameDVR" -Value 0 -Type DWord -Force
@@ -226,18 +226,18 @@ $script:SystemTweaks = @(
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
             
-            # 2. Eliminar Directiva de Máquina
+            # 2. Eliminar Directiva de Maquina
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
             if (Test-Path $policyPath) {
                 Remove-ItemProperty -Path $policyPath -Name "AllowGameDVR" -Force -ErrorAction SilentlyContinue
             }
         }
         CheckCommand   = {
-            # Verifica que tanto la configuración de usuario como la directiva estén aplicadas
+            # Verifica que tanto la configuracion de usuario como la directiva esten aplicadas
             $userVal = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -ErrorAction SilentlyContinue).GameDVR_Enabled
             $policyVal = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue).AllowGameDVR
             
-            # Si ambos son 0 (o la política existe y es 0), consideramos que está activado el tweak
+            # Si ambos son 0 (o la politica existe y es 0), consideramos que esta activado el tweak
             return ($userVal -eq 0 -and $policyVal -eq 0)
         }
         RestartNeeded  = "Session"
@@ -248,22 +248,22 @@ $script:SystemTweaks = @(
         Description    = "Activa el plan 'Ultimate Performance'. ADVERTENCIA: En portatiles puede causar alto consumo de bateria y calor excesivo."
         Method         = "Command"
         EnableCommand  = {
-            # --- PROTECCIÓN PARA PORTÁTILES ---
+            # --- PROTECCIoN PARA PORTaTILES ---
             $isPortable = $false
             try {
-                # Método 1: Batería
+                # Metodo 1: Bateria
                 if (Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue) { $isPortable = $true }
                 
-                # Método 2: Chasis (Tipos 8, 9, 10, 14, etc. son portátiles)
+                # Metodo 2: Chasis (Tipos 8, 9, 10, 14, etc. son portatiles)
                 $chassis = Get-CimInstance -ClassName Win32_SystemEnclosure -ErrorAction SilentlyContinue
                 if ($chassis.ChassisTypes -match '^(8|9|10|11|12|14|30|31|32)$') { $isPortable = $true }
             } catch {}
 
             if ($isPortable) {
-                # Requiere cargar WinForms si no está cargado (normalmente ya lo está por el menú padre)
+                # Requiere cargar WinForms si no esta cargado (normalmente ya lo esta por el menu padre)
                 Add-Type -AssemblyName System.Windows.Forms
-                $msg = "Se ha detectado que este equipo es un PORTÁTIL.`n`nActivar el modo 'Maximo Rendimiento' impedira que el procesador reduzca su velocidad, lo que causara:`n- Drenaje rápido de bateria.`n- Mayor temperatura (riesgo en mochilas).`n`n¿Estas seguro de querer activarlo?"
-                $warn = [System.Windows.Forms.MessageBox]::Show($msg, "Advertencia de Energía", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+                $msg = "Se ha detectado que este equipo es un PORTaTIL.`n`nActivar el modo 'Maximo Rendimiento' impedira que el procesador reduzca su velocidad, lo que causara:`n- Drenaje rapido de bateria.`n- Mayor temperatura (riesgo en mochilas).`n`n¿Estas seguro de querer activarlo?"
+                $warn = [System.Windows.Forms.MessageBox]::Show($msg, "Advertencia de Energia", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
                 
                 if ($warn -ne 'Yes') { 
                     Write-Warning "Activacion cancelada por el usuario (Proteccion de Portatil)."
@@ -271,7 +271,7 @@ $script:SystemTweaks = @(
                 }
             }
 
-            # Código original de activación
+            # Codigo original de activacion
             $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
             # Intentar duplicar el esquema si no existe
             $check = powercfg /list
@@ -297,29 +297,29 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Optimizar Uso de Memoria del Sistema de Archivos (NtfsMemoryUsage)"
         Category       = "Rendimiento del Sistema"
-        Description    = "Aumenta la memoria caché para operaciones de archivos (NTFS), acelerando la lectura/escritura en disco. (Protegido: Solo se activa si detecta 8 GB de RAM o más)."
+        Description    = "Aumenta la memoria cache para operaciones de archivos (NTFS), acelerando la lectura/escritura en disco. (Protegido: Solo se activa si detecta 8 GB de RAM o mas)."
         Method         = "Command"
         EnableCommand  = {
             # 1. Obtener Memoria Total en GB (Redondeado)
             $totalRamBytes = (Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory
             $totalRamGB = [math]::Round($totalRamBytes / 1GB)
 
-            # 2. Condición de Seguridad: Mínimo 8 GB requeridos
+            # 2. Condicion de Seguridad: Minimo 8 GB requeridos
             if ($totalRamGB -lt 8) {
                 Write-Warning "Este ajuste requiere al menos 8 GB de RAM para ser seguro."
-                Write-Warning "Tu sistema tiene ${totalRamGB} GB. Activar esto podría ralentizar tu PC al agotar la memoria."
+                Write-Warning "Tu sistema tiene ${totalRamGB} GB. Activar esto podria ralentizar tu PC al agotar la memoria."
                 Write-Warning "No se aplicaron cambios."
                 return
             }
 
-            # 3. Aplicar el ajuste si cumple la condición
+            # 3. Aplicar el ajuste si cumple la condicion
             Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsMemoryUsage" -Value 2 -Type DWord -Force
-            Write-Host "Optimización de memoria NTFS activada (Sistema con ${totalRamGB} GB de RAM)." -ForegroundColor Green
+            Write-Host "Optimizacion de memoria NTFS activada (Sistema con ${totalRamGB} GB de RAM)." -ForegroundColor Green
         }
         DisableCommand = {
             # Restaurar valor por defecto (1)
             Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsMemoryUsage" -Value 1 -Type DWord -Force
-            Write-Host "Restaurado a la configuración estándar de Windows (Valor: 1)." -ForegroundColor Gray
+            Write-Host "Restaurado a la configuracion estandar de Windows (Valor: 1)." -ForegroundColor Gray
         }
         CheckCommand   = {
             $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsMemoryUsage" -ErrorAction SilentlyContinue).NtfsMemoryUsage
@@ -368,37 +368,37 @@ $script:SystemTweaks = @(
 	[PSCustomObject]@{
         Name           = "Deshabilitar Hibernacion (Elimina hiberfil.sys)"
         Category       = "Rendimiento del Sistema"
-        Description    = "Desactiva la hibernación y elimina el archivo hiberfil.sys para liberar espacio (~tamaño de RAM). (Protegido: Advierte si detecta que es un portátil)."
+        Description    = "Desactiva la hibernacion y elimina el archivo hiberfil.sys para liberar espacio (~tamaño de RAM). (Protegido: Advierte si detecta que es un portatil)."
         Method         = "Command"
         EnableCommand  = {
-            # 1. Detección de Portátil (Batería o Chasis)
+            # 1. Deteccion de Portatil (Bateria o Chasis)
             $isPortable = $false
             try {
                 if (Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue) { $isPortable = $true }
                 $chassis = Get-CimInstance -ClassName Win32_SystemEnclosure -ErrorAction SilentlyContinue
-                # Tipos de chasis móviles: 8=Portable, 9=Laptop, 10=Notebook, etc.
+                # Tipos de chasis moviles: 8=Portable, 9=Laptop, 10=Notebook, etc.
                 if ($chassis.ChassisTypes -match '^(8|9|10|11|12|14|30|31|32)$') { $isPortable = $true }
             } catch {}
 
-            # 2. Valla de Seguridad para Portátiles
+            # 2. Valla de Seguridad para Portatiles
             if ($isPortable) {
                 Add-Type -AssemblyName System.Windows.Forms
-                $msg = "Se ha detectado que este equipo es un PORTATIL.`n`nDesactivar la hibernacion eliminara la funcion de 'Hibernar en Batería Critica'.`nSi la batería se agota durante la suspension, perderas los datos no guardados.`n`n¿Estas seguro de querer desactivarla para liberar espacio?"
+                $msg = "Se ha detectado que este equipo es un PORTATIL.`n`nDesactivar la hibernacion eliminara la funcion de 'Hibernar en Bateria Critica'.`nSi la bateria se agota durante la suspension, perderas los datos no guardados.`n`n¿Estas seguro de querer desactivarla para liberar espacio?"
                 $warn = [System.Windows.Forms.MessageBox]::Show($msg, "Advertencia de Seguridad", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
                 
                 if ($warn -ne 'Yes') { 
-                    Write-Warning "Operacion cancelada por el usuario (Proteccion de Portátil)."
+                    Write-Warning "Operacion cancelada por el usuario (Proteccion de Portatil)."
                     return 
                 }
             }
 
-            # 3. Ejecución (Si es escritorio o el usuario aceptó el riesgo)
+            # 3. Ejecucion (Si es escritorio o el usuario acepto el riesgo)
             powercfg.exe /hibernate off
             Write-Host "Hibernacion desactivada y hiberfil.sys eliminado." -ForegroundColor Green
         }
         DisableCommand = { 
             powercfg.exe /hibernate on 
-            Write-Host "Hibernación reactivada." -ForegroundColor Green
+            Write-Host "Hibernacion reactivada." -ForegroundColor Green
         }
         CheckCommand   = {
             $status = Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateEnabled" -ErrorAction SilentlyContinue
@@ -466,9 +466,9 @@ $script:SystemTweaks = @(
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
         EnableCommand  = {
-            # Verificación de versión mínima (Win10 2004 = Build 19041)
+            # Verificacion de version minima (Win10 2004 = Build 19041)
             if ([Environment]::OSVersion.Version.Build -lt 19041) {
-                Write-Warning "Tu versión de Windows es demasiado antigua para soportar HAGS."
+                Write-Warning "Tu version de Windows es demasiado antigua para soportar HAGS."
                 return
             }
             # Aplicar registro
@@ -485,7 +485,7 @@ $script:SystemTweaks = @(
         EnableCommand  = { fsutil behavior set disable8dot3 1 }
         DisableCommand = { fsutil behavior set disable8dot3 0 }
         CheckCommand   = { 
-            # Verificación directa en el registro en lugar de leer texto de consola
+            # Verificacion directa en el registro en lugar de leer texto de consola
             $regVal = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsDisable8dot3NameCreation" -ErrorAction SilentlyContinue).NtfsDisable8dot3NameCreation
             # 1 significa deshabilitado
             return ($regVal -eq 1)
@@ -511,7 +511,7 @@ $script:SystemTweaks = @(
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Search"
         RegistryKey    = "EnableEnhancedSearchMode"
-        EnabledValue   = 0  # 0 = Clásico (Rápido), 1 = Mejorado (Lento)
+        EnabledValue   = 0  # 0 = Clasico (Rapido), 1 = Mejorado (Lento)
         DefaultValue   = 1
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
@@ -529,7 +529,7 @@ $script:SystemTweaks = @(
         DefaultValue   = 0
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
-        # Inyectamos la validación en el CheckCommand para que salga N/A en Windows 10
+        # Inyectamos la validacion en el CheckCommand para que salga N/A en Windows 10
         CheckCommand   = {
             if ([Environment]::OSVersion.Version.Build -lt 22000) { return 'NotApplicable' }
             
@@ -543,7 +543,7 @@ $script:SystemTweaks = @(
         Description    = "Mueve el boton de Inicio y los iconos a la izquierda, restaurando el flujo de trabajo clasico. (Protegido: Solo aplica en Windows 11, en W10 ya es el defecto)."
         Method         = "Command"
         EnableCommand  = {
-            # 1. Verificación de Versión: Windows 11 comienza en la Build 22000
+            # 1. Verificacion de Version: Windows 11 comienza en la Build 22000
             $currentBuild = [Environment]::OSVersion.Version.Build
             if ($currentBuild -lt 22000) {
                 Write-Warning "Este ajuste es exclusivo para Windows 11."
@@ -551,7 +551,7 @@ $script:SystemTweaks = @(
                 return
             }
 
-            # 2. Aplicar alineación a la izquierda (0)
+            # 2. Aplicar alineacion a la izquierda (0)
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarAl" -Value 0 -Type DWord -Force
         }
         DisableCommand = {
@@ -618,7 +618,7 @@ $script:SystemTweaks = @(
         Description    = "Cambia el algoritmo de control de congestion a CUBIC (estandar en Linux/Android). Mejora la estabilidad del ping y la velocidad en conexiones de fibra optica modernas."
         Method         = "Command"
         EnableCommand  = { 
-            # Activa CUBIC explícitamente
+            # Activa CUBIC explicitamente
             netsh int tcp set supplemental template=internet congestionprovider=cubic
         }
         DisableCommand = {
@@ -645,12 +645,12 @@ $script:SystemTweaks = @(
             Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Disabled -ErrorAction SilentlyContinue
         }
         DisableCommand = { 
-            # Intentamos restaurar (Windows podría bloquear esto, lo cual es normal)
+            # Intentamos restaurar (Windows podria bloquear esto, lo cual es normal)
             netsh int tcp set heuristics enabled
             Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Enabled -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
-            # Verificación robusta en Español e Inglés
+            # Verificacion robusta en Español e Ingles
             $res = netsh int tcp show heuristics
             return ($res -match "disabled" -or $res -match "deshabilitado")
         }
@@ -738,9 +738,9 @@ $script:SystemTweaks = @(
         Method         = "Command"
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
-            # Intento 1: Método estándar de PowerShell
+            # Intento 1: Metodo estandar de PowerShell
             Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Enable-NetAdapterRss -ErrorAction SilentlyContinue
-            # Intento 2: Método global (netsh) para casos con Hyper-V
+            # Intento 2: Metodo global (netsh) para casos con Hyper-V
             netsh int tcp set global rss=enabled
         }
         DisableCommand = { 
@@ -750,7 +750,7 @@ $script:SystemTweaks = @(
         }
         CheckCommand   = {
             try {
-                # Metodo agnóstico al idioma: Obtenemos el objeto y verificamos su propiedad booleana
+                # Metodo agnostico al idioma: Obtenemos el objeto y verificamos su propiedad booleana
                 $rssStatus = Get-NetAdapterRss -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq $true }
                 # Si devuelve algo, es que al menos un adaptador tiene RSS activado
                 return ($null -ne $rssStatus)
@@ -763,7 +763,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Habilitar Coalescencia de Segmentos (RSC)"
         Category       = "Rendimiento de Red"
-        Description    = "Agrupa paquetes recibidos para reducir uso de CPU. (Corregido para soportar Hyper-V/Virtualización)."
+        Description    = "Agrupa paquetes recibidos para reducir uso de CPU."
         Method         = "Command"
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
@@ -778,10 +778,10 @@ $script:SystemTweaks = @(
         CheckCommand   = {
             try {
                 Import-Module NetAdapter -ErrorAction Stop
-                # Buscamos si algún adaptador ACTIVO tiene RSC activado
+                # Buscamos si algun adaptador ACTIVO tiene RSC activado
                 $rscStatus = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Get-NetAdapterRsc -ErrorAction SilentlyContinue
                 
-                # Si encontramos configuración, verificamos si está activo para IPv4 o IPv6
+                # Si encontramos configuracion, verificamos si esta activo para IPv4 o IPv6
                 if ($rscStatus) {
                     return ($rscStatus.IPv4Enabled -eq $true -or $rscStatus.IPv6Enabled -eq $true)
                 }
@@ -818,7 +818,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Deshabilitar Protocolo Inseguro SMBv1"
         Category       = "Seguridad"
-        Description    = "Desactiva el protocolo de red obsoleto SMBv1 (vector de ataque de WannaCry). Verifica primero si está activo para evitar procesos innecesarios."
+        Description    = "Desactiva el protocolo de red obsoleto SMBv1 (vector de ataque de WannaCry). Verifica primero si esta activo para evitar procesos innecesarios."
         Method         = "Command"
         EnableCommand  = {
             $featName = "SMB1Protocol"
@@ -833,17 +833,17 @@ $script:SystemTweaks = @(
             }
         }
         DisableCommand = { 
-            # Solo intentamos activarlo si el usuario lo pide explícitamente
+            # Solo intentamos activarlo si el usuario lo pide explicitamente
             try {
                 Enable-WindowsOptionalFeature -Online -FeatureName "SMB1Protocol" -NoRestart -ErrorAction Stop | Out-Null
             } catch {
-                Write-Warning "No se pudo reactivar SMBv1. Puede que Windows ya no soporte esta característica."
+                Write-Warning "No se pudo reactivar SMBv1. Puede que Windows ya no soporte esta caracteristica."
             }
         }
         CheckCommand   = {
 			try {
 				$feature = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop;
-                # Está "Activado" el TWEAK (es decir, seguro) si el protocolo está Disabled o no existe
+                # Esta "Activado" el TWEAK (es decir, seguro) si el protocolo esta Disabled o no existe
 				return ($null -eq $feature -or $feature.State -eq 'Disabled')
 			} catch {
 				return 'NotApplicable' 
@@ -854,7 +854,7 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Deshabilitar PowerShell v2.0"
         Category       = "Seguridad"
-        Description    = "Desactiva el antiguo motor de PowerShell v2.0 (obsoleto e inseguro) para reducir la superficie de ataque. Verifica primero si está instalado."
+        Description    = "Desactiva el antiguo motor de PowerShell v2.0 (obsoleto e inseguro) para reducir la superficie de ataque. Verifica primero si esta instalado."
         Method         = "Command"
         EnableCommand  = {
             $features = @("MicrosoftWindowsPowerShellV2", "MicrosoftWindowsPowerShellV2Root")
@@ -870,16 +870,16 @@ $script:SystemTweaks = @(
             }
         }
         DisableCommand = {
-            # Reactivación (Solo si el usuario realmente lo necesita)
+            # Reactivacion (Solo si el usuario realmente lo necesita)
             try {
                 Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2Root" -NoRestart -ErrorAction Stop | Out-Null
                 Enable-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -NoRestart -ErrorAction Stop | Out-Null
             } catch {
-                Write-Warning "No se pudo reactivar PowerShell 2.0. Es posible que los archivos fuente ya no existan en esta versión de Windows."
+                Write-Warning "No se pudo reactivar PowerShell 2.0. Es posible que los archivos fuente ya no existan en esta version de Windows."
             }
         }
         CheckCommand   = {
-            # Consideramos que el ajuste está "Activado" (Seguro) si:
+            # Consideramos que el ajuste esta "Activado" (Seguro) si:
             $feat = Get-WindowsOptionalFeature -Online -FeatureName "MicrosoftWindowsPowerShellV2" -ErrorAction SilentlyContinue
             return ($null -eq $feat -or $feat.State -eq 'Disabled')
         }
@@ -1266,10 +1266,10 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Deshabilitar la Pantalla de Bloqueo (Directiva)"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Elimina la pantalla de bloqueo (la imagen antes del login) para entrar mas rápido. (Protegido: Advierte en portatiles por riesgo de pulsaciones accidentales o privacidad)."
+        Description    = "Elimina la pantalla de bloqueo (la imagen antes del login) para entrar mas rapido. (Protegido: Advierte en portatiles por riesgo de pulsaciones accidentales o privacidad)."
         Method         = "Command"
         EnableCommand  = {
-            # 1. Detección de Portátil
+            # 1. Deteccion de Portatil
             $isPortable = $false
             try {
                 if (Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue) { $isPortable = $true }
@@ -1280,7 +1280,7 @@ $script:SystemTweaks = @(
             # 2. Valla de Seguridad
             if ($isPortable) {
                 Add-Type -AssemblyName System.Windows.Forms
-                $msg = "Se ha detectado que este equipo es un PORTATIL.`n`nDesactivar la pantalla de bloqueo aumenta el riesgo de:`n- Pulsaciones accidentales si el equipo se despierta en una mochila.`n- Menor privacidad al abrir la tapa en lugares públicos.`n`n¿Estas seguro de continuar?"
+                $msg = "Se ha detectado que este equipo es un PORTATIL.`n`nDesactivar la pantalla de bloqueo aumenta el riesgo de:`n- Pulsaciones accidentales si el equipo se despierta en una mochila.`n- Menor privacidad al abrir la tapa en lugares publicos.`n`n¿Estas seguro de continuar?"
                 $warn = [System.Windows.Forms.MessageBox]::Show($msg, "Advertencia de Privacidad", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
                 
                 if ($warn -ne 'Yes') { 
@@ -1289,7 +1289,7 @@ $script:SystemTweaks = @(
                 }
             }
 
-            # 3. Aplicación
+            # 3. Aplicacion
             $path = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization"
             if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
             Set-ItemProperty -Path $path -Name "NoLockScreen" -Value 1 -Type DWord -Force
@@ -1310,10 +1310,10 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Restaurar Menu Contextual Completo (Anti 'Mostrar mas')"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "En Windows 11, recupera el menu de clic derecho clasico eliminando la opcion 'Mostrar más opciones'. (Protegido: Solo se aplica si detecta Windows 11)."
+        Description    = "En Windows 11, recupera el menu de clic derecho clasico eliminando la opcion 'Mostrar mas opciones'. (Protegido: Solo se aplica si detecta Windows 11)."
         Method         = "Command"
         EnableCommand  = {
-            # 1. Verificación de Versión: Windows 11 comienza en la Build 22000
+            # 1. Verificacion de Version: Windows 11 comienza en la Build 22000
             $currentBuild = [Environment]::OSVersion.Version.Build
             if ($currentBuild -lt 22000) {
                 Write-Warning "Este ajuste es exclusivo para Windows 11."
@@ -1321,20 +1321,20 @@ $script:SystemTweaks = @(
                 return
             }
 
-            # 2. Aplicación del Parche
+            # 2. Aplicacion del Parche
             $regPath = 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
             if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
             
-            # El truco consiste en que la clave (Default) debe estar vacía (String vacío), no nula.
+            # El truco consiste en que la clave (Default) debe estar vacia (String vacio), no nula.
             Set-ItemProperty -Path $regPath -Name '(Default)' -Value '' -Force
             Write-Host "Menu clasico de Windows 11 activado." -ForegroundColor Green
         }
         DisableCommand = {
-            # Borrar la clave restaura el menú moderno de Windows 11
+            # Borrar la clave restaura el menu moderno de Windows 11
             Remove-Item -Path 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}' -Recurse -Force -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
-            # Solo está "Activado" si existe la clave específica y es Windows 11
+            # Solo esta "Activado" si existe la clave especifica y es Windows 11
             $path = 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
             return (Test-Path $path)
         }
@@ -1475,10 +1475,10 @@ $script:SystemTweaks = @(
                 Set-ItemProperty -Path $userPath -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction Stop
             } catch {
                 # Si falla (Permisos), no hacemos nada y dejamos que la Directiva HKLM se encargue
-                Write-Log -LogLevel WARN -Message "No se pudo escribir TaskbarDa en HKCU (Permisos denegados). Se intentará via Directiva."
+                Write-Log -LogLevel WARN -Message "No se pudo escribir TaskbarDa en HKCU (Permisos denegados). Se intentara via Directiva."
             }
             
-            # 2. Directiva de Máquina (HKLM) - Esta es la que realmente manda
+            # 2. Directiva de Maquina (HKLM) - Esta es la que realmente manda
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Dsh"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             Set-ItemProperty -Path $policyPath -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force
@@ -1493,7 +1493,7 @@ $script:SystemTweaks = @(
             $userVal = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -ErrorAction SilentlyContinue).TaskbarDa
             $policyVal = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -ErrorAction SilentlyContinue).AllowNewsAndInterests
             
-            # Lógica: Si ALGUNO de los dos es 0, visualmente los widgets desaparecen.
+            # Logica: Si ALGUNO de los dos es 0, visualmente los widgets desaparecen.
             $isUserDisabled = ($null -ne $userVal) -and ($userVal -eq 0)
             $isPolicyDisabled = ($null -ne $policyVal) -and ($policyVal -eq 0)
             
@@ -1594,7 +1594,7 @@ $script:SystemTweaks = @(
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         RegistryKey    = "LaunchTo"
-        EnabledValue   = 1 # 1 = Este Equipo, 2 = Acceso Rápido
+        EnabledValue   = 1 # 1 = Este Equipo, 2 = Acceso Rapido
         DefaultValue   = 2
         RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
@@ -1613,75 +1613,13 @@ $script:SystemTweaks = @(
     },
 
 	# --- Categoria: Extras ---
-    [PSCustomObject]@{
-        Name           = "Activar Driver NVMe Nativo de Alto Rendimiento"
-        Category       = "Extras"
-        Description    = "Fuerza el uso de la nueva pila de controladores NVMe nativos de Windows 11 (24H2+). Mejora drásticamente los IOPS y reduce latencia. (Requiere Windows 11 Build 26100+ y disco NVMe)."
-        Method         = "Command"
-        EnableCommand  = {
-            # 1. Verificación de Versión de Windows (Debe ser Windows 11 24H2 o superior -> Build 26100+)
-            $osVer = [Environment]::OSVersion.Version
-            if ($osVer.Build -lt 26100) {
-                Write-Warning "Este ajuste requiere Windows 11 24H2 (Build 26100) o superior."
-                Write-Warning "Tu versión actual es: Build $($osVer.Build). No se aplicaron cambios."
-                return
-            }
-
-            # 2. Verificación de Hardware (Debe existir al menos un disco NVMe)
-            # Buscamos discos cuyo modelo o bus type indique NVMe
-            $hasNvme = $false
-            try {
-                $disks = Get-PhysicalDisk | Where-Object { $_.BusType -eq 'NVMe' }
-                if ($disks) { $hasNvme = $true }
-            } catch {
-                # Fallback si Get-PhysicalDisk falla: WMI
-                if (Get-WmiObject Win32_DiskDrive | Where-Object { $_.Model -match 'NVMe' }) { $hasNvme = $true }
-            }
-
-            if (-not $hasNvme) {
-                Write-Warning "No se detectaron unidades NVMe en este sistema."
-                Write-Warning "El ajuste no tiene efecto en discos SATA/HDD. No se aplicaron cambios."
-                return
-            }
-
-            # 3. Aplicación del Ajuste (Solo si pasa las pruebas)
-            $path = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides"
-            if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
-            
-            Set-ItemProperty -Path $path -Name "735209102" -Value 1 -Type DWord -Force
-            Set-ItemProperty -Path $path -Name "1853569164" -Value 1 -Type DWord -Force
-            Set-ItemProperty -Path $path -Name "156965516" -Value 1 -Type DWord -Force
-			Set-ItemProperty -Path $path -Name "1176759950" -Value 1 -Type DWord -Force
-            
-            Write-Host "Driver NVMe Nativo activado exitosamente." -ForegroundColor Green
-        }
-        DisableCommand = {
-            $path = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides"
-            if (Test-Path $path) {
-                Remove-ItemProperty -Path $path -Name "735209102" -ErrorAction SilentlyContinue
-                Remove-ItemProperty -Path $path -Name "1853569164" -ErrorAction SilentlyContinue
-                Remove-ItemProperty -Path $path -Name "156965516" -ErrorAction SilentlyContinue
-				Remove-ItemProperty -Path $path -Name "1176759950" -ErrorAction SilentlyContinue
-            }
-        }
-        CheckCommand   = {
-            $path = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides"
-            $v1 = (Get-ItemProperty -Path $path -Name "735209102" -ErrorAction SilentlyContinue)."735209102"
-            $v2 = (Get-ItemProperty -Path $path -Name "1853569164" -ErrorAction SilentlyContinue)."1853569164"
-            $v3 = (Get-ItemProperty -Path $path -Name "156965516" -ErrorAction SilentlyContinue)."156965516"
-			$v4 = (Get-ItemProperty -Path $path -Name "1176759950" -ErrorAction SilentlyContinue)."1176759950"
-            
-            return ($v1 -eq 1 -and $v2 -eq 1 -and $v3 -eq 1 -and $v4 -eq 1)
-        }
-        RestartNeeded  = "Reboot"
-    },
 	[PSCustomObject]@{
         Name           = "Desinstalar OneDrive Completamente"
         Category       = "Extras"
         Description    = "ADVERTENCIA: Desinstala OneDrive buscando el desinstalador en multiples rutas y elimina sus datos locales. Mueve los archivos importantes fuera de la carpeta OneDrive antes de proceder."
         Method         = "Command"
         EnableCommand  = {
-            # --- PASO 1: Deshabilitar OneDrive via Directiva de Grupo (Previene reinstalación automática) ---
+            # --- PASO 1: Deshabilitar OneDrive via Directiva de Grupo (Previene reinstalacion automatica) ---
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             Set-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
@@ -1690,7 +1628,7 @@ $script:SystemTweaks = @(
             Write-Host "   - Deteniendo procesos de OneDrive..." -ForegroundColor Gray
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
 
-            # --- PASO 3: Búsqueda dinámica y ejecución del desinstalador ---
+            # --- PASO 3: Busqueda dinamica y ejecucion del desinstalador ---
             $installerPath = $null
             $possiblePaths = @(
                 "$env:SystemRoot\SysWOW64\OneDriveSetup.exe",
@@ -1712,7 +1650,7 @@ $script:SystemTweaks = @(
                 Write-Host "   - Desinstalador encontrado en: $installerPath" -ForegroundColor Cyan
                 Start-Process -FilePath $installerPath -ArgumentList "/uninstall" -Wait
             } else {
-                Write-Warning "   - No se encontró el desinstalador oficial. Se procederá con la limpieza manual forzada."
+                Write-Warning "   - No se encontro el desinstalador oficial. Se procedera con la limpieza manual forzada."
             }
             
             # --- PASO 4: Limpieza de Registro (Iconos del Explorador) ---
@@ -1720,7 +1658,7 @@ $script:SystemTweaks = @(
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
             
-            # Ocultar del panel de navegación por si acaso quedó algo
+            # Ocultar del panel de navegacion por si acaso quedo algo
             $clsidPath = "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
             if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
             Set-ItemProperty -Path $clsidPath -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force
@@ -1729,7 +1667,7 @@ $script:SystemTweaks = @(
             Write-Host "   - Eliminando archivos residuales y tareas..." -ForegroundColor Gray
             Get-ScheduledTask -TaskPath '\' -TaskName 'OneDrive*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
             
-            # Eliminación de carpetas de datos (Ojo: No borra la carpeta de documentos del usuario, solo la app)
+            # Eliminacion de carpetas de datos (Ojo: No borra la carpeta de documentos del usuario, solo la app)
             Remove-Item -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk" -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:USERPROFILE\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
