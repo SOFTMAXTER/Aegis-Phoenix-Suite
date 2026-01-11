@@ -515,7 +515,7 @@ function Manage-SystemServices {
     # --- 4. PANEL DE DESCRIPCION ---
     $grpDesc = New-Object System.Windows.Forms.GroupBox
     $grpDesc.Text = "Descripcion del Servicio"
-    $grpDesc.ForeColor = [System.Drawing.Color]::LightGray
+    $grpDesc.ForeColor = [System.Drawing.Color]::Silver
     $grpDesc.Location = New-Object System.Drawing.Point(20, 470)
     $grpDesc.Size = New-Object System.Drawing.Size(890, 80)
     $form.Controls.Add($grpDesc)
@@ -887,7 +887,7 @@ function Manage-ThirdPartyServices {
     # --- 4. PANEL DE DESCRIPCION ---
     $grpDesc = New-Object System.Windows.Forms.GroupBox
     $grpDesc.Text = "Detalles"
-    $grpDesc.ForeColor = [System.Drawing.Color]::LightGray
+    $grpDesc.ForeColor = [System.Drawing.Color]::Suilver
     $grpDesc.Location = New-Object System.Drawing.Point(20, 500)
     $grpDesc.Size = New-Object System.Drawing.Size(920, 60)
     $form.Controls.Add($grpDesc)
@@ -1794,7 +1794,7 @@ function Show-BloatwareMenu {
     $chkDeepClean.Text = "Limpieza Profunda (Borrar carpetas residuales AppData)"
     $chkDeepClean.Location = New-Object System.Drawing.Point(20, 625)
     $chkDeepClean.AutoSize = $true
-    $chkDeepClean.ForeColor = [System.Drawing.Color]::LightGray
+    $chkDeepClean.ForeColor = [System.Drawing.Color]::Silver
     $chkDeepClean.Checked = $true
     $form.Controls.Add($chkDeepClean)
 
@@ -2122,7 +2122,7 @@ function Manage-StartupApps {
     # --- 5. PANEL DE DETALLES (COMANDO) ---
     $grpDet = New-Object System.Windows.Forms.GroupBox
     $grpDet.Text = "Detalles del Comando / Ruta"
-    $grpDet.ForeColor = [System.Drawing.Color]::LightGray
+    $grpDet.ForeColor = [System.Drawing.Color]::Silver
     $grpDet.Location = New-Object System.Drawing.Point(20, 480)
     $grpDet.Size = New-Object System.Drawing.Size(890, 80)
     $form.Controls.Add($grpDet)
@@ -2293,6 +2293,24 @@ function Manage-StartupApps {
                 $txtCommand.Text = $script:StartupCache[$id].Command
             } else {
                 $txtCommand.Text = "" # Limpiar texto si no hay seleccion válida
+            }
+        }
+    })
+
+    # --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
+    $grid.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq 'Space') {
+            # Evita que la barra espaciadora haga scroll hacia abajo
+            $e.SuppressKeyPress = $true 
+            
+            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
+            foreach ($row in $sender.SelectedRows) {
+                # Invierte el valor actual (True -> False / False -> True)
+                # Nota: Verificamos si la celda es de solo lectura por seguridad
+                if (-not $row.Cells["Check"].ReadOnly) {
+                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
+                }
             }
         }
     })
@@ -3215,7 +3233,7 @@ function Show-WifiManager {
                 if ($item.Password -ne "(Sin clave / Enterprise)") {
                     $row.Cells["Password"].Style.ForeColor = [System.Drawing.Color]::LightGreen
                 } else {
-                    $row.Cells["Password"].Style.ForeColor = [System.Drawing.Color]::Gray
+                    $row.Cells["Password"].Style.ForeColor = [System.Drawing.Color]::Silver
                 }
             }
         }
@@ -3328,7 +3346,7 @@ function Show-WifiManager {
         & $ScanWifi
     })
 
-    # 5. ELIMINAR (NUEVO)
+    # 5. ELIMINAR
     $btnDelete.Add_Click({
         $targets = @()
         foreach ($row in $grid.Rows) {
@@ -4992,7 +5010,6 @@ by SOFTMAXTER
 # ===================================================================
 # --- MoDULO DE INVENTARIO PROFESIONAL ---
 # ===================================================================
-
 function Get-DetailedWindowsVersion {
     try {
         # Intentamos obtener los datos del registro. Si falla, no detiene el script (SilentlyContinue)
@@ -7831,7 +7848,7 @@ function Show-TweakManagerMenu {
     $cmbCategory.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $cmbCategory.ForeColor = [System.Drawing.Color]::White
     $cmbCategory.FlatStyle = "Flat"
-    $cmbCategory.Items.Add("--- TODOS ---") | Out-Null
+    $cmbCategory.Items.Add("--- TODAS LAS CATEGORIAS ---") | Out-Null
     
     # Carga rápida de categorias
     $script:SystemTweaks | Select-Object -ExpandProperty Category -Unique | Sort-Object | ForEach-Object { 
@@ -7991,7 +8008,7 @@ function Show-TweakManagerMenu {
         
         # Filtro de Categoria
         $cat = $cmbCategory.SelectedItem
-        $items = if ($cat -eq "--- TODOS ---") { $script:SystemTweaks } 
+        $items = if ($cat -eq "--- TODAS LAS CATEGORIAS ---") { $script:SystemTweaks } 
                  else { $script:SystemTweaks | Where-Object { $_.Category -eq $cat } }
 
         # Filtro de Búsqueda (Texto)
@@ -8033,7 +8050,7 @@ function Show-TweakManagerMenu {
             }
             else {
                 $row.Cells["Status"].Value = "N/A"
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Siver
             }
         }
         
@@ -8110,7 +8127,15 @@ function Show-TweakManagerMenu {
 
         if ($needExplorer -and -not $needRestart) {
             if ([System.Windows.Forms.MessageBox]::Show("Se requiere reiniciar el Explorador. ¿Hacerlo ahora?", "Aviso", 4, 32) -eq 'Yes') {
-                Invoke-ExplorerRestart
+
+                $grid.ShowCellToolTips = $false
+                [System.Windows.Forms.Application]::DoEvents() 
+
+                try {
+                    Invoke-ExplorerRestart
+            } finally {
+                    $grid.ShowCellToolTips = $true
+                }
             }
         }
         if ($needRestart) {
