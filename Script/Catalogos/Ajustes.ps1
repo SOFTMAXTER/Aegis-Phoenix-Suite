@@ -519,23 +519,36 @@ $script:SystemTweaks = @(
 
 	# --- Categoria: Windows 11 UI y Nuevas Funciones ---
     [PSCustomObject]@{
-        Name           = "Deshabilitar Windows Copilot (IA en Barra de Tareas)"
+        Name           = "Deshabilitar Windows Copilot (Sistema y App)"
         Category       = "Windows 11 UI"
-        Description    = "Desactiva el asistente de IA 'Copilot'. (Protegido: Solo se aplica en Windows 11)."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
-        RegistryKey    = "TurnOffWindowsCopilot"
-        EnabledValue   = 1
-        DefaultValue   = 0
-        RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
-        # Inyectamos la validacion en el CheckCommand para que salga N/A en Windows 10
+        Description    = "Desactiva la integracion de Copilot. En versiones modernas (24H2+), tambien desinstala la aplicacion web de Copilot para evitar que se reactive."
+        Method         = "Command"
+        EnableCommand  = {
+            # 1. Método Legacy (Registro para versiones 23H2 e inferiores)
+            $regPath = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            Set-ItemProperty -Path $regPath -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force
+
+            # 2. Método Moderno (Desinstalar el paquete Appx para 24H2+)
+            Get-AppxPackage -Name "Microsoft.Copilot" -AllUsers -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+        }
+        DisableCommand = {
+            # Restaurar clave de registro
+            $regPath = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
+            if (Test-Path $regPath) { Remove-ItemProperty -Path $regPath -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue }
+            
+            Write-Warning "Si estás en Windows 11 24H2, deberás reinstalar la app 'Microsoft Copilot' desde la Tienda manualmente."
+        }
         CheckCommand   = {
             if ([Environment]::OSVersion.Version.Build -lt 22000) { return 'NotApplicable' }
             
-            $val = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -ErrorAction SilentlyContinue).TurnOffWindowsCopilot
-            return ($val -eq 1)
+            # Verificamos si la Appx NO existe O si la clave de registro está activa
+            $appExists = Get-AppxPackage -Name "Microsoft.Copilot" -ErrorAction SilentlyContinue
+            $regVal = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -ErrorAction SilentlyContinue).TurnOffWindowsCopilot
+            
+            return ($null -eq $appExists -or $regVal -eq 1)
         }
+        RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
         Name           = "Alineacion Clasica de Barra de Tareas (Izquierda)"
@@ -570,21 +583,27 @@ $script:SystemTweaks = @(
     [PSCustomObject]@{
         Name           = "Ocultar Icono de Chat/Teams en Barra de Tareas"
         Category       = "Windows 11 UI"
-        Description    = "Elimina el icono de Chat (Teams personal) anclado por defecto en la barra de tareas. (Protegido: Solo aplica en Windows 11)."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-        RegistryKey    = "TaskbarMn"
-        EnabledValue   = 0
-        DefaultValue   = 1
-        RegistryType   = "DWord"
-        RestartNeeded  = "Explorer"
-        CheckCommand   = {
-            # Si es Windows 10, mostramos 'NotApplicable' para que no salga ni rojo ni verde
-            if ([Environment]::OSVersion.Version.Build -lt 22000) { return 'NotApplicable' }
+        Description    = "Elimina el icono de Chat (Teams personal) de la barra de tareas usando la directiva de sistema moderna (compatible con 23H2/24H2)."
+        Method         = "Command"
+        EnableCommand  = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Chat"
+            if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             
-            $val = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarMn" -ErrorAction SilentlyContinue).TaskbarMn
-            return ($val -eq 0)
+            # ChatIcon = 3 (Deshabilitado por política)
+            Set-ItemProperty -Path $policyPath -Name "ChatIcon" -Value 3 -Type DWord -Force
         }
+        DisableCommand = {
+            $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Chat"
+            if (Test-Path $policyPath) {
+                Remove-ItemProperty -Path $policyPath -Name "ChatIcon" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            if ([Environment]::OSVersion.Version.Build -lt 22000) { return 'NotApplicable' }
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -ErrorAction SilentlyContinue).ChatIcon
+            return ($val -eq 3)
+        }
+        RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
         Name           = "Deshabilitar Publicidad en Menu Inicio (Iris)"
@@ -608,6 +627,58 @@ $script:SystemTweaks = @(
         EnabledValue   = 0
         DefaultValue   = 1
         RegistryType   = "DWord"
+        RestartNeeded  = "Explorer"
+    },
+	[PSCustomObject]@{
+        Name           = "Desactivar Boton Copilot y Barra Lateral en Edge (Definitivo)"
+        Category       = "Windows 11 UI"
+        Description    = "Desactiva la IA de Copilot en Edge, oculta el botón de Bing/Copilot y bloquea la barra lateral contenedora."
+        Method         = "Command"
+        EnableCommand  = {
+            $edgePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (-not (Test-Path $edgePath)) { New-Item -Path $edgePath -Force | Out-Null }
+
+            # Apagar funciones de IA y Barra Lateral
+            Set-ItemProperty -Path $edgePath -Name "EdgeCopilotEnabled" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $edgePath -Name "HubsSidebarEnabled" -Value 0 -Type DWord -Force
+            
+            # Ocultar botones específicos (Crítico para versiones v139+)
+            Set-ItemProperty -Path $edgePath -Name "ShowCopilotButton" -Value 0 -Type DWord -Force 
+            Set-ItemProperty -Path $edgePath -Name "Microsoft365CopilotChatIconEnabled" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            $edgePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge"
+            if (Test-Path $edgePath) {
+                Remove-ItemProperty -Path $edgePath -Name "EdgeCopilotEnabled" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $edgePath -Name "HubsSidebarEnabled" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $edgePath -Name "ShowCopilotButton" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $edgePath -Name "Microsoft365CopilotChatIconEnabled" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge" -Name "EdgeCopilotEnabled" -ErrorAction SilentlyContinue).EdgeCopilotEnabled
+            return ($val -eq 0)
+        }
+        RestartNeeded  = "None"
+    },
+	[PSCustomObject]@{
+        Name           = "Eliminar Seccion 'Recomendado' del Menu Inicio"
+        Category       = "Windows 11 UI"
+        Description    = "Elimina la lista de archivos recientes y aplicaciones nuevas del Menu Inicio, dejandolo ms limpio. (Efectivo en W11 SE/Pro/Enterprise)."
+        Method         = "Command"
+        EnableCommand  = {
+            $path = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+            Set-ItemProperty -Path $path -Name "HideRecommendedSection" -Value 1 -Type DWord -Force
+        }
+        DisableCommand = {
+            $path = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            if (Test-Path $path) { Remove-ItemProperty -Path $path -Name "HideRecommendedSection" -Force -ErrorAction SilentlyContinue }
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer" -Name "HideRecommendedSection" -ErrorAction SilentlyContinue).HideRecommendedSection
+            return ($val -eq 1)
+        }
         RestartNeeded  = "Explorer"
     },
 
@@ -1093,36 +1164,64 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
-        Name           = "Deshabilitar Historial de Actividad (Timeline) (Directiva)"
+        Name           = "Deshabilitar Historial de Actividad"
         Category       = "Privacidad y Telemetria"
-        Description    = "Impide que Windows recopile y muestre el historial de actividades del usuario (Timeline)."
-        Method         = "Registry"
-        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System"
-        RegistryKey    = "EnableActivityFeed"
-        EnabledValue   = 0
-        DefaultValue   = 1
-        RegistryType   = "DWord"
+        Description    = "Impide que Windows recopile tu historial de uso de aplicaciones y archivos (Timeline) tanto localmente como en la nube."
+        Method         = "Command"
+        EnableCommand  = {
+            # 1. Directiva de Sistema (Feed)
+            $polPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System"
+            if (-not (Test-Path $polPath)) { New-Item -Path $polPath -Force | Out-Null }
+            Set-ItemProperty -Path $polPath -Name "EnableActivityFeed" -Value 0 -Type DWord -Force
+        
+            # 2. Directiva de Usuario (Recolección Local y Subida)
+            $polUser = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System"
+            Set-ItemProperty -Path $polUser -Name "PublishUserActivities" -Value 0 -Type DWord -Force
+            Set-ItemProperty -Path $polUser -Name "UploadUserActivities" -Value 0 -Type DWord -Force
+        }
+        DisableCommand = {
+            $polPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System"
+            Remove-ItemProperty -Path $polPath -Name "EnableActivityFeed" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $polPath -Name "PublishUserActivities" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $polPath -Name "UploadUserActivities" -ErrorAction SilentlyContinue
+        }
+        CheckCommand   = {
+            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System" -Name "EnableActivityFeed" -ErrorAction SilentlyContinue).EnableActivityFeed
+            return ($val -eq 0)
+        }
         RestartNeeded  = "Session"
     },
     [PSCustomObject]@{
         Name           = "Desactivar Recopilacion de Datos de Microsoft"
         Category       = "Privacidad y Telemetria"
-        Description    = "Deshabilita el servicio 'DiagTrack' y las tareas del 'Programa para la mejora de la experiencia del cliente' para minimizar el envio de datos de uso a Microsoft."
+        Description    = "Deshabilita servicios de rastreo (DiagTrack, DmWapPush) y tareas del programa de experiencia del cliente."
         Method         = "Command"
         EnableCommand  = {
+            # Tareas
             Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+            
+            # Registro
             Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
+            
+            # Servicio 1: DiagTrack
             Set-Service -Name "DiagTrack" -StartupType Disabled -ErrorAction SilentlyContinue
+            if ((Get-Service "DiagTrack" -ErrorAction SilentlyContinue).Status -eq 'Running') { Stop-Service "DiagTrack" -Force }
+
+            # Servicio 2: dmwappushservice (Nuevo)
+            Set-Service -Name "dmwappushservice" -StartupType Disabled -ErrorAction SilentlyContinue
+            if ((Get-Service "dmwappushservice" -ErrorAction SilentlyContinue).Status -eq 'Running') { Stop-Service "dmwappushservice" -Force }
         }
         DisableCommand = {
             Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Enable-ScheduledTask
             Remove-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Force -ErrorAction SilentlyContinue
+            
             Set-Service -Name "DiagTrack" -StartupType "Automatic" -ErrorAction SilentlyContinue
+            Set-Service -Name "dmwappushservice" -StartupType "Manual" -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
-            $task = Get-ScheduledTask -TaskName "Consolidator" -ErrorAction SilentlyContinue
             $telemetryValue = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -ErrorAction SilentlyContinue).AllowTelemetry
-            return ($task.State -eq 'Disabled' -and $telemetryValue -eq 0)
+            $svc = Get-Service "dmwappushservice" -ErrorAction SilentlyContinue
+            return ($telemetryValue -eq 0 -and $svc.StartType -eq 'Disabled')
         }
         RestartNeeded  = "Reboot"
     },
@@ -1260,6 +1359,18 @@ $script:SystemTweaks = @(
             return ($val -eq 1)
         }
         RestartNeeded  = "Explorer"
+    },
+	[PSCustomObject]@{
+        Name           = "Bloquear Instalación Automática de Apps Patrocinadas"
+        Category       = "Privacidad y Telemetria"
+        Description    = "Impide que Windows descargue e instale silenciosamente aplicaciones de terceros (Candy Crush, TikTok, Disney+, etc.) en el Menú Inicio."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
+        RegistryKey    = "DisableWindowsConsumerFeatures"
+        EnabledValue   = 1
+        DefaultValue   = 0
+        RegistryType   = "DWord"
+        RestartNeeded  = "Reboot"
     },
 
     # --- Categoria: Comportamiento del Sistema y UI ---
@@ -1528,13 +1639,20 @@ $script:SystemTweaks = @(
 	[PSCustomObject]@{
         Name           = "Deshabilitar Busqueda Web en Menu Inicio (Directiva GPO)"
         Category       = "Comportamiento del Sistema y UI"
-        Description    = "Eliminar completamente los resultados web de Bing y Cortana de la busqueda."
+        Description    = "Elimina completamente los resultados web de Bing, Cortana y las sugerencias flotantes (Highlights) de la caja de búsqueda."
         Method         = "Command"
         EnableCommand  = {
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+            
+            # Claves estándar
             Set-ItemProperty -Path $policyPath -Name "DisableWebSearch" -Value 1 -Type DWord -Force
             Set-ItemProperty -Path $policyPath -Name "ConnectedSearchUseWeb" -Value 0 -Type DWord -Force
+            
+            # Nueva clave crítica para eliminar popups de búsqueda
+            Set-ItemProperty -Path $policyPath -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force
+            
+            # Ajuste de usuario
             Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search" -Name "BingSearchEnabled" -Value 0 -Type DWord -Force
         }
         DisableCommand = {
@@ -1542,12 +1660,14 @@ $script:SystemTweaks = @(
             if (Test-Path $policyPath) {
                 Remove-ItemProperty -Path $policyPath -Name "DisableWebSearch" -Force -ErrorAction SilentlyContinue
                 Remove-ItemProperty -Path $policyPath -Name "ConnectedSearchUseWeb" -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $policyPath -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
             }
             Remove-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search" -Name "BingSearchEnabled" -Force -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
-            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "DisableWebSearch" -ErrorAction SilentlyContinue).DisableWebSearch
-            return ($null -ne $val -and $val -eq 1)
+            $val1 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "DisableWebSearch" -ErrorAction SilentlyContinue).DisableWebSearch
+            $val2 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue).DisableSearchBoxSuggestions
+            return ($val1 -eq 1 -and $val2 -eq 1)
         }
         RestartNeeded  = "Explorer"
     },
