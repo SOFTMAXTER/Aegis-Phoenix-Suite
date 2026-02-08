@@ -9,10 +9,13 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.8.9
+    4.9.0
 #>
 
-$script:Version = "4.8.9"
+$script:Version = "4.9.0"
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
 function Write-Log {
     [CmdletBinding()]
@@ -70,7 +73,7 @@ function Invoke-FullRepoUpdater {
             }
         }
         catch {
-            # Fallback: Comparacion de texto simple si el formato no es estándar
+            # Fallback: Comparacion de texto simple si el formato no es estandar
             if ($remoteVersionStr -ne $script:Version) { 
                 $updateAvailable = $true 
             }
@@ -339,7 +342,7 @@ function Invoke-ExplorerRestart {
 
     if ($PSCmdlet.ShouldProcess("explorer.exe", "Reiniciar")) {
         try {
-            # Obtener todos los procesos del Explorador (puede haber más de uno)
+            # Obtener todos los procesos del Explorador (puede haber mas de uno)
             $explorerProcesses = Get-Process -Name explorer -ErrorAction Stop
             
             # Detener los procesos
@@ -386,14 +389,14 @@ function Manage-SystemServices {
     # --- 1. CONFIGURACION DEL FORMULARIO (ESTILO OSCURO) ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Aegis Phoenix - Gestor de Servicios"
-    $form.Size = New-Object System.Drawing.Size(950, 700) # Ligeramente más ancho para acomodar la búsqueda
+    $form.Size = New-Object System.Drawing.Size(950, 700) # Ligeramente mas ancho para acomodar la busqueda
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
     $form.ForeColor = [System.Drawing.Color]::White
 
-    # --- 2. PANEL SUPERIOR (FILTROS Y BÚSQUEDA) ---
+    # --- 2. PANEL SUPERIOR (FILTROS Y BuSQUEDA) ---
     $lblCat = New-Object System.Windows.Forms.Label
     $lblCat.Text = "Categoria:"
     $lblCat.Location = New-Object System.Drawing.Point(20, 23)
@@ -416,7 +419,7 @@ function Manage-SystemServices {
     $cmbCategory.SelectedIndex = 0
     $form.Controls.Add($cmbCategory)
 
-    # -- NUEVO: CAJA DE BÚSQUEDA --
+    # -- NUEVO: CAJA DE BuSQUEDA --
     $lblSearch = New-Object System.Windows.Forms.Label
     $lblSearch.Text = "Buscar:"
     $lblSearch.Location = New-Object System.Drawing.Point(370, 23)
@@ -454,7 +457,7 @@ function Manage-SystemServices {
     $grid.MultiSelect = $false
     $grid.AutoSizeColumnsMode = "Fill"
     
-    # Optimizacion de Doble Búfer (Evita parpadeo)
+    # Optimizacion de Doble Bufer (Evita parpadeo)
     $type = $grid.GetType()
     $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
     $prop.SetValue($grid, $true, $null)
@@ -580,7 +583,7 @@ function Manage-SystemServices {
             $script:ServiceCatalog | Where-Object { $_.Category -eq $filterCat } 
         }
 
-        # 3. Filtrar por Texto de Búsqueda (Nuevo)
+        # 3. Filtrar por Texto de Busqueda (Nuevo)
         $searchText = $txtSearch.Text.Trim()
         if (-not [string]::IsNullOrWhiteSpace($searchText)) {
             $itemsToShow = $itemsToShow | Where-Object { $_.Name -match $searchText }
@@ -640,7 +643,7 @@ function Manage-SystemServices {
     $btnRefresh.Add_Click({ & $LoadGrid })
     $cmbCategory.Add_SelectedIndexChanged({ & $LoadGrid })
     
-    # Evento de búsqueda en tiempo real
+    # Evento de busqueda en tiempo real
     $txtSearch.Add_KeyUp({ & $LoadGrid })
 
     # Mostrar descripcion al seleccionar fila
@@ -760,13 +763,13 @@ function Manage-ThirdPartyServices {
     $backupFile = Join-Path -Path $backupDir -ChildPath "ThirdPartyServicesBackup.json"
     
     $script:BackupCache = @{}      # Almacena el estado original desde el JSON
-    $script:LiveServiceCache = @{} # Diccionario para acceso rápido por nombre
-    $script:CachedServiceList = @() # Lista para filtrado rápido sin re-consultar WMI
+    $script:LiveServiceCache = @{} # Diccionario para acceso rapido por nombre
+    $script:CachedServiceList = @() # Lista para filtrado rapido sin re-consultar WMI
 
     # --- 1. CONFIGURACION DEL FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Aegis Phoenix - Servicios de Terceros (Apps)"
-    $form.Size = New-Object System.Drawing.Size(980, 700) # Un poco más ancho para la búsqueda
+    $form.Size = New-Object System.Drawing.Size(980, 700) # Un poco mas ancho para la busqueda
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
@@ -928,14 +931,14 @@ function Manage-ThirdPartyServices {
     $btnSelectAll.FlatStyle = "Flat"
     $form.Controls.Add($btnSelectAll)
 
-    # --- LOGICA 1: RENDERIZADO (Filtrado Rápido) ---
+    # --- LOGICA 1: RENDERIZADO (Filtrado Rapido) ---
     $RenderGrid = {
         $grid.SuspendLayout()
         $grid.Rows.Clear()
         
         $searchTerm = $txtSearch.Text.Trim()
         
-        # Filtramos la lista en memoria (Rápido)
+        # Filtramos la lista en memoria (Rapido)
         $itemsToShow = if ([string]::IsNullOrWhiteSpace($searchTerm)) {
             $script:CachedServiceList
         } else {
@@ -1035,7 +1038,7 @@ function Manage-ThirdPartyServices {
     $form.Add_Shown({ & $RefreshData })
     $btnRefresh.Add_Click({ & $RefreshData })
     
-    # Evento de búsqueda en tiempo real
+    # Evento de busqueda en tiempo real
     $txtSearch.Add_KeyUp({ & $RenderGrid })
 
     $grid.Add_SelectionChanged({
@@ -1276,7 +1279,7 @@ function Remove-FilesSafely {
         try {
             Write-Log -LogLevel ERROR -Message "LIMPIEZA: Fallo critico al limpiar '$Path'. Motivo: $errorMsg"
         } catch {
-            # Fallback por si Write-Log no está disponible en este ámbito
+            # Fallback por si Write-Log no esta disponible en este ambito
             Write-Host "   [LOG ERROR] No se pudo escribir en el log." -ForegroundColor Red
         }
 
@@ -1306,7 +1309,7 @@ public class Kernel32 {
 }
 "@ -ErrorAction SilentlyContinue
 
-# --- FUNCIoN MEJORADA Y BLINDADA: Menú Principal de Limpieza ---
+# --- FUNCIoN MEJORADA Y BLINDADA: Menu Principal de Limpieza ---
 function Show-CleaningMenu {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -1491,7 +1494,7 @@ function Show-CleaningMenu {
 
         # Advertencia especial para DEEP CLEAN
         if ($tasks -contains "DEEP") {
-            $warn = "Has seleccionado 'Limpieza Profunda'.\n\n- Esto borrara Windows.old (no podras volver atrás).\n- Se ejecutara DISM y CleanMgr.\n- El proceso puede tardar mucho.\n\n¿Deseas continuar?"
+            $warn = "Has seleccionado 'Limpieza Profunda'.\n\n- Esto borrara Windows.old (no podras volver atras).\n- Se ejecutara DISM y CleanMgr.\n- El proceso puede tardar mucho.\n\n¿Deseas continuar?"
             if ([System.Windows.Forms.MessageBox]::Show($warn, "Advertencia Critica", 4, 48) -ne 'Yes') { return }
         }
 
@@ -1578,7 +1581,7 @@ function Show-CleaningMenu {
                         # 1. DISM (Oculto, espera simple)
                         Start-Process -FilePath "dism.exe" -ArgumentList "/Online /Cleanup-Image /StartComponentCleanup /NoRestart" -Wait -WindowStyle Hidden
                         
-                        # 2. Configurar Registro (Sageset dinámico)
+                        # 2. Configurar Registro (Sageset dinamico)
                         $handlers = @("Temporary Files", "Recycle Bin", "Update Cleanup", "Windows Upgrade Log Files", "Previous Installations")
                         foreach ($h in $handlers) {
                             $reg = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches\$h"
@@ -1665,7 +1668,7 @@ function Get-RemovableApps {
     }
 
     if ($Type -eq 'Microsoft') {
-        # Traemos TODO de Microsoft, la GUI se encargará de colorear
+        # Traemos TODO de Microsoft, la GUI se encargara de colorear
         $allApps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.NonRemovable -eq $false -and (& $baseFilter) }
         foreach ($app in $allApps) { $apps += (& $objectBuilder $app) }
     }
@@ -1865,7 +1868,7 @@ function Show-BloatwareMenu {
             # Guardamos el objeto real para usarlo al borrar
             $script:GridCache[$rowId] = $app
 
-            # Aplicar Colores según Estado
+            # Aplicar Colores segun Estado
             if ($app.Status -eq 'Protected') {
                 $row.Cells["StatusDesc"].Value = "PROTEGIDO"
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::LightGreen
@@ -2180,7 +2183,7 @@ function Manage-StartupApps {
             if (Test-Path $path) {
                 $bytes = (Get-ItemProperty -Path $path -Name $Name -ErrorAction SilentlyContinue).$Name
                 if ($null -ne $bytes -and $bytes.Length -gt 0) {
-                    # Si el primer byte es impar (ej: 03), está deshabilitado
+                    # Si el primer byte es impar (ej: 03), esta deshabilitado
                     if ($bytes[0] % 2 -ne 0) { return 'Disabled' }
                 }
             }
@@ -2292,7 +2295,7 @@ function Manage-StartupApps {
             if (-not [string]::IsNullOrEmpty($id) -and $script:StartupCache.ContainsKey($id)) {
                 $txtCommand.Text = $script:StartupCache[$id].Command
             } else {
-                $txtCommand.Text = "" # Limpiar texto si no hay seleccion válida
+                $txtCommand.Text = "" # Limpiar texto si no hay seleccion valida
             }
         }
     })
@@ -2630,26 +2633,151 @@ function Clear-SystemCaches {
 # MODULO DE Optimizacion de unidades
 # ===================================================================
 function Optimize-Drives {
-    Write-Log -LogLevel INFO -Message "Usuario inicio la optimizacion de unidades."
+    Write-Log -LogLevel INFO -Message "DISCOS: Usuario entro al menu de optimizacion."
     
-    # Obtener solo la letra de la unidad (ej: "C") quitando los dos puntos si existen
-    $sysDriveLetter = $env:SystemDrive.Replace(":", "")
-    
-    try {
-        $drive = Get-Volume -DriveLetter $sysDriveLetter -ErrorAction Stop
+    # 1. Obtener estado Global de TRIM (Es un ajuste del sistema, no del disco)
+    # 0 = Activado (Bueno), 1 = Desactivado (Malo)
+    $trimQuery = (fsutil behavior query DisableDeleteNotify) -join " "
+    $isTrimEnabled = $trimQuery -match "DisableDeleteNotify = 0"
+    $trimLabel = if ($isTrimEnabled) { "ON" } else { "OFF" }
+    $trimColor = if ($isTrimEnabled) { "Green" } else { "Red" }
+
+    # 2. Obtener unidades fijas
+    $volumes = Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.DriveLetter } | Sort-Object DriveLetter
+
+    if ($volumes.Count -eq 0) {
+        Write-Warning "No se detectaron unidades fijas para optimizar."
+        return
+    }
+
+    # --- MENU INTERACTIVO ---
+    while ($true) {
+        Clear-Host
+        # --- PRE-ANALISIS VISUAL (Rápido) ---
+        # Reconstruimos la lista en cada vuelta por si cambia el estado tras optimizar
+        $driveList = @()
+        foreach ($vol in $volumes) {
+            $type = "Desconocido"
+            try {
+                $partition = Get-Partition -DriveLetter $vol.DriveLetter -ErrorAction SilentlyContinue
+                if ($partition) {
+                    $disk = Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue
+                    if ($disk) {
+                        # Correccion de tuberia critica
+                        $pDisk = $disk | Get-PhysicalDisk -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($pDisk) { $type = $pDisk.MediaType }
+                    }
+                }
+            } catch {}
+            
+            $driveList += [PSCustomObject]@{
+                Letter = $vol.DriveLetter
+                Label  = if ($vol.FileSystemLabel) { $vol.FileSystemLabel } else { "Sin Etiqueta" }
+                Free   = [math]::Round($vol.SizeRemaining / 1GB, 2)
+                Type   = $type
+                Obj    = $vol
+            }
+        }
+
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "           Optimizacion de Almacenamiento              " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   Estado Global TRIM: " -NoNewline
+        Write-Host "TRIM: $trimLabel" -ForegroundColor $trimColor
+        Write-Host ""
+        Write-Host "   Unidades detectadas:" -ForegroundColor Yellow
         
-        if ($drive.DriveType -eq "SSD") {
-            Write-Host "Detectado SSD en $env:SystemDrive. Ejecutando TRIM..." -ForegroundColor Cyan
-            Optimize-Volume -DriveLetter $sysDriveLetter -ReTrim -Verbose
-            Write-Log -LogLevel ACTION -Message "Optimizando unidad $env:SystemDrive via ReTrim (SSD)."
+        for ($i = 0; $i -lt $driveList.Count; $i++) {
+            $d = $driveList[$i]
+            
+            # Formateo visual inteligente
+            Write-Host "   [$($i+1)] Unidad $($d.Letter): ($($d.Label))" -NoNewline
+            
+            if ($d.Type -eq 'SSD') {
+                Write-Host " - Tipo: " -NoNewline
+                Write-Host "SSD " -ForegroundColor Cyan -NoNewline
+                Write-Host "[TRIM: $trimLabel]" -ForegroundColor $trimColor -NoNewline
+            } elseif ($d.Type -eq 'HDD') {
+                Write-Host " - Tipo: " -NoNewline
+                Write-Host "HDD " -ForegroundColor Gray -NoNewline
+            } else {
+                Write-Host " - Tipo: $($d.Type)" -ForegroundColor Magenta -NoNewline
+            }
+            
+            Write-Host " - Libre: $($d.Free) GB"
         }
-        else {
-            Write-Host "Detectado HDD en $env:SystemDrive. Ejecutando Desfragmentación..." -ForegroundColor Cyan
-            Optimize-Volume -DriveLetter $sysDriveLetter -Defrag -Verbose
-            Write-Log -LogLevel ACTION -Message "Optimizando unidad $env:SystemDrive via Defrag (HDD)."
+        
+        Write-Host ""
+        Write-Host "   [T] Optimizar TODAS las unidades (Recomendado)" -ForegroundColor Green
+        Write-Host "   [A] Analizar Fragmentacion (Solo Diagnostico - Lento)" -ForegroundColor Yellow
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
+        
+        $choice = Read-Host "   Selecciona una opcion"
+        
+        $targets = @()
+        $analyzeOnly = $false
+        
+        if ($choice.ToUpper() -eq 'V') { return }
+        elseif ($choice.ToUpper() -eq 'T') { $targets = $driveList }
+        elseif ($choice.ToUpper() -eq 'A') { 
+            $analyzeOnly = $true
+            # Para analizar, permitimos elegir cual o todas
+            $subChoice = Read-Host "   ¿Analizar todas [T] o una especifica (Numero)?"
+            if ($subChoice.ToUpper() -eq 'T') { $targets = $driveList }
+            elseif ($subChoice -match '^\d+$' -and [int]$subChoice -ge 1 -and [int]$subChoice -le $driveList.Count) {
+                $targets = @($driveList[[int]$subChoice - 1])
+            } else { continue }
         }
-    } catch {
-        Write-Error "Error al optimizar la unidad $env:SystemDrive : $_"
+        elseif ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $driveList.Count) {
+            $targets = @($driveList[[int]$choice - 1])
+        } else {
+            continue
+        }
+
+        # --- EJECUCION ---
+        foreach ($item in $targets) {
+            Write-Host "`n[+] Procesando Unidad $($item.Letter): ($($item.Type))..." -ForegroundColor Yellow
+            
+            try {
+                if ($analyzeOnly) {
+                    # --- MODO SOLO ANALISIS ---
+                    Write-Host "   - Analizando fragmentacion (Esto puede tardar)..." -ForegroundColor Cyan
+                    $analysis = Optimize-Volume -DriveLetter $item.Letter -Analyze -Verbose
+                    
+                    # Como Optimize-Volume a veces envia la salida al stream Verbose y no al Output,
+                    # intentamos capturar el objeto si devuelve algo, o confiamos en el texto en pantalla.
+                    # Nota: El comando nativo muestra el reporte en pantalla.
+                    Write-Host "   [INFO] Analisis finalizado. Revisa el reporte arriba." -ForegroundColor Gray
+                    
+                } else {
+                    # --- MODO OPTIMIZACION ---
+                    if ($item.Type -eq 'SSD') {
+                        if (-not $isTrimEnabled) { Write-Warning "ALERTA: TRIM esta desactivado en Windows. El SSD no se optimizara correctamente." }
+                        Write-Host "   - Ejecutando Retrim..." -ForegroundColor Gray
+                        Optimize-Volume -DriveLetter $item.Letter -ReTrim
+                        Write-Log -LogLevel ACTION -Message "SSD $($item.Letter): TRIM completado."
+                    
+                    } elseif ($item.Type -eq 'HDD') {
+                        Write-Host "   - Ejecutando Desfragmentacion..." -ForegroundColor Gray
+                        Optimize-Volume -DriveLetter $item.Letter -Defrag
+                        Write-Log -LogLevel ACTION -Message "HDD $($item.Letter): Defrag completado."
+                    
+                    } else {
+                        Write-Host "   - Ejecutando optimizacion estandar..." -ForegroundColor Gray
+                        Optimize-Volume -DriveLetter $item.Letter -Normal
+                    }
+                    Write-Host "   [OK] Optimizacion finalizada." -ForegroundColor Green
+                }
+            } catch {
+                Write-Error "   [ERROR] Fallo en $($item.Letter): $($_.Exception.Message)"
+                Write-Log -LogLevel ERROR -Message "Fallo disco $($item.Letter): $($_.Exception.Message)"
+            }
+        }
+        
+        Write-Host ""
+        Read-Host "Presiona Enter para continuar..."
     }
 }
 
@@ -4928,10 +5056,10 @@ function Export-EventResults {
     
     # Exportar a TXT (formato legible)
     $txtContent = @"
-=== RESULTADOS DEL ANÁLISIS DE EVENTOS ===
+=== RESULTADOS DEL ANALISIS DE EVENTOS ===
 Generado: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Sistema: $($env:COMPUTERNAME)
-Número total de eventos: $($Events.Count)
+Numero total de eventos: $($Events.Count)
 ============================================================
 
 "@
@@ -4966,7 +5094,7 @@ by SOFTMAXTER
     
     Set-Content -Path $txtPath -Value $txtContent -Encoding UTF8
     
-    # Exportar a CSV (para análisis de datos)
+    # Exportar a CSV (para analisis de datos)
     $eventsForCsv = $Events | Select-Object @{
         Name = "FechaHora"
         Expression = { $_.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss") }
@@ -4999,7 +5127,7 @@ by SOFTMAXTER
     
     Write-Host "`n[OK] Resultados exportados correctamente:" -ForegroundColor Green
     Write-Host "   - TXT (legible): $txtPath"
-    Write-Host "   - CSV (análisis): $csvPath"
+    Write-Host "   - CSV (analisis): $csvPath"
     
     $openChoice = Read-Host "`n¿Deseas abrir la carpeta con los resultados? (S/N)"
     if ($openChoice.ToUpper() -eq 'S') {
@@ -5069,7 +5197,7 @@ function Get-DetailedWindowsVersion {
     }
     catch {
         # Fallback de emergencia en caso de error critico
-        Write-Warning "No se pudo detectar la version detallada de Windows. Usando informacion básica."
+        Write-Warning "No se pudo detectar la version detallada de Windows. Usando informacion basica."
         return "Windows Detectado (Error al leer version detallada)"
     }
 }
@@ -5681,7 +5809,7 @@ function Show-DriverMenu {
     $grid.RowHeadersVisible = $false
     $grid.AllowUserToAddRows = $false
     
-    # Habilitar Selección Múltiple para facilitar el uso
+    # Habilitar Seleccion Multiple para facilitar el uso
     $grid.SelectionMode = "FullRowSelect"
     $grid.MultiSelect = $true 
     
@@ -5740,7 +5868,7 @@ function Show-DriverMenu {
             # Detener el comportamiento por defecto (bajar scroll)
             $e.SuppressKeyPress = $true 
             
-            # Recorrer todas las filas seleccionadas (soporta multiselección)
+            # Recorrer todas las filas seleccionadas (soporta multiseleccion)
             foreach ($row in $sender.SelectedRows) {
                 # Invertir el valor del checkbox
                 $currentState = $row.Cells["Check"].Value
@@ -5764,7 +5892,7 @@ function Show-DriverMenu {
     $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
     $form.Controls.Add($lblStatus)
 
-    # --- 5. BOTONES DE ACCIÓN ---
+    # --- 5. BOTONES DE ACCIoN ---
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Marcar Todo"
     $btnSelectAll.Location = New-Object System.Drawing.Point(20, 560)
@@ -5793,7 +5921,7 @@ function Show-DriverMenu {
     $btnRestore.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnRestore)
 
-    # --- LÓGICA: ESCANEAR ---
+    # --- LoGICA: ESCANEAR ---
     $ScanDrivers = {
         $grid.Rows.Clear()
         $lblStatus.Text = "Escaneando drivers instalados..."
@@ -5822,14 +5950,14 @@ function Show-DriverMenu {
     $form.Add_Shown({ & $ScanDrivers })
     $btnRefresh.Add_Click({ & $ScanDrivers })
 
-    # --- LÓGICA: BACKUP SELECTIVO ---
+    # --- LoGICA: BACKUP SELECTIVO ---
     $btnBackup.Add_Click({
         $targets = @()
         foreach ($row in $grid.Rows) {
             if ($row.Cells["Check"].Value -eq $true) { $targets += $row.Cells["InfName"].Value }
         }
 
-        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No has seleccionado ningún driver.", "Aviso", 0, 48); return }
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No has seleccionado ningun driver.", "Aviso", 0, 48); return }
 
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.Description = "Carpeta destino para $($targets.Count) drivers"
@@ -5863,9 +5991,9 @@ function Show-DriverMenu {
         [System.Windows.Forms.MessageBox]::Show("Exportacion completada.`nDrivers: $($targets.Count)`nErrores: $errors", "Informe", 0, 64)
     })
 
-    # --- LÓGICA: RESTORE CON DIÁLOGO PERSONALIZADO ---
+    # --- LoGICA: RESTORE CON DIaLOGO PERSONALIZADO ---
     $btnRestore.Add_Click({
-        # Crear Diálogo Modal Personalizado
+        # Crear Dialogo Modal Personalizado
         $dlg = New-Object System.Windows.Forms.Form
         $dlg.Text = "Metodo de Restauracion"
         $dlg.Size = New-Object System.Drawing.Size(450, 180)
@@ -5903,7 +6031,7 @@ function Show-DriverMenu {
         $btnFiles.DialogResult = [System.Windows.Forms.DialogResult]::No 
         $dlg.Controls.Add($btnFiles)
 
-        # Mostrar Diálogo
+        # Mostrar Dialogo
         $result = $dlg.ShowDialog($form)
         $filesToInstall = @()
 
@@ -5921,7 +6049,7 @@ function Show-DriverMenu {
             # MODO ARCHIVOS
             $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
             $fileDialog.Title = "Selecciona archivos .INF"
-            $fileDialog.Filter = "Información de instalación (*.inf)|*.inf"
+            $fileDialog.Filter = "Informacion de instalacion (*.inf)|*.inf"
             $fileDialog.Multiselect = $true
             if ($fileDialog.ShowDialog() -ne 'OK') { return }
             $filesToInstall = $fileDialog.FileNames
@@ -5929,11 +6057,11 @@ function Show-DriverMenu {
         else { return } # Cancelado
 
         if ($filesToInstall.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("No se encontraron archivos válidos.", "Aviso", 0, 48)
+            [System.Windows.Forms.MessageBox]::Show("No se encontraron archivos validos.", "Aviso", 0, 48)
             return
         }
 
-        # Ejecución
+        # Ejecucion
         $progressBar.Value = 0
         $progressBar.Maximum = $filesToInstall.Count
         $btnRestore.Enabled = $false
@@ -6146,7 +6274,7 @@ function Invoke-UserDataBackup {
             } catch { return [System.Environment]::GetFolderPath($Default) }
         }
 
-        # Candidatos para el menú Checkbox
+        # Candidatos para el menu Checkbox
         $candidates = @(
             [PSCustomObject]@{ Id=1; Name="Escritorio"; Path=(Get-UserFolder -Name 'Desktop' -Default 'Desktop'); Selected=$true },
             [PSCustomObject]@{ Id=2; Name="Documentos"; Path=(Get-UserFolder -Name 'Personal' -Default 'MyDocuments'); Selected=$true },
@@ -6264,7 +6392,7 @@ function Invoke-UserDataBackup {
     $baseRoboCopyArgs = @("/COPY:DAT", "/R:2", "/W:3", "/XJ", "/NP", "/TEE", "/B", "/J", "/MT:8")
     $excludeDirs = @("/XD", "`"$destinationPath`"", "System Volume Info", "`$RECYCLE.BIN", "AppData\Local\Temp")
 
-    # --- ACTUALIZACIÓN DE DESCRIPCIÓN DE MODO ---
+    # --- ACTUALIZACIoN DE DESCRIPCIoN DE MODO ---
     $modeDescription = switch ($Mode) {
         'Mirror' { "Sincronizacion (ESPEJO - Borra en destino)" }
         'Move'   { "Mover (CORTAR y PEGAR - Borra en origen)" }
@@ -6306,7 +6434,7 @@ function Invoke-UserDataBackup {
     if ($backupType -eq 'Files') {
         $filesByDirectory = $sourcePaths | Get-Item | Group-Object -Property DirectoryName
         
-        # --- LÓGICA MOVER ARCHIVOS ---
+        # --- LoGICA MOVER ARCHIVOS ---
         $currentFileArgs = $baseRoboCopyArgs
         if ($Mode -eq 'Move') { $currentFileArgs += "/MOV" } # /MOV mueve archivos
 
@@ -6318,14 +6446,14 @@ function Invoke-UserDataBackup {
             Start-Process "robocopy.exe" -ArgumentList $currentArgs -Wait -NoNewWindow
         }
     } else {
-        # --- LÓGICA MOVER CARPETAS ---
+        # --- LoGICA MOVER CARPETAS ---
         $folderArgs = $baseRoboCopyArgs
         if ($Mode -eq 'Mirror') { 
             $folderArgs += "/MIR" 
         } 
         elseif ($Mode -eq 'Move') { 
             $folderArgs += "/MOVE" # Mueve carpeta y contenido
-            $folderArgs += "/E"    # Asegura subcarpetas vacías
+            $folderArgs += "/E"    # Asegura subcarpetas vacias
         } 
         else { 
             $folderArgs += "/E" 
@@ -6669,7 +6797,7 @@ function Move-UserProfileFolders {
     # Esperamos un momento para que el sistema reaccione al cierre
     Start-Sleep -Seconds 1
     
-    # --- [FIX CRÍTICO] FORZAR LA CONSOLA AL FRENTE (TOPMOST) ---
+    # --- [FIX CRiTICO] FORZAR LA CONSOLA AL FRENTE (TOPMOST) ---
     try {
         $hWnd = [Win32ConsoleUtils]::GetConsoleWindow()
         if ($hWnd -ne [IntPtr]::Zero) {
@@ -6677,7 +6805,7 @@ function Move-UserProfileFolders {
             [Win32ConsoleUtils]::ShowWindow($hWnd, [Win32ConsoleUtils]::SW_RESTORE) 
             
             # 2. Forzar "Siempre visible" (TopMost) para que no se pierda tras el fondo
-            # HWND_TOPMOST (-1) coloca la ventana sobre todas las demás no-topmost
+            # HWND_TOPMOST (-1) coloca la ventana sobre todas las demas no-topmost
             [Win32ConsoleUtils]::SetWindowPos($hWnd, [Win32ConsoleUtils]::HWND_TOPMOST, 0, 0, 0, 0, ([Win32ConsoleUtils]::SWP_NOMOVE -bor [Win32ConsoleUtils]::SWP_NOSIZE -bor [Win32ConsoleUtils]::SWP_SHOWWINDOW)) | Out-Null
             
             # 3. Dar foco
@@ -6694,7 +6822,7 @@ function Move-UserProfileFolders {
         $rawPath = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
         $srcPath = [Environment]::ExpandEnvironmentVariables($rawPath)
         
-        # Validación de existencia de origen
+        # Validacion de existencia de origen
         if (-not (Test-Path $srcPath)) {
             Write-Warning "   [OMITIDO] La carpeta de origen no existe en disco: $srcPath"
             continue
@@ -6868,7 +6996,7 @@ function Show-ScheduledTasks {
     $grid.MultiSelect = $false
     $grid.AutoSizeColumnsMode = "Fill"
     
-    # Optimización de buffer
+    # Optimizacion de buffer
     $type = $grid.GetType()
     $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
     $prop.SetValue($grid, $true, $null)
@@ -6997,7 +7125,7 @@ function Show-ScheduledTasks {
             ($_.TaskPath -like '\Microsoft\*' -and $_.Author -notlike 'Microsoft*')
         }
 
-        # Filtro de Búsqueda
+        # Filtro de Busqueda
         $searchText = $txtSearch.Text.Trim()
         if (-not [string]::IsNullOrWhiteSpace($searchText)) {
             $allTasks = $allTasks | Where-Object { $_.TaskName -match $searchText }
@@ -7062,7 +7190,7 @@ function Show-ScheduledTasks {
         $grid.ResumeLayout()
     })
 
-    # Lógica General (Habilitar/Deshabilitar/Eliminar)
+    # Logica General (Habilitar/Deshabilitar/Eliminar)
     $Apply = {
         param($Mode) # 'Enable', 'Disable', 'Delete'
         
@@ -7106,7 +7234,7 @@ function Show-ScheduledTasks {
                     Disable-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -ErrorAction Stop 
                 }
                 elseif ($Mode -eq 'Delete') {
-                    # Lógica de eliminación
+                    # Logica de eliminacion
                     Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction Stop
                 }
                 
@@ -7212,7 +7340,7 @@ function Get-AegisWingetUpdates {
         # Ejecutamos winget incluyendo paquetes desconocidos
         $output = winget upgrade --source winget --include-unknown --accept-source-agreements 2>&1
         
-        # Filtramos lineas inútiles (encabezados, barras de progreso, lineas vacias)
+        # Filtramos lineas inutiles (encabezados, barras de progreso, lineas vacias)
         $lines = $output | Where-Object { 
             $_ -notmatch "^Nombre" -and 
             $_ -notmatch "^Name" -and 
@@ -7224,7 +7352,7 @@ function Get-AegisWingetUpdates {
         }
 
         foreach ($line in $lines) {
-            # Dividimos por 2 o más espacios consecutivos, que es más seguro que posiciones fijas
+            # Dividimos por 2 o mas espacios consecutivos, que es mas seguro que posiciones fijas
             $columns = $line -split "\s{2,}"
             
             # Winget suele devolver: Nombre | Id | Version | Disponible
@@ -7850,14 +7978,14 @@ function Show-TweakManagerMenu {
     $cmbCategory.FlatStyle = "Flat"
     $cmbCategory.Items.Add("--- TODAS LAS CATEGORIAS ---") | Out-Null
     
-    # Carga rápida de categorias
+    # Carga rapida de categorias
     $script:SystemTweaks | Select-Object -ExpandProperty Category -Unique | Sort-Object | ForEach-Object { 
         $cmbCategory.Items.Add($_) | Out-Null 
     }
     $cmbCategory.SelectedIndex = 0
     $form.Controls.Add($cmbCategory)
 
-    # -- OPTIMIZACIoN: CAJA DE BÚSQUEDA --
+    # -- OPTIMIZACIoN: CAJA DE BuSQUEDA --
     $lblSearch = New-Object System.Windows.Forms.Label
     $lblSearch.Text = "Buscar:"
     $lblSearch.Location = New-Object System.Drawing.Point(370, 23)
@@ -7895,7 +8023,7 @@ function Show-TweakManagerMenu {
     $grid.MultiSelect = $false
     $grid.AutoSizeColumnsMode = "Fill"
     
-    # -- OPTIMIZACIoN: DOBLE BÚFER PARA EVITAR PARPADEO --
+    # -- OPTIMIZACIoN: DOBLE BuFER PARA EVITAR PARPADEO --
     $type = $grid.GetType()
     $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
     $prop.SetValue($grid, $true, $null)
@@ -8011,7 +8139,7 @@ function Show-TweakManagerMenu {
         $items = if ($cat -eq "--- TODAS LAS CATEGORIAS ---") { $script:SystemTweaks } 
                  else { $script:SystemTweaks | Where-Object { $_.Category -eq $cat } }
 
-        # Filtro de Búsqueda (Texto)
+        # Filtro de Busqueda (Texto)
         $searchText = $txtSearch.Text.Trim()
         if (-not [string]::IsNullOrWhiteSpace($searchText)) {
             $items = $items | Where-Object { $_.Name -match $searchText }
@@ -8064,7 +8192,7 @@ function Show-TweakManagerMenu {
     $btnRefresh.Add_Click({ & $LoadGrid })
     $cmbCategory.Add_SelectedIndexChanged({ & $LoadGrid })
     
-    # Evento de búsqueda en tiempo real (mientras escribes)
+    # Evento de busqueda en tiempo real (mientras escribes)
     $txtSearch.Add_KeyUp({ & $LoadGrid })
 
     $grid.Add_SelectionChanged({
@@ -8078,7 +8206,7 @@ function Show-TweakManagerMenu {
                 $desc = $script:TweakCache[$name].Description
                 
                 # Asignacion directa en lugar de Invoke
-                # Si la descripcion está vacia, mostramos un mensaje por defecto
+                # Si la descripcion esta vacia, mostramos un mensaje por defecto
                 if (-not [string]::IsNullOrWhiteSpace($desc)) {
                     $lblDesc.Text = $desc
                 } else {
@@ -8252,6 +8380,92 @@ function Rebuild-SearchIndex {
     Read-Host "`nPresiona Enter para continuar..."
 }
 
+# ===================================================================
+# MODULO DE Limpieza Profunda de Navegadores
+# ===================================================================
+function Clean-BrowserCaches {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    Write-Log -LogLevel INFO -Message "MANTENIMIENTO: Usuario inicio la limpieza de cache de navegadores."
+    Clear-Host
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host "         Limpieza Profunda de Navegadores              " -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Esta operacion realizara lo siguiente:" -ForegroundColor Gray
+    Write-Host " 1. Cerrara los navegadores abiertos." -ForegroundColor Red
+    Write-Host " 2. Eliminara Cache, GPU Cache y Code Cache."
+    Write-Host " 3. Preservara tus contraseñas, historial y marcadores." -ForegroundColor Green
+    Write-Host ""
+    
+    if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
+
+    # Definicion de Navegadores y Rutas (Chromium y Gecko)
+    # Usamos wildcards (*) para cubrir todos los perfiles (Default, Profile 1, etc.)
+    $browsers = @(
+        @{ Name="Google Chrome"; Process="chrome"; Path="$env:LOCALAPPDATA\Google\Chrome\User Data\*\Cache*" },
+        @{ Name="Google Chrome (GPU)"; Process="chrome"; Path="$env:LOCALAPPDATA\Google\Chrome\User Data\*\GPUCache*" },
+        
+        @{ Name="Microsoft Edge"; Process="msedge"; Path="$env:LOCALAPPDATA\Microsoft\Edge\User Data\*\Cache*" },
+        @{ Name="Microsoft Edge (GPU)"; Process="msedge"; Path="$env:LOCALAPPDATA\Microsoft\Edge\User Data\*\GPUCache*" },
+        
+        @{ Name="Brave Browser"; Process="brave"; Path="$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data\*\Cache*" },
+        
+        @{ Name="Opera Stable"; Process="opera"; Path="$env:LOCALAPPDATA\Opera Software\Opera Stable\Cache*" },
+        @{ Name="Opera GX"; Process="opera_gx"; Path="$env:LOCALAPPDATA\Opera Software\Opera GX Stable\Cache*" },
+
+        @{ Name="Mozilla Firefox"; Process="firefox"; Path="$env:LOCALAPPDATA\Mozilla\Firefox\Profiles\*\cache2*" }
+    )
+
+    $totalFreed = 0
+
+    foreach ($b in $browsers) {
+        Write-Host "`n[+] Procesando $($b.Name)..." -ForegroundColor Yellow
+        
+        # 1. Matar Proceso
+        if (Get-Process -Name $b.Process -ErrorAction SilentlyContinue) {
+            Write-Host "   - Cerrando proceso $($b.Process)..." -ForegroundColor Gray
+            Stop-Process -Name $b.Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500 # Esperar liberacion de archivos
+        }
+
+        # 2. Expandir Rutas (Manejo de Perfiles multiples)
+        # Get-Item expande el asterisco (*) en las rutas reales
+        $targetFolders = Get-Item -Path $b.Path -ErrorAction SilentlyContinue
+
+        if ($targetFolders) {
+            foreach ($folder in $targetFolders) {
+                try {
+                    # Calcular tamaño antes de borrar
+                    $size = (Get-ChildItem -Path $folder.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+                    $totalFreed += $size
+                    $sizeMB = [math]::Round($size / 1MB, 2)
+
+                    # Borrar contenido, manteniendo la carpeta raiz del cache
+                    Remove-Item -Path "$($folder.FullName)\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    
+                    Write-Host "   [OK] Limpiado: $($folder.Name) ($sizeMB MB)" -ForegroundColor Green
+                    Write-Log -LogLevel ACTION -Message "BROWSER CLEAN: $($b.Name) - Liberado $sizeMB MB en $($folder.FullName)"
+                }
+                catch {
+                    Write-Host "   [ERROR] No se pudo limpiar: $($folder.FullName)" -ForegroundColor Red
+                }
+            }
+        } else {
+            Write-Host "   - No instalado o sin cache." -ForegroundColor DarkGray
+        }
+    }
+
+    $totalFreedMB = [math]::Round($totalFreed / 1MB, 2)
+    Write-Host "`n=======================================================" -ForegroundColor Cyan
+    Write-Host "   LIMPIEZA COMPLETADA" -ForegroundColor Green
+    Write-Host "   Espacio total recuperado: $totalFreedMB MB" -ForegroundColor Yellow
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    
+    Read-Host "Presiona Enter para volver..."
+}
+
 # --- FUNCIONES DE MENU PRINCIPAL ---
 function Show-AdminMenu {
     $adminChoice = ''
@@ -8413,6 +8627,8 @@ function Show-MaintenanceMenu {
 		Write-Host "   [7] Reconstruir Indice de Busqueda (Search Index)" -ForegroundColor Cyan
         Write-Host "       (Soluciona busquedas lentas, incompletas o que no encuentran archivos)" -ForegroundColor Gray
 		Write-Host ""
+		Write-Host "   [8] Limpieza Profunda de Cache de Navegadores" -ForegroundColor Yellow
+        Write-Host "       (Chrome, Edge, Firefox, Brave, Opera)" -ForegroundColor Gray
         Write-Host "-------------------------------------------------------"
         Write-Host ""
         Write-Host "   [V] Volver al menu principal" -ForegroundColor Red
@@ -8428,6 +8644,7 @@ function Show-MaintenanceMenu {
             '5' { Clear-RAMCache }
             '6' { Show-NetworkDiagnosticsMenu }
             '7' { Rebuild-SearchIndex }
+			'8' { Clean-BrowserCaches }
 			'V' { continue }
             default {
                 Write-Host "[ERROR] Opcion no valida." -ForegroundColor Red
@@ -8491,64 +8708,180 @@ function Show-AdvancedMenu {
     } while ($advChoice.ToUpper() -ne 'V')
 }
 
-# --- BUCLE PRINCIPAL DEL SCRIPT ---
-$mainChoice = ''
-do {
-    $headerInfo = "Usuario: $($env:USERNAME) | Equipo: $($env:COMPUTERNAME)"
-    Clear-Host
-    Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host ("         Aegis Phoenix Suite v{0} by SOFTMAXTER" -f $script:Version) -ForegroundColor Cyan
-    Write-Host ($headerInfo.PadLeft(55)) -ForegroundColor Gray
-    Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
-    Write-Host "       (Tu red de seguridad. ¡Usar siempre antes de hacer cambios!)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "--- MODULOS PRINCIPALES ---" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "   [2] Modulo de Optimizacion y Limpieza" -ForegroundColor Green
-    Write-Host "       (Mejora el rendimiento y libera espacio en disco)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "   [3] Modulo de Mantenimiento y Reparacion" -ForegroundColor Green
-    Write-Host "       (Soluciona problemas y diagnostica el estado de tu sistema)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "   [4] Herramientas Avanzadas" -ForegroundColor Yellow
-    Write-Host "       (Accede a todos los modulos de personalizacion, seguridad y gestion)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "-------------------------------------------------------"
-    Write-Host ""
-	Write-Host "   [L] Ver Registro de Actividad (Log)" -ForegroundColor Gray
-	Write-Host ""
-    Write-Host "   [S] Salir del script" -ForegroundColor Red
-    Write-Host ""
+# ===================================================================
+# --- BUCLE PRINCIPAL (MOTOR DE INTERFAZ DE USUARIO) ---
+# ===================================================================
+function Invoke-MainMenuLoop {
+    # Variable de estado para mensajes de retroalimentacion (Feedback Loop)
+    $statusMessage = ""
+    $statusColor = "Gray"
+    
+    # --- PRE-CALCULO DE INFORMACION ---
+    $cachedSystemInfo = try {
+        $reg = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction Stop
+        
+        # 1. Determinar Nombre Comercial (El registro miente en Win11 por compatibilidad)
+        $build = [int]$reg.CurrentBuild
+        $osName = if ($build -ge 22000) { "Windows 11" } else { "Windows 10" }
+        
+        # 2. Limpiar Edición
+        $edition = $reg.EditionID `
+            -replace "Professional", "Pro" `
+            -replace "Core", "Home" `
+            -replace "Enterprise", "Ent" `
+            -replace "Education", "Edu" `
+            -replace "Server", "Srv" `
+            -replace "Workstation", "Wrk" `
+            -replace "SingleLanguage", "SL" `
+            -replace "CountrySpecific", "CS" `
+            -replace "Essentials", "Ess" `
+            -replace "Ultimate", "Ult" `
+            -replace "Starter", "Strt" `
+            -replace "Cloud", "SE" `
+            -replace "IoT", "IoT"
+        
+        # 3. Versión de Visualización (23H2, 22H2, etc.)
+        $displayVer = if ($reg.DisplayVersion) { $reg.DisplayVersion } else { $reg.ReleaseId }
+        
+        # 4. Arquitectura (Desde variable de entorno = 0ms)
+        $arch = $env:PROCESSOR_ARCHITECTURE -replace "AMD64", "x64" -replace "x86", "x32"
+        
+        # String Final
+        "$osName $edition $displayVer ($arch) - Build $build.$($reg.UBR)"
+    } catch { 
+        "Windows (Detectando...)" 
+    }
+    
+    # Bucle infinito controlado
+    while ($true) {
+        Clear-Host
+        
+        # --- ENCABEZADO UNIFICADO ---
+        $consoleWidth = $Host.UI.RawUI.WindowSize.Width
+        $line = "=" * $consoleWidth
+        
+        Write-Host $line -ForegroundColor Cyan
+        
+        # Titulo centrado
+        $title = "Aegis Phoenix Suite v$($script:Version) by SOFTMAXTER"
+        $padding = [math]::Max(0, [int](($consoleWidth - $title.Length) / 2))
+        Write-Host (" " * $padding + $title) -ForegroundColor Cyan
+        
+        # Metadata L1: Usuario y Equipo
+        $metaInfo1 = "Usuario: $env:USERNAME | Equipo: $env:COMPUTERNAME | Privilegios: Admin"
+        $paddingMeta1 = [math]::Max(0, [int](($consoleWidth - $metaInfo1.Length) / 2))
+        Write-Host (" " * $paddingMeta1 + $metaInfo1) -ForegroundColor Gray
 
-    $mainChoice = Read-Host "Selecciona una opcion y presiona Enter"
-	Write-Log -LogLevel INFO -Message "MAIN_MENU: Usuario selecciono la opcion '$($mainChoice.ToUpper())'."
+        # Metadata L2: Sistema Exacto (Cacheado)
+        $paddingMeta2 = [math]::Max(0, [int](($consoleWidth - $cachedSystemInfo.Length) / 2))
+        Write-Host (" " * $paddingMeta2 + $cachedSystemInfo) -ForegroundColor Gray
+        
+        Write-Host $line -ForegroundColor Cyan
+        Write-Host ""
 
-    switch ($mainChoice.ToUpper()) {
-        '1' { Create-RestorePoint }
-        '2' { Show-OptimizationMenu }
-        '3' { Show-MaintenanceMenu }
-        '4' { Show-AdvancedMenu }
-		'L' {
-            $parentDir = Split-Path -Parent $PSScriptRoot
-            $logFile = Join-Path -Path $parentDir -ChildPath "Logs\Registro.log"
-            if (Test-Path $logFile) {
-                Write-Host "`n[+] Abriendo archivo de registro..." -ForegroundColor Green
-                Start-Process notepad.exe -ArgumentList $logFile
-            } else {
-                Write-Warning "El archivo de registro aun no ha sido creado. Realiza alguna accion primero."
-                Read-Host "`nPresiona Enter para continuar..."
-            }
+        # --- SECCION DE MENU ---
+        Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
+        Write-Host "       (Snapshot de seguridad del sistema)" -ForegroundColor Gray
+        Write-Host ""
+        
+        Write-Host "--- MODULOS OPERATIVOS ---" -ForegroundColor Cyan
+        Write-Host "   [2] Optimizacion y Limpieza" -ForegroundColor Green
+        Write-Host "       (Servicios, Bloatware, Disco, Inicio)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Mantenimiento y Reparacion" -ForegroundColor Green
+        Write-Host "       (SFC, DISM, Red, Caches, Drivers)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [4] Herramientas Avanzadas" -ForegroundColor Yellow
+        Write-Host "       (Ajustes/Tweaks, Inventario, Software)" -ForegroundColor Gray
+        Write-Host ""
+        
+        Write-Host "-------------------------------------------------------" -ForegroundColor DarkGray
+        Write-Host "   [L] Ver Logs   [H] Ayuda/Info   [S] Salir" -ForegroundColor Gray
+        Write-Host ""
+
+        # --- AREA DE MENSAJES DE ESTADO (FEEDBACK) ---
+        if (-not [string]::IsNullOrWhiteSpace($statusMessage)) {
+            Write-Host "   ESTADO: $statusMessage" -ForegroundColor $statusColor
+            $statusMessage = ""
+            $statusColor = "Gray"
+        } else {
+            Write-Host ""
         }
-        'S' { Write-Host "`nGracias por usar Aegis Phoenix Suite by SOFTMAXTER!" }
+        
+        # --- CAPTURA DE ENTRADA ---
+        $selection = Read-Host "   > Selecciona una opcion"
+        
+        # --- VALIDACIoN Y LOGICA ---
+        switch ($selection.Trim().ToUpper()) {
+            '1' { 
+                Create-RestorePoint 
+                $statusMessage = "Ultima accion: Punto de restauracion finalizado."; $statusColor = "Green"
+            }
+            '2' { 
+                Show-OptimizationMenu 
+                $statusMessage = "Regresando del menu de Optimizacion."; $statusColor = "Cyan"
+            }
+            '3' { 
+                Show-MaintenanceMenu 
+                $statusMessage = "Regresando del menu de Mantenimiento."; $statusColor = "Cyan"
+            }
+            '4' { 
+                Show-AdvancedMenu 
+                $statusMessage = "Regresando del menu Avanzado."; $statusColor = "Cyan"
+            }
+            'L' {
+                $logFile = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs\Registro.log"
+                if (Test-Path $logFile) {
+                    Start-Process notepad.exe -ArgumentList $logFile
+                    $statusMessage = "Abriendo logs..."; $statusColor = "Green"
+                } else {
+                    $statusMessage = "Error: El archivo de log aun no existe."; $statusColor = "Red"
+                }
+            }
+            'H' {
+               $msg = "Aegis Phoenix Suite v$($script:Version)`n" +
+                      "Desarrollado por SOFTMAXTER`n`n" +
+                      "Email: softmaxter@hotmail.com`n" +
+                      "Blog: softmaxter.blogspot.com`n`n" +
+                      "Una suite integral para el mantenimiento proactivo de sistemas Windows."
+               
+               [System.Windows.Forms.MessageBox]::Show($msg, "Acerca de", 0, 64)
+            }
+            'S' { 
+                Write-Host "`n   Cerrando sesion y limpiando variables temporales..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 1
+                return # Rompe el bucle y la funcion
+            }
             default {
-                Write-Host "`n[ERROR] Opcion no valida. Por favor, intenta de nuevo." -ForegroundColor Red
-                Read-Host "`nPresiona Enter para continuar..."
+                if ([string]::IsNullOrWhiteSpace($selection)) {
+                    $statusMessage = "Por favor, escribe una opcion."; $statusColor = "Yellow"
+                } else {
+                    $statusMessage = "Opcion '$selection' no reconocida. Intenta de nuevo."; $statusColor = "Red"
+                    [System.Console]::Beep(500, 200) 
+                }
             }
         }
+        
+        # Registro de telemetria interna
+        if (-not [string]::IsNullOrWhiteSpace($selection)) {
+            Write-Log -LogLevel INFO -Message "MAIN_MENU: Input usuario: '$selection'"
+        }
+    }
+}
 
-    } while ($mainChoice.ToUpper() -ne 'S')
-
-Write-Log -LogLevel INFO -Message "Aegis Phoenix Suite cerrado por el usuario."
-Write-Log -LogLevel INFO -Message "================================================="
+# --- PUNTO DE ENTRADA (ENTRY POINT) ---
+try {
+    # Configurar titulo de consola
+    $Host.UI.RawUI.WindowTitle = "Aegis Phoenix Suite v$($script:Version) by SOFTMAXTER"
+    
+    # Iniciar el bucle principal
+    Invoke-MainMenuLoop
+    
+    Write-Log -LogLevel INFO -Message "Sesion finalizada correctamente."
+}
+catch {
+    Write-Log -LogLevel ERROR -Message "CRASH FATAL EN MENU PRINCIPAL: $_"
+    Write-Error "Ocurrio un error inesperado en el nucleo del script."
+    Write-Error $_
+    Read-Host "Presiona Enter para salir..."
+}
