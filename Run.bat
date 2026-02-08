@@ -30,7 +30,9 @@ echo Privilegios de Administrador obtenidos. Ejecutando Aegis Phoenix Suite...
 echo.
 
 :: Establecer el titulo de la ventana
-title Aegis Phoenix Suite v4.8.9 by SOFTMAXTER
+title Aegis Phoenix Suite v4.9.0 by SOFTMAXTER
+
+mode con: cols=110 lines=35
 
 :: Ruta al script de PowerShell (asume que esta en una carpeta llamada SCRIPT)
 set "scriptPath=%~dp0Script\AegisPhoenixSuite.ps1"
