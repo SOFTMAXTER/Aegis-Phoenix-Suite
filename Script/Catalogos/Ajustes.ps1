@@ -327,6 +327,52 @@ $script:SystemTweaks = @(
         }
         RestartNeeded  = "Reboot"
     },
+	[PSCustomObject]@{
+        Name           = "Optimizar Administracion de Memoria (Kernel en RAM)"
+        Category       = "Rendimiento del Sistema"
+        Description    = "Obliga a Windows a mantener el nucleo del sistema y los drivers en la memoria RAM (mas rapida) en lugar de moverlos al disco duro. Reduce micro-cortes (stuttering). (Protegido: Requiere 8 GB+ RAM)."
+        Method         = "Command"
+        EnableCommand  = {
+            # 1. Protección de Hardware (Mínimo 8 GB de RAM física)
+            $ramInfo = Get-CimInstance -ClassName Win32_ComputerSystem
+            $totalRamGB = [math]::Round($ramInfo.TotalPhysicalMemory / 1GB)
+
+            if ($totalRamGB -lt 8) {
+                Write-Warning "Tu sistema tiene $totalRamGB GB de RAM. Se requieren 8 GB+ para forzar el Kernel en RAM."
+                Write-Warning "Ajuste omitido para evitar inestabilidad."
+                return
+            }
+
+            $memPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+            if (-not (Test-Path $memPath)) { New-Item -Path $memPath -Force | Out-Null }
+
+            # 2. DisablePagingExecutive = 1 (Kernel en RAM)
+            Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force
+            
+            # 3. LargeSystemCache = 0 (Optimizar para Programas/Juegos, NO para Servidor)
+            # Esto asegura que la RAM se use para tus apps y no se desperdicie en caché de archivos excesiva.
+            Set-ItemProperty -Path $memPath -Name "LargeSystemCache" -Value 0 -Type DWord -Force
+
+            Write-Host "Gestion de memoria optimizada (Kernel en RAM activo)." -ForegroundColor Green
+        }
+        DisableCommand = {
+            $memPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+            
+            # Restaurar valores por defecto de Windows
+            # DisablePagingExecutive = 0 (Permitir paginación si falta RAM)
+            Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 0 -Type DWord -Force
+            # LargeSystemCache = 0 (Valor estándar para Desktop)
+            Set-ItemProperty -Path $memPath -Name "LargeSystemCache" -Value 0 -Type DWord -Force
+        }
+        CheckCommand   = {
+            $memPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+            $paging = (Get-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -ErrorAction SilentlyContinue).DisablePagingExecutive
+            
+            # Consideramos activado solo si el Kernel está forzado en RAM (1)
+            return ($paging -eq 1)
+        }
+        RestartNeeded  = "Reboot"
+    },
     [PSCustomObject]@{
         Name           = "Reducir Tiempo de Espera del Menu de Arranque"
         Category       = "Rendimiento del Sistema"
