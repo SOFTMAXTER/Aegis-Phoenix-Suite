@@ -890,7 +890,7 @@ function Manage-ThirdPartyServices {
     # --- 4. PANEL DE DESCRIPCION ---
     $grpDesc = New-Object System.Windows.Forms.GroupBox
     $grpDesc.Text = "Detalles"
-    $grpDesc.ForeColor = [System.Drawing.Color]::Suilver
+    $grpDesc.ForeColor = [System.Drawing.Color]::Silver
     $grpDesc.Location = New-Object System.Drawing.Point(20, 500)
     $grpDesc.Size = New-Object System.Drawing.Size(920, 60)
     $form.Controls.Add($grpDesc)
@@ -8178,7 +8178,7 @@ function Show-TweakManagerMenu {
             }
             else {
                 $row.Cells["Status"].Value = "N/A"
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Siver
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Silver
             }
         }
         
@@ -8778,12 +8778,9 @@ function Invoke-MainMenuLoop {
         
         Write-Host $line -ForegroundColor Cyan
         Write-Host ""
-
-        # --- SECCION DE MENU ---
         Write-Host "   [1] Crear Punto de Restauracion" -ForegroundColor White
         Write-Host "       (Snapshot de seguridad del sistema)" -ForegroundColor Gray
         Write-Host ""
-        
         Write-Host "--- MODULOS OPERATIVOS ---" -ForegroundColor Cyan
         Write-Host "   [2] Optimizacion y Limpieza" -ForegroundColor Green
         Write-Host "       (Servicios, Bloatware, Disco, Inicio)" -ForegroundColor Gray
@@ -8794,7 +8791,6 @@ function Invoke-MainMenuLoop {
         Write-Host "   [4] Herramientas Avanzadas" -ForegroundColor Yellow
         Write-Host "       (Ajustes/Tweaks, Inventario, Software)" -ForegroundColor Gray
         Write-Host ""
-        
         Write-Host "-------------------------------------------------------" -ForegroundColor DarkGray
         Write-Host "   [L] Ver Logs   [H] Ayuda/Info   [S] Salir" -ForegroundColor Gray
         Write-Host ""
