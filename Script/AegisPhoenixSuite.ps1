@@ -2590,43 +2590,143 @@ function Clear-RAMCache {
 # MODULO DE limpieza de caches del sistema
 # ===================================================================
 function Clear-SystemCaches {
-    Clear-Host
-	Write-Log -LogLevel INFO -Message "CACHES: Usuario inicio la limpieza de caches del sistema."
-    Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "                  Limpiando Caches del Sistema" -ForegroundColor Cyan
-    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Log -LogLevel INFO -Message "CACHES: Usuario entro al menu de caches del sistema."
 
-    Invoke-FlushDnsCache -Force
-	Write-Log -LogLevel ACTION -Message "CACHES: Cache de DNS limpiada."
+    while ($true) {
+        Clear-Host
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "           Centro de Mantenimiento de Caches           " -ForegroundColor Cyan
+        Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   [1] Limpiar Cache DNS (Resolucion de Nombres)"
+        Write-Host "       (Soluciona 'No se puede acceder al sitio web')" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [2] Limpiar Cache ARP (Tablas de Ruta Local)"
+        Write-Host "       (Soluciona conflictos de IP y problemas de LAN)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [3] Reconstruir Cache de Iconos y Miniaturas"
+        Write-Host "       (Repara iconos blancos o corruptos. Reinicia Explorer)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [4] Limpiar Cache de la Tienda (Microsoft Store)"
+        Write-Host "       (Soluciona errores de descarga/actualizacion de apps)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [5] Limpiar Cache de Fuentes (Font Cache)"
+        Write-Host "       (Soluciona texto corrupto o fuentes que no cargan)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "   [6] Limpiar Cache de Certificados SSL (Cryptnet)"
+        Write-Host "       (Soluciona errores de seguridad en navegadores)" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "-------------------------------------------------------" -ForegroundColor DarkGray
+        Write-Host "   [A] EJECUTAR TODO (Limpieza Completa)" -ForegroundColor Yellow
+        Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
+        Write-Host ""
 
-    Write-Host "`n[+] Limpiando cache de la Tienda de Windows..." -ForegroundColor Cyan
-    wsreset.exe -q
-    if ($LASTEXITCODE -eq 0) {
-		Write-Host "   [OK] Cache de la Tienda limpiada." -ForegroundColor Green
-		Write-Log -LogLevel ACTION -Message "CACHES: Cache de la Tienda de Windows limpiada."
-		} else {
-			Write-Error "   [FALLO] No se pudo limpiar la cache de la Tienda."
-		}
+        $choice = Read-Host "   Selecciona una opcion"
+        
+        if ($choice.ToUpper() -eq 'V') { return }
 
-    Write-Host "`n[+] Limpiando cache de iconos..." -ForegroundColor Cyan
-    try {
-        Stop-Process -Name explorer -Force -ErrorAction Stop
-        $iconCachePath = "$env:LOCALAPPDATA\IconCache.db"
-        if (Test-Path $iconCachePath) {
-            Remove-Item $iconCachePath -Force -ErrorAction Stop
-            Write-Host "   [OK] Cache de iconos eliminada." -ForegroundColor Green
-			Write-Log -LogLevel ACTION -Message "CACHES: Cache de iconos eliminada."
-        } else {
-            Write-Host "   [INFO] No se encontro el archivo de cache de iconos." -ForegroundColor Yellow
+        # --- LOGICA DE SELECCION ---
+        $tasks = @()
+        switch ($choice.ToUpper()) {
+            '1' { $tasks += "DNS" }
+            '2' { $tasks += "ARP" }
+            '3' { $tasks += "ICONS" }
+            '4' { $tasks += "STORE" }
+            '5' { $tasks += "FONTS" }
+            '6' { $tasks += "SSL" }
+            'A' { $tasks = @("DNS", "ARP", "SSL", "FONTS", "ICONS", "STORE") }
+            default { continue }
         }
-    } catch {
-        Write-Error "   [FALLO] No se pudo limpiar la cache de iconos. Error: $($_.Exception.Message)"
-    } finally {
-        Start-Process explorer.exe
-    }
 
-    Write-Host "`n[EXITO] Proceso de limpieza de caches finalizado." -ForegroundColor Green
-	Read-Host "`nPresiona Enter para volver al menu..."
+        # --- EJECUCION DE TAREAS ---
+        Write-Host "`n[+] Iniciando operaciones..." -ForegroundColor Yellow
+        
+        foreach ($task in $tasks) {
+            try {
+                switch ($task) {
+                    "DNS" {
+                        Write-Host "   - Limpiando Cache DNS..." -NoNewline
+                        try {
+                            Clear-DnsClientCache -ErrorAction Stop
+                        } catch {
+                            cmd /c "ipconfig /flushdns" | Out-Null
+                        }
+                        Write-Host " [OK]" -ForegroundColor Green
+                        Write-Log -LogLevel ACTION -Message "CACHES: DNS limpiado."
+                    }
+
+                    "ARP" {
+                        Write-Host "   - Limpiando Tabla ARP..." -NoNewline
+                        cmd /c "netsh interface ip delete arpcache" | Out-Null
+                        Write-Host " [OK]" -ForegroundColor Green
+                    }
+
+                    "SSL" {
+                        Write-Host "   - Limpiando Cache SSL (Cryptnet)..." -NoNewline
+                        certutil -urlcache * delete | Out-Null
+                        Write-Host " [OK]" -ForegroundColor Green
+                    }
+
+                    "FONTS" {
+                        Write-Host "`n   - Limpiando Cache de Fuentes..." -ForegroundColor Cyan
+                        Write-Host "     * Deteniendo servicio de cache..." -ForegroundColor Gray
+                        
+                        $svc = Get-Service "FontCache" -ErrorAction SilentlyContinue
+                        if ($svc -and $svc.Status -eq 'Running') {
+                            Stop-Service "FontCache" -Force -ErrorAction SilentlyContinue
+                        }
+                        
+                        $fontCachePath = "$env:SystemRoot\ServiceProfiles\LocalService\AppData\Local\FontCache"
+                        if (Test-Path $fontCachePath) {
+                            Remove-Item "$fontCachePath\*.dat" -Force -ErrorAction SilentlyContinue
+                            Write-Host "     * Archivos .dat eliminados." -ForegroundColor Gray
+                        }
+                        
+                        Start-Service "FontCache" -ErrorAction SilentlyContinue
+                        Write-Host "     [OK] Servicio reiniciado." -ForegroundColor Green
+                    }
+
+                    "ICONS" {
+                        Write-Host "`n   - Reconstruyendo Cache de Iconos..." -ForegroundColor Cyan
+                        Write-Host "     * Reiniciando Explorador de Windows..." -ForegroundColor Yellow
+                        
+                        # Matar Explorer
+                        Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Milliseconds 500
+                        
+                        # Borrar DBs
+                        $iconPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
+                        $items = Get-ChildItem -Path $iconPath -Filter "iconcache_*.db" -ErrorAction SilentlyContinue
+                        $items += Get-ChildItem -Path $iconPath -Filter "thumbcache_*.db" -ErrorAction SilentlyContinue
+                        
+                        foreach ($item in $items) {
+                            Remove-Item $item.FullName -Force -ErrorAction SilentlyContinue
+                        }
+                        
+                        # Levantar Explorer
+                        if (-not (Get-Process "explorer" -ErrorAction SilentlyContinue)) {
+                            Start-Process "explorer.exe"
+                        }
+                        Write-Host "     [OK] Cache de iconos purgada." -ForegroundColor Green
+                    }
+
+                    "STORE" {
+                        Write-Host "`n   - Reseteando Microsoft Store (WSReset)..." -ForegroundColor Cyan
+                        Write-Host "     (Esto abrira una ventana externa, por favor espera...)" -ForegroundColor Gray
+                        # Ejecutamos sin esperar indefinidamente para no bloquear el script si falla
+                        Start-Process "wsreset.exe" -NoNewWindow
+                        Start-Sleep -Seconds 5
+                        Write-Host "     [OK] Comando enviado." -ForegroundColor Green
+                    }
+                }
+            } catch {
+                Write-Error "     [ERROR] Fallo en modulo $task : $($_.Exception.Message)"
+            }
+        }
+
+        Write-Host "`n[FIN] Operaciones completadas." -ForegroundColor Green
+        Read-Host "Presiona Enter para continuar..."
+    }
 }
 
 # ===================================================================
@@ -7953,7 +8053,7 @@ function Show-TweakManagerMenu {
 
     # --- 1. FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Aegis Phoenix - Gestor de Ajustes (Optimizado)"
+    $form.Text = "Aegis Phoenix - Gestor de Ajustes"
     $form.Size = New-Object System.Drawing.Size(980, 720)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
