@@ -30,7 +30,7 @@ echo Privilegios de Administrador obtenidos. Ejecutando Aegis Phoenix Suite...
 echo.
 
 :: Establecer el titulo de la ventana
-title Aegis Phoenix Suite v4.9.0 by SOFTMAXTER
+title Aegis Phoenix Suite v4.9.1 by SOFTMAXTER
 
 mode con: cols=110 lines=35
 
