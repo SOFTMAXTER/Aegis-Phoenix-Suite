@@ -9,10 +9,10 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.9.0
+    4.9.1
 #>
 
-$script:Version = "4.9.0"
+$script:Version = "4.9.1"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -283,11 +283,16 @@ function Create-RestorePoint {
         return
     }
 
-    $originalStartupType = $vssService.StartupType
+    # CORRECCION AQUI: La propiedad correcta es .StartType, no .StartupType
+    $originalStartupType = $vssService.StartType
     $originalStatus = $vssService.Status
     
+    # Validacion de seguridad por si acaso
+    if ($null -eq $originalStartupType) { $originalStartupType = "Manual" }
+
+    $serviceNeedsChange = $false
+
     try {
-        $serviceNeedsChange = $false
         if ($originalStartupType -eq 'Disabled') {
             $serviceNeedsChange = $true
             Write-Host "[INFO] El servicio VSS esta deshabilitado. Habilitandolo temporalmente..." -ForegroundColor Gray
@@ -310,7 +315,6 @@ function Create-RestorePoint {
     } catch {
         Write-Error "Fallo la creacion del punto de restauracion. Error: $($_.Exception.Message)"
         Write-Log -LogLevel ERROR -Message "SISTEMA: Fallo la creacion del punto de restauracion. Error: $($_.Exception.Message)"
-        # La pausa en caso de error ya existe y es correcta.
         Read-Host "`nOcurrio un error. Presiona Enter para continuar..."
     } finally {
         # 4. Restauramos el estado original del servicio
@@ -318,14 +322,17 @@ function Create-RestorePoint {
             Write-Host "[INFO] Restaurando el estado original del servicio VSS..." -ForegroundColor Gray
             
             try {
-                Set-Service -Name VSS -StartupType $originalStartupType -ErrorAction SilentlyContinue
+                # Solo intentamos restaurar si tenemos un valor valido
+                if ($null -ne $originalStartupType) {
+                    Set-Service -Name VSS -StartupType $originalStartupType -ErrorAction SilentlyContinue
+                }
+                
                 if ($originalStatus -eq 'Stopped' -and (Get-Service VSS).Status -eq 'Running') {
                     Stop-Service -Name VSS -ErrorAction SilentlyContinue
                 }
                 Write-Host "[OK] Estado del servicio VSS restaurado." -ForegroundColor Green
             } catch {
-                Write-Error "Fallo al restaurar el estado original del servicio VSS. Por favor, revisalo manualmente. Error: $($_.Exception.Message)"
-                Read-Host "`nOcurrio un error al restaurar el servicio. Presiona Enter para continuar..."
+                Write-Warning "No se pudo restaurar el estado exacto del servicio VSS (StartType: $originalStartupType)."
             }
         }
     }
@@ -1626,10 +1633,9 @@ function Show-CleaningMenu {
 }
 
 # ===================================================================
-# MODULO DE Gestor de Bloatware
+# --- MODULO DE GESTOR DE BLOATWARE ---
 # ===================================================================
-# --- El Recolector de Datos ---
-# Obtiene la lista de aplicaciones segun el tipo solicitado, incluyendo la informacion necesaria para la limpieza profunda.
+# --- FUNCION AUXILIAR: RECOLECTOR DE DATOS ---
 function Get-RemovableApps {
     [CmdletBinding()]
     param(
@@ -1639,52 +1645,50 @@ function Get-RemovableApps {
     )
 
     $apps = @()
-    # Filtro base para ignorar librerias de sistema que no son apps
-    $baseFilter = { $_.IsFramework -eq $false -and $_.IsResourcePackage -eq $false }
+    # Filtro base: Ignorar librerias de sistema (.NET, VCLibs) que rompen apps si se borran
+    $baseFilter = { $_.IsFramework -eq $false -and $_.IsResourcePackage -eq $false -and $_.Name -notmatch "NET.Native|VCLibs|UI.Xaml" }
 
-    # Pre-compilar patrones Regex para velocidad
-    $recPattern = ($script:RecommendedBloatwareList | ForEach-Object { [System.Text.RegularExpressions.Regex]::Escape($_) }) -join '|'
-    $protPattern = ($script:ProtectedAppList | ForEach-Object { [System.Text.RegularExpressions.Regex]::Escape($_) }) -join '|'
+    # Cargar patrones desde variables globales o usar defaults seguros si fallan
+    $recPattern = if ($script:RecommendedBloatwareList) { ($script:RecommendedBloatwareList | ForEach-Object { [System.Text.RegularExpressions.Regex]::Escape($_) }) -join '|' } else { "Solitaire|Bing|Cortana|Zune|Xbox" }
+    $protPattern = if ($script:ProtectedAppList) { ($script:ProtectedAppList | ForEach-Object { [System.Text.RegularExpressions.Regex]::Escape($_) }) -join '|' } else { "Store|Calculator|Photos" }
 
-    $objectBuilder = {
-        param($app)
-        
-        $status = "Normal" # Blanco
-        
-        # Verificar si es Recomendado (Naranja)
-        if ($app.Name -match $recPattern) { $status = "Recommended" }
-        
-        # Verificar si es Protegido (Verde) - Sobrescribe recomendado si coincide
-        if ($app.Name -match $protPattern) { $status = "Protected" }
-
-        [PSCustomObject]@{
-            Name              = $app.Name
-            PackageName       = $app.PackageFullName
-            PackageFamilyName = $app.PackageFamilyName
-            Publisher         = $app.Publisher
-            Status            = $status 
-            Version           = $app.Version
+    try {
+        if ($Type -eq 'Microsoft') {
+            # Apps firmadas por Microsoft
+            $rawApps = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.NonRemovable -eq $false -and (& $baseFilter) }
         }
-    }
+        elseif ($Type -eq 'ThirdParty_AllUsers') {
+            # Apps de terceros (Provisionadas en el sistema)
+            $rawApps = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -eq 'System' -and (& $baseFilter) }
+        }
+        elseif ($Type -eq 'ThirdParty_CurrentUser') {
+            # Apps de usuario actual (Store / Descargas)
+            $rawApps = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { $_.Publisher -notlike "*Microsoft*" -and (& $baseFilter) }
+        }
 
-    if ($Type -eq 'Microsoft') {
-        # Traemos TODO de Microsoft, la GUI se encargara de colorear
-        $allApps = Get-AppxPackage -AllUsers | Where-Object { $_.Publisher -like "*Microsoft*" -and $_.NonRemovable -eq $false -and (& $baseFilter) }
-        foreach ($app in $allApps) { $apps += (& $objectBuilder $app) }
-    }
-    elseif ($Type -eq 'ThirdParty_AllUsers') {
-        Get-AppxPackage -AllUsers | Where-Object { 
-            $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -eq 'System' -and (& $baseFilter) 
-        } | ForEach-Object { $apps += (& $objectBuilder $_) }
-    }
-    elseif ($Type -eq 'ThirdParty_CurrentUser') {
-        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-        Get-AppxPackage -User $currentUser | Where-Object { 
-            $_.Publisher -notlike "*Microsoft*" -and $_.SignatureKind -in ('Store', 'Developer') -and (& $baseFilter) 
-        } | ForEach-Object { $apps += (& $objectBuilder $_) }
+        foreach ($app in $rawApps) {
+            $status = "Normal"
+            if ($app.Name -match $recPattern) { $status = "Recommended" }
+            if ($app.Name -match $protPattern) { $status = "Protected" }
+
+            # Convertir tamaño si existe (algunas versiones de PS no lo traen)
+            $sizeMB = "N/A"
+            
+            $apps += [PSCustomObject]@{
+                Name              = $app.Name
+                DisplayName       = if ($app.Name.Length -gt 50) { $app.Name.Substring(0,47) + "..." } else { $app.Name }
+                PackageFullName   = $app.PackageFullName
+                PackageFamilyName = $app.PackageFamilyName
+                Publisher         = $app.Publisher
+                Version           = $app.Version
+                Status            = $status
+                Obj               = $app
+            }
+        }
+    } catch {
+        Write-Warning "Error al listar apps: $_"
     }
     
-    # Ordenar: Primero Recomendados, luego el resto
     return $apps | Sort-Object @{Expression={$_.Status -eq 'Recommended'}; Descending=$true}, Name
 }
 
@@ -1692,389 +1696,91 @@ function Show-BloatwareMenu {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    # --- 1. CONFIGURACIoN DEL FORMULARIO (ESTILO OSCURO) ---
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Aegis Phoenix - Gestor de Apps"
-    $form.Size = New-Object System.Drawing.Size(700, 750) # Dimensiones solicitadas
+    $form.Text = "Aegis Phoenix - Gestor de Aplicaciones (Bloatware)"
+    $form.Size = New-Object System.Drawing.Size(1050, 780)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
     $form.ForeColor = [System.Drawing.Color]::White
 
-    # --- 2. COMPONENTES SUPERIORES ---
+    # --- 2. PANEL SUPERIOR (FILTROS) ---
+    
+    # FILA 1: Origen y Escaneo
     $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = "Selecciona el tipo de analisis:"
+    $lblTitle.Text = "Fuente:"
     $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $lblTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 23)
     $lblTitle.AutoSize = $true
-    $lblTitle.ForeColor = [System.Drawing.Color]::White
     $form.Controls.Add($lblTitle)
 
     $cmbType = New-Object System.Windows.Forms.ComboBox
-    $cmbType.Location = New-Object System.Drawing.Point(20, 40)
+    $cmbType.Location = New-Object System.Drawing.Point(90, 20)
     $cmbType.Width = 300
     $cmbType.FlatStyle = "Flat"
     $cmbType.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $cmbType.ForeColor = [System.Drawing.Color]::White
-    $cmbType.Items.Add("Bloatware de Microsoft (Sistema)") | Out-Null
-    $cmbType.Items.Add("Bloatware de Terceros (Preinstalado)") | Out-Null
+    $cmbType.Items.Add("Bloatware Microsoft (Sistema)") | Out-Null
+    $cmbType.Items.Add("Bloatware Terceros (Preinstalado)") | Out-Null
     $cmbType.Items.Add("Mis Apps (Usuario Actual)") | Out-Null
     $cmbType.SelectedIndex = 0
     $form.Controls.Add($cmbType)
 
     $btnScan = New-Object System.Windows.Forms.Button
-    $btnScan.Text = "Escanear"
-    $btnScan.Location = New-Object System.Drawing.Point(330, 39)
-    $btnScan.Size = New-Object System.Drawing.Size(100, 23)
+    $btnScan.Text = "ESCANEAR"
+    $btnScan.Location = New-Object System.Drawing.Point(410, 18)
+    $btnScan.Size = New-Object System.Drawing.Size(120, 28)
     $btnScan.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnScan.ForeColor = [System.Drawing.Color]::White
     $btnScan.FlatStyle = "Flat"
+    $btnScan.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnScan)
 
-    $lblLegend = New-Object System.Windows.Forms.Label
-    $lblLegend.Text = "Leyenda: Verde = Protegido (Sistema) | Naranja = Recomendado Borrar | Blanco = Otros"
-    $lblLegend.Location = New-Object System.Drawing.Point(20, 70)
-    $lblLegend.AutoSize = $true
-    $lblLegend.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $lblLegend.ForeColor = [System.Drawing.Color]::Silver
-    $form.Controls.Add($lblLegend)
+    # FILA 2: Filtros de Visualizacion (NUEVO)
+    $lblSearch = New-Object System.Windows.Forms.Label
+    $lblSearch.Text = "Buscar:"
+    $lblSearch.Location = New-Object System.Drawing.Point(20, 63)
+    $lblSearch.AutoSize = $true
+    $lblSearch.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblSearch)
 
-    # --- 3. DATAGRIDVIEW (TABLA CENTRAL) ---
+    $txtSearch = New-Object System.Windows.Forms.TextBox
+    $txtSearch.Location = New-Object System.Drawing.Point(90, 60)
+    $txtSearch.Width = 300
+    $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $txtSearch.ForeColor = [System.Drawing.Color]::Yellow
+    $txtSearch.BorderStyle = "FixedSingle"
+    $form.Controls.Add($txtSearch)
+
+    # Checkbox para mostrar/ocultar protegidos
+    $chkShowProtected = New-Object System.Windows.Forms.CheckBox
+    $chkShowProtected.Text = "Mostrar Apps Protegidas (Sistema)"
+    $chkShowProtected.Location = New-Object System.Drawing.Point(410, 60)
+    $chkShowProtected.Width = 250
+    $chkShowProtected.AutoSize = $true
+    $chkShowProtected.ForeColor = [System.Drawing.Color]::Silver
+    $chkShowProtected.Checked = $false # Ocultos por defecto para seguridad
+    $form.Controls.Add($chkShowProtected)
+
+    # --- 3. DATAGRIDVIEW ---
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(20, 90)
-    $grid.Size = New-Object System.Drawing.Size(640, 500)
+    $grid.Location = New-Object System.Drawing.Point(20, 100)
+    $grid.Size = New-Object System.Drawing.Size(990, 450)
     $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $grid.BorderStyle = "None"
     $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $grid.RowHeadersVisible = $false
     $grid.AllowUserToAddRows = $false
     $grid.SelectionMode = "FullRowSelect"
-    $grid.MultiSelect = $false
+    $grid.MultiSelect = $true
     $grid.AutoSizeColumnsMode = "Fill"
     
-    # Estilos de Celda Oscuros
-    $defaultStyle = New-Object System.Windows.Forms.DataGridViewCellStyle
-    $defaultStyle.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
-    $defaultStyle.ForeColor = [System.Drawing.Color]::White
-    $defaultStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(80, 80, 80)
-    $defaultStyle.SelectionForeColor = [System.Drawing.Color]::White
-    $grid.DefaultCellStyle = $defaultStyle
-    $grid.ColumnHeadersDefaultCellStyle = $defaultStyle
-    $grid.EnableHeadersVisualStyles = $false
-
-    # Columnas
-    $colCheck = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
-    $colCheck.HeaderText = "X"
-    $colCheck.Width = 30
-    $colCheck.Name = "Check"
-    $grid.Columns.Add($colCheck) | Out-Null
-
-    $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colName.HeaderText = "Aplicacion"
-    $colName.Name = "Name"
-    $colName.ReadOnly = $true
-    $grid.Columns.Add($colName) | Out-Null
-    
-    $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colStatus.HeaderText = "Estado"
-    $colStatus.Width = 80
-    $colStatus.Name = "StatusDesc"
-    $colStatus.ReadOnly = $true
-    $grid.Columns.Add($colStatus) | Out-Null
-
-    $form.Controls.Add($grid)
-
-    # --- 4. BARRA DE ESTADO Y BOTONES ---
-    $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Text = "Listo para escanear."
-    $lblStatus.Location = New-Object System.Drawing.Point(20, 600)
-    $lblStatus.AutoSize = $true
-    $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
-    $form.Controls.Add($lblStatus)
-
-    $chkDeepClean = New-Object System.Windows.Forms.CheckBox
-    $chkDeepClean.Text = "Limpieza Profunda (Borrar carpetas residuales AppData)"
-    $chkDeepClean.Location = New-Object System.Drawing.Point(20, 625)
-    $chkDeepClean.AutoSize = $true
-    $chkDeepClean.ForeColor = [System.Drawing.Color]::Silver
-    $chkDeepClean.Checked = $true
-    $form.Controls.Add($chkDeepClean)
-
-    # Botones
-    $btnSelectAll = New-Object System.Windows.Forms.Button
-    $btnSelectAll.Text = "Marcar Todo"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 660)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(90, 30)
-    $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnSelectAll.FlatStyle = "Flat"
-    
-    $btnSelectNone = New-Object System.Windows.Forms.Button
-    $btnSelectNone.Text = "Desmarcar"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(115, 660)
-    $btnSelectNone.Size = New-Object System.Drawing.Size(90, 30)
-    $btnSelectNone.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnSelectNone.FlatStyle = "Flat"
-
-    $btnSelectRec = New-Object System.Windows.Forms.Button
-    $btnSelectRec.Text = "Marcar Recomendados"
-    $btnSelectRec.Location = New-Object System.Drawing.Point(210, 660)
-    $btnSelectRec.Size = New-Object System.Drawing.Size(140, 30)
-    $btnSelectRec.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnSelectRec.ForeColor = [System.Drawing.Color]::Orange
-    $btnSelectRec.FlatStyle = "Flat"
-
-    $btnRemove = New-Object System.Windows.Forms.Button
-    $btnRemove.Text = "ELIMINAR SELECCIONADOS"
-    $btnRemove.Location = New-Object System.Drawing.Point(400, 660)
-    $btnRemove.Size = New-Object System.Drawing.Size(260, 30)
-    $btnRemove.BackColor = [System.Drawing.Color]::Crimson
-    $btnRemove.ForeColor = [System.Drawing.Color]::White
-    $btnRemove.FlatStyle = "Flat"
-    $btnRemove.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
-    $btnRemove.Enabled = $false
-
-    $form.Controls.Add($btnSelectAll)
-    $form.Controls.Add($btnSelectNone)
-    $form.Controls.Add($btnSelectRec)
-    $form.Controls.Add($btnRemove)
-
-    # Cache de objetos reales
-    $script:GridCache = @{} 
-
-    # --- LOGICA DE EVENTOS ---
-
-    $btnScan.Add_Click({
-        $grid.Rows.Clear()
-        $script:GridCache.Clear()
-        $lblStatus.Text = "Escaneando... Por favor espera."
-        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        $btnRemove.Enabled = $false
-        [System.Windows.Forms.Application]::DoEvents()
-
-        $type = switch($cmbType.SelectedIndex) {
-            0 { 'Microsoft' }
-            1 { 'ThirdParty_AllUsers' }
-            2 { 'ThirdParty_CurrentUser' }
-        }
-
-        $apps = Get-RemovableApps -Type $type
-
-        foreach ($app in $apps) {
-            $rowId = $grid.Rows.Add()
-            $row = $grid.Rows[$rowId]
-            $row.Cells["Name"].Value = $app.Name
-            
-            # Guardamos el objeto real para usarlo al borrar
-            $script:GridCache[$rowId] = $app
-
-            # Aplicar Colores segun Estado
-            if ($app.Status -eq 'Protected') {
-                $row.Cells["StatusDesc"].Value = "PROTEGIDO"
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::LightGreen
-                # Bloquear checkbox para evitar borrado accidental
-                $row.Cells["Check"].ReadOnly = $true 
-            }
-            elseif ($app.Status -eq 'Recommended') {
-                $row.Cells["StatusDesc"].Value = "Bloatware"
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Orange
-            }
-            else {
-                $row.Cells["StatusDesc"].Value = "Normal"
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::White
-            }
-        }
-        
-        $lblStatus.Text = "Se encontraron $($apps.Count) aplicaciones."
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        if ($apps.Count -gt 0) { $btnRemove.Enabled = $true }
-    })
-
-    # Botones de Seleccion
-    $btnSelectAll.Add_Click({
-        foreach ($row in $grid.Rows) {
-            # Solo marcar si no es de solo lectura (Protegidos)
-            if (-not $row.Cells["Check"].ReadOnly) {
-                $row.Cells["Check"].Value = $true
-            }
-        }
-    })
-
-    $btnSelectNone.Add_Click({
-        foreach ($row in $grid.Rows) { $row.Cells["Check"].Value = $false }
-    })
-
-    $btnSelectRec.Add_Click({
-        foreach ($row in $grid.Rows) {
-            # Marcar si es Naranja (Recomendado)
-            if ($row.DefaultCellStyle.ForeColor -eq [System.Drawing.Color]::Orange) {
-                $row.Cells["Check"].Value = $true
-            }
-        }
-    })
-
-# --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
-    $grid.Add_KeyDown({
-        param($sender, $e)
-        if ($e.KeyCode -eq 'Space') {
-            # Evita que la barra espaciadora haga scroll hacia abajo
-            $e.SuppressKeyPress = $true 
-            
-            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
-            foreach ($row in $sender.SelectedRows) {
-                # Invierte el valor actual (True -> False / False -> True)
-                # Nota: Verificamos si la celda es de solo lectura (como en Bloatware protegido)
-                if (-not $row.Cells["Check"].ReadOnly) {
-                    $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
-                }
-            }
-        }
-    })
-
-    # BOToN ELIMINAR (Logica Principal)
-    $btnRemove.Add_Click({
-        $appsToRemove = @()
-        foreach ($row in $grid.Rows) {
-            if ($row.Cells["Check"].Value -eq $true) {
-                $appsToRemove += $script:GridCache[$row.Index]
-            }
-        }
-
-        if ($appsToRemove.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("No has marcado ninguna aplicacion.", "Aviso", 'OK', 'Warning')
-            return
-        }
-
-        $confirm = [System.Windows.Forms.MessageBox]::Show("¿Estas seguro de eliminar $($appsToRemove.Count) aplicaciones?", "Confirmar Eliminacion", 'YesNo', 'Warning')
-        if ($confirm -ne 'Yes') { return }
-
-        # Desactivar UI
-        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        $btnRemove.Enabled = $false
-        $btnScan.Enabled = $false
-        
-        $count = 0
-        $leftoverFolders = @()
-
-        foreach ($app in $appsToRemove) {
-            $count++
-            $lblStatus.Text = "Eliminando ($count/$($appsToRemove.Count)): $($app.Name)"
-            $lblStatus.ForeColor = [System.Drawing.Color]::Cyan
-            [System.Windows.Forms.Application]::DoEvents()
-
-            try {
-                Write-Log -LogLevel ACTION -Message "BLOATWARE: Eliminando $($app.Name)"
-                
-                # 1. Desinstalar Paquete
-                Remove-AppxPackage -Package $app.PackageName -AllUsers -ErrorAction Stop
-                
-                # 2. Desprovisionar (Para que no vuelva a usuarios nuevos)
-                $prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
-                if ($prov) { Remove-AppxProvisionedPackage -Online -PackageName $prov.PackageName -ErrorAction SilentlyContinue }
-
-                # 3. Recolectar para limpieza profunda
-                if ($chkDeepClean.Checked) {
-                    $pkgPath = Join-Path -Path $env:LOCALAPPDATA -ChildPath "Packages\$($app.PackageFamilyName)"
-                    if (Test-Path $pkgPath) { $leftoverFolders += $pkgPath }
-                }
-
-                # Actualizar Grid Visualmente
-                foreach ($row in $grid.Rows) {
-                    if ($script:GridCache[$row.Index].PackageName -eq $app.PackageName) {
-                        $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
-                        $row.Cells["StatusDesc"].Value = "ELIMINADO"
-                        $row.Cells["Check"].Value = $false
-                        $row.Cells["Check"].ReadOnly = $true
-                    }
-                }
-            } catch {
-                Write-Log -LogLevel ERROR -Message "Fallo al eliminar $($app.Name): $_"
-            }
-        }
-
-        # --- FASE LIMPIEZA PROFUNDA (Post-Proceso) ---
-        if ($leftoverFolders.Count -gt 0) {
-            $lblStatus.Text = "Ejecutando limpieza profunda de residuos..."
-            [System.Windows.Forms.Application]::DoEvents()
-            foreach ($folder in $leftoverFolders) {
-                try {
-                    Remove-Item -Path $folder -Recurse -Force -ErrorAction SilentlyContinue
-                    Write-Log -LogLevel ACTION -Message "BLOATWARE: Residuo eliminado: $folder"
-                } catch {}
-            }
-        }
-
-        $lblStatus.Text = "Proceso finalizado."
-        $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        $btnScan.Enabled = $true
-        $btnRemove.Enabled = $true
-        [System.Windows.Forms.MessageBox]::Show("Operacion completada.", "Exito", 'OK', 'Information')
-    })
-
-    $form.ShowDialog() | Out-Null
-    $form.Dispose()
-}
-
-# ===================================================================
-# MODULO DE Gestor de Inicio
-# ===================================================================
-function Manage-StartupApps {
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-
-    # --- 1. CONFIGURACION DEL FORMULARIO ---
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Aegis Phoenix - Gestor de Inicio"
-    $form.Size = New-Object System.Drawing.Size(950, 700)
-    $form.StartPosition = "CenterScreen"
-    $form.FormBorderStyle = "FixedDialog"
-    $form.MaximizeBox = $false
-    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
-    $form.ForeColor = [System.Drawing.Color]::White
-
-    # --- 2. VARIABLES GLOBALES DE LOGICA ---
-    # Valores binarios que Windows usa para habilitar/deshabilitar en el registro
-    $script:EnabledBytes  = [byte[]](0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
-    $script:DisabledBytes = [byte[]](0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
-    $script:StartupCache = @{} # Para guardar detalles completos
-
-    # --- 3. UI SUPERIOR ---
-    $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = "Programas de Inicio de Windows"
-    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
-    $lblTitle.Location = New-Object System.Drawing.Point(20, 15)
-    $lblTitle.AutoSize = $true
-    $form.Controls.Add($lblTitle)
-
-    $lblSub = New-Object System.Windows.Forms.Label
-    $lblSub.Text = "Gestiona que aplicaciones se ejecutan automaticamente al encender el PC."
-    $lblSub.Location = New-Object System.Drawing.Point(22, 40)
-    $lblSub.AutoSize = $true
-    $lblSub.ForeColor = [System.Drawing.Color]::Silver
-    $form.Controls.Add($lblSub)
-
-    $btnRefresh = New-Object System.Windows.Forms.Button
-    $btnRefresh.Text = "Refrescar Lista"
-    $btnRefresh.Location = New-Object System.Drawing.Point(780, 20)
-    $btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
-    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnRefresh.ForeColor = [System.Drawing.Color]::White
-    $btnRefresh.FlatStyle = "Flat"
-    $form.Controls.Add($btnRefresh)
-
-    # --- 4. DATAGRIDVIEW ---
-    $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(20, 70)
-    $grid.Size = New-Object System.Drawing.Size(890, 400)
-    $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
-    $grid.BorderStyle = "None"
-    $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $grid.RowHeadersVisible = $false
-    $grid.AllowUserToAddRows = $false
-    $grid.SelectionMode = "FullRowSelect"
-    $grid.MultiSelect = $false
-    $grid.AutoSizeColumnsMode = "Fill"
+    # Optimizacion grafica
+    $type = $grid.GetType()
+    $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
+    $prop.SetValue($grid, $true, $null)
 
     # Estilos
     $defaultStyle = New-Object System.Windows.Forms.DataGridViewCellStyle
@@ -2094,174 +1800,614 @@ function Manage-StartupApps {
     $grid.Columns.Add($colCheck) | Out-Null
 
     $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colName.HeaderText = "Nombre de la Aplicacion"
+    $colName.Name = "DisplayName"
+    $colName.ReadOnly = $true
+    $colName.Width = 350
+    $grid.Columns.Add($colName) | Out-Null
+    
+    $colVer = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colVer.HeaderText = "Version"
+    $colVer.Name = "Version"
+    $colVer.ReadOnly = $true
+    $colVer.Width = 100
+    $grid.Columns.Add($colVer) | Out-Null
+
+    $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colStatus.HeaderText = "Clasificacion"
+    $colStatus.Width = 150
+    $colStatus.Name = "StatusDesc"
+    $colStatus.ReadOnly = $true
+    $grid.Columns.Add($colStatus) | Out-Null
+
+    # Columna Oculta
+    $colObj = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colObj.Name = "RealObject"
+    $colObj.Visible = $false
+    $grid.Columns.Add($colObj) | Out-Null
+
+    $form.Controls.Add($grid)
+
+    # --- MENU CONTEXTUAL ---
+    $ctxMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    $itemGoogle = $ctxMenu.Items.Add("Buscar en Google (¿Que es esto?)")
+    $itemGoogle.Add_Click({
+        if ($grid.SelectedRows.Count -gt 0) {
+            $appName = $grid.SelectedRows[0].Cells["DisplayName"].Value
+            Start-Process "https://www.google.com/search?q=$appName app windows bloatware"
+        }
+    })
+    $grid.ContextMenuStrip = $ctxMenu
+
+    # --- 4. AREA DE ESTADO ---
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = "Listo. Selecciona 'Escanear' para comenzar."
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 560)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
+    $form.Controls.Add($lblStatus)
+
+    $chkDeepClean = New-Object System.Windows.Forms.CheckBox
+    $chkDeepClean.Text = "Limpieza Profunda (Eliminar carpetas residuales en AppData)"
+    $chkDeepClean.Location = New-Object System.Drawing.Point(20, 590)
+    $chkDeepClean.AutoSize = $true
+    $chkDeepClean.ForeColor = [System.Drawing.Color]::Silver
+    $chkDeepClean.Checked = $true
+    $form.Controls.Add($chkDeepClean)
+
+    # --- 5. BOTONES DE ACCION ---
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Todo"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 630)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(60, 40)
+    $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnSelectAll.FlatStyle = "Flat"
+    $form.Controls.Add($btnSelectAll)
+
+    $btnSelectRec = New-Object System.Windows.Forms.Button
+    $btnSelectRec.Text = "Marcar Recomendados"
+    $btnSelectRec.Location = New-Object System.Drawing.Point(90, 630)
+    $btnSelectRec.Size = New-Object System.Drawing.Size(160, 40)
+    $btnSelectRec.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnSelectRec.ForeColor = [System.Drawing.Color]::Orange
+    $btnSelectRec.FlatStyle = "Flat"
+    $form.Controls.Add($btnSelectRec)
+
+    $btnExport = New-Object System.Windows.Forms.Button
+    $btnExport.Text = "Exportar Lista"
+    $btnExport.Location = New-Object System.Drawing.Point(260, 630)
+    $btnExport.Size = New-Object System.Drawing.Size(120, 40)
+    $btnExport.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $btnExport.ForeColor = [System.Drawing.Color]::White
+    $btnExport.FlatStyle = "Flat"
+    $form.Controls.Add($btnExport)
+
+    $btnRestoreStore = New-Object System.Windows.Forms.Button
+    $btnRestoreStore.Text = "RESTAURAR TIENDA"
+    $btnRestoreStore.Location = New-Object System.Drawing.Point(520, 630)
+    $btnRestoreStore.Size = New-Object System.Drawing.Size(180, 40)
+    $btnRestoreStore.BackColor = [System.Drawing.Color]::Teal
+    $btnRestoreStore.ForeColor = [System.Drawing.Color]::White
+    $btnRestoreStore.FlatStyle = "Flat"
+    $btnRestoreStore.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnRestoreStore)
+
+    $btnRemove = New-Object System.Windows.Forms.Button
+    $btnRemove.Text = "ELIMINAR SELECCIONADOS"
+    $btnRemove.Location = New-Object System.Drawing.Point(710, 630)
+    $btnRemove.Size = New-Object System.Drawing.Size(300, 40)
+    $btnRemove.BackColor = [System.Drawing.Color]::Crimson
+    $btnRemove.ForeColor = [System.Drawing.Color]::White
+    $btnRemove.FlatStyle = "Flat"
+    $btnRemove.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $btnRemove.Enabled = $false
+    $form.Controls.Add($btnRemove)
+
+    $script:AppCache = @()
+
+    # --- LOGICA: RENDERIZADO GRID ---
+    $RenderGrid = {
+        $grid.SuspendLayout()
+        $grid.Rows.Clear()
+        
+        $term = $txtSearch.Text.Trim()
+        $filtered = $script:AppCache
+
+        # 1. Filtro de Texto
+        if (-not [string]::IsNullOrWhiteSpace($term)) {
+            $filtered = $filtered | Where-Object { $_.Name -match $term }
+        }
+
+        # 2. Filtro de Protegidos (NUEVO)
+        if (-not $chkShowProtected.Checked) {
+            $filtered = $filtered | Where-Object { $_.Status -ne 'Protected' }
+        }
+
+        foreach ($app in $filtered) {
+            $rowId = $grid.Rows.Add()
+            $row = $grid.Rows[$rowId]
+            
+            $row.Cells["DisplayName"].Value = $app.Name
+            $row.Cells["Version"].Value = $app.Version
+            $row.Cells["RealObject"].Value = $app 
+            
+            if ($app.Status -eq 'Protected') {
+                $row.Cells["StatusDesc"].Value = "SISTEMA (Protegido)"
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::LightGreen
+                $row.Cells["Check"].ReadOnly = $true 
+            }
+            elseif ($app.Status -eq 'Recommended') {
+                $row.Cells["StatusDesc"].Value = "BLOATWARE"
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Orange
+            }
+            else {
+                $row.Cells["StatusDesc"].Value = "Usuario / Opcional"
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::White
+            }
+        }
+        $grid.ResumeLayout()
+        $grid.ClearSelection()
+        
+        $count = $filtered.Count
+        $lblStatus.Text = "Aplicaciones listadas: $count"
+        if ($count -gt 0) { $btnRemove.Enabled = $true }
+    }
+
+    $PerformScan = {
+        $lblStatus.Text = "Escaneando aplicaciones... Por favor espera."
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $btnRemove.Enabled = $false
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $type = switch($cmbType.SelectedIndex) {
+            0 { 'Microsoft' }
+            1 { 'ThirdParty_AllUsers' }
+            2 { 'ThirdParty_CurrentUser' }
+        }
+
+        $script:AppCache = Get-RemovableApps -Type $type
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        
+        & $RenderGrid
+    }
+
+    # --- EVENTOS ---
+    $form.Add_Shown({ & $PerformScan })
+    $btnScan.Add_Click({ & $PerformScan })
+    $txtSearch.Add_KeyUp({ & $RenderGrid })
+    # Nuevo evento para el checkbox
+    $chkShowProtected.Add_CheckedChanged({ & $RenderGrid })
+
+    $grid.Add_CellClick({ param($s,$e) if($e.RowIndex -ge 0 -and $e.ColumnIndex -ne 0 -and -not $grid.Rows[$e.RowIndex].Cells["Check"].ReadOnly){ $r=$grid.Rows[$e.RowIndex]; $r.Cells[0].Value = -not $r.Cells[0].Value } })
+    $grid.Add_KeyDown({ param($s,$e) if($e.KeyCode -eq 'Space'){ $e.SuppressKeyPress=$true; foreach($r in $s.SelectedRows){ if(-not $r.Cells[0].ReadOnly){ $r.Cells[0].Value = -not $r.Cells[0].Value } } } })
+
+    $btnSelectAll.Add_Click({ foreach($r in $grid.Rows){ if(-not $r.Cells[0].ReadOnly){ $r.Cells[0].Value = $true } } })
+    $btnSelectRec.Add_Click({ foreach($r in $grid.Rows){ if($r.DefaultCellStyle.ForeColor -eq [System.Drawing.Color]::Orange){ $r.Cells[0].Value = $true } } })
+
+    $btnExport.Add_Click({
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Filter = "Texto (*.txt)|*.txt"
+        $sfd.FileName = "Lista_Apps_$(Get-Date -Format 'yyyyMMdd').txt"
+        if ($sfd.ShowDialog() -eq 'OK') {
+            $lines = $script:AppCache | Select-Object Name, Version, Publisher, Status
+            $lines | Out-File $sfd.FileName -Encoding UTF8
+            [System.Windows.Forms.MessageBox]::Show("Lista exportada.", "Exito", 0, 64)
+        }
+    })
+
+    $btnRestoreStore.Add_Click({
+        if ([System.Windows.Forms.MessageBox]::Show("Esto intentara descargar y registrar la Microsoft Store nuevamente.\nÚsalo si la borraste por error.\n\n¿Continuar?", "Restaurar Tienda", 'YesNo', 'Warning') -eq 'Yes') {
+            $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+            $lblStatus.Text = "Restaurando Microsoft Store..."
+            [System.Windows.Forms.Application]::DoEvents()
+            
+            try {
+                Get-AppxPackage -AllUsers *WindowsStore* | Foreach {Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\AppXManifest.xml"}
+                [System.Windows.Forms.MessageBox]::Show("Intento de restauracion completado.\nReinicia el PC y verifica.", "Info", 0, 64)
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Error al restaurar: $_", "Error", 0, 16)
+            }
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+            $lblStatus.Text = "Listo."
+        }
+    })
+
+    $btnRemove.Add_Click({
+        $appsToRemove = @()
+        foreach ($row in $grid.Rows) {
+            if ($row.Cells["Check"].Value -eq $true) {
+                $appsToRemove += $row.Cells["RealObject"].Value.Obj
+            }
+        }
+
+        if ($appsToRemove.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No hay apps seleccionadas.", "Aviso", 0, 48); return }
+
+        if ([System.Windows.Forms.MessageBox]::Show("¿Eliminar $($appsToRemove.Count) aplicaciones?\n\nEsta accion no se puede deshacer facilmente.", "Confirmar", 4, 32) -ne 'Yes') { return }
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $btnRemove.Enabled = $false
+        $count = 0
+        
+        foreach ($app in $appsToRemove) {
+            $count++
+            $lblStatus.Text = "Eliminando ($count/$($appsToRemove.Count)): $($app.Name)"
+            $lblStatus.ForeColor = [System.Drawing.Color]::Cyan
+            [System.Windows.Forms.Application]::DoEvents()
+
+            try {
+                Write-Log -LogLevel ACTION -Message "BLOATWARE: Eliminando $($app.Name) ($($app.PackageFullName))"
+                Remove-AppxPackage -Package $app.PackageFullName -AllUsers -ErrorAction Stop
+                
+                $prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq $app.Name }
+                if ($prov) { Remove-AppxProvisionedPackage -Online -PackageName $prov.PackageName -ErrorAction SilentlyContinue }
+
+                if ($chkDeepClean.Checked) {
+                    $pkgPath = "$env:LOCALAPPDATA\Packages\$($app.PackageFamilyName)"
+                    if (Test-Path $pkgPath) { Remove-Item -Path $pkgPath -Recurse -Force -ErrorAction SilentlyContinue }
+                }
+
+                foreach ($row in $grid.Rows) {
+                    if ($row.Cells["DisplayName"].Value -eq $app.Name) {
+                        $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+                        $row.Cells["StatusDesc"].Value = "ELIMINADO"
+                        $row.Cells["Check"].Value = $false
+                    }
+                }
+
+            } catch {
+                Write-Log -LogLevel ERROR -Message "Fallo al eliminar $($app.Name): $_"
+            }
+        }
+
+        $lblStatus.Text = "Proceso finalizado."
+        $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        $btnRemove.Enabled = $true
+        
+        [System.Windows.Forms.MessageBox]::Show("Operacion completada.", "Exito", 0, 64)
+    })
+
+    $form.ShowDialog() | Out-Null
+    $form.Dispose()
+}
+
+# ===================================================================
+# MODULO DE Gestor de Inicio
+# ===================================================================
+function Manage-StartupApps {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Aegis Phoenix - Gestor de Inicio"
+    $form.Size = New-Object System.Drawing.Size(1000, 750)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $form.ForeColor = [System.Drawing.Color]::White
+
+    # --- 2. FUNCIONES HELPER (BACKEND) ---
+    
+    # Obtiene el estado real basado en el byte de control de Windows
+    $GetStartupStateSmart = {
+        param($Hive, $Type, $Name)
+        
+        $approvedPath = "$($Hive):\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\$Type"
+        
+        if (-not (Test-Path $approvedPath)) { return 'Enabled' }
+        
+        try {
+            $bytes = (Get-ItemProperty -Path $approvedPath -Name $Name -ErrorAction SilentlyContinue).$Name
+            if ($null -eq $bytes -or $bytes.Length -eq 0) { return 'Enabled' }
+            
+            # Logica binaria: Si el primer byte es impar, suele estar deshabilitado
+            if ($bytes[0] % 2 -ne 0) { return 'Disabled' }
+            return 'Enabled'
+        } catch {
+            return 'Enabled'
+        }
+    }
+
+    # Establece el estado preservando metadatos
+    $SetStartupStateSmart = {
+        param($Item, $Enable)
+        
+        $hiveStr = if ($Item.RegBase -eq 'HKLM') { "HKLM:" } else { "HKCU:" }
+        $subKey = if ($Item.InternalType -eq 'Folder') { "StartupFolder" } else { "Run" }
+        $approvedKeyPath = "$hiveStr\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\$subKey"
+        
+        if (-not (Test-Path $approvedKeyPath)) { New-Item -Path $approvedKeyPath -Force | Out-Null }
+
+        try {
+            $currentBytes = (Get-ItemProperty -Path $approvedKeyPath -Name $Item.Name -ErrorAction SilentlyContinue).($Item.Name)
+            
+            if ($null -eq $currentBytes -or $currentBytes.Length -lt 1) {
+                $currentBytes = New-Object byte[] 12
+            }
+
+            # 0x02 = Habilitado, 0x03 = Deshabilitado
+            if ($Enable) { $currentBytes[0] = 0x02 } else { $currentBytes[0] = 0x03 }
+
+            Set-ItemProperty -Path $approvedKeyPath -Name $Item.Name -Value $currentBytes -Type Binary -Force -ErrorAction Stop
+            return $true
+        } catch {
+            return $false
+        }
+    }
+
+    # Elimina la entrada permanentemente
+    $DeleteStartupItem = {
+        param($Item)
+        try {
+            if ($Item.InternalType -eq 'Task') {
+                Unregister-ScheduledTask -TaskName $Item.Name -TaskPath $Item.RegPath -Confirm:$false -ErrorAction Stop
+            }
+            elseif ($Item.InternalType -eq 'Folder') {
+                if (Test-Path $Item.Command) {
+                    Remove-Item -Path $Item.Command -Force -ErrorAction Stop
+                }
+            }
+            elseif ($Item.InternalType -eq 'Registry') {
+                # 1. Borrar la clave Run original
+                Remove-ItemProperty -Path $Item.RegPath -Name $Item.Name -Force -ErrorAction Stop
+                
+                # 2. Limpiar entrada huerfana en StartupApproved (Limpieza)
+                $hiveStr = if ($Item.RegBase -eq 'HKLM') { "HKLM:" } else { "HKCU:" }
+                $approvedKeyPath = "$hiveStr\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+                if (Test-Path $approvedKeyPath) {
+                    Remove-ItemProperty -Path $approvedKeyPath -Name $Item.Name -ErrorAction SilentlyContinue
+                }
+            }
+            return $true
+        } catch {
+            Write-Warning "Error eliminando: $_"
+            return $false
+        }
+    }
+
+    # --- 3. UI SUPERIOR (BUSQUEDA AÑADIDA) ---
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = "Programas de Inicio"
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblTitle.AutoSize = $true
+    $form.Controls.Add($lblTitle)
+
+    # Label Busqueda
+    $lblSearch = New-Object System.Windows.Forms.Label
+    $lblSearch.Text = "Buscar:"
+    $lblSearch.Location = New-Object System.Drawing.Point(350, 23)
+    $lblSearch.AutoSize = $true
+    $lblSearch.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblSearch)
+
+    # TextBox Busqueda
+    $txtSearch = New-Object System.Windows.Forms.TextBox
+    $txtSearch.Location = New-Object System.Drawing.Point(410, 20)
+    $txtSearch.Width = 250
+    $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $txtSearch.ForeColor = [System.Drawing.Color]::Yellow
+    $txtSearch.BorderStyle = "FixedSingle"
+    $form.Controls.Add($txtSearch)
+
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = "Refrescar"
+    $btnRefresh.Location = New-Object System.Drawing.Point(830, 18)
+    $btnRefresh.Size = New-Object System.Drawing.Size(130, 28)
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnRefresh.ForeColor = [System.Drawing.Color]::White
+    $btnRefresh.FlatStyle = "Flat"
+    $form.Controls.Add($btnRefresh)
+
+    # --- 4. DATAGRIDVIEW ---
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Location = New-Object System.Drawing.Point(20, 60)
+    $grid.Size = New-Object System.Drawing.Size(940, 430)
+    $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $grid.BorderStyle = "None"
+    $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $grid.RowHeadersVisible = $false
+    $grid.AllowUserToAddRows = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.MultiSelect = $false
+    $grid.AutoSizeColumnsMode = "Fill"
+    
+    $type = $grid.GetType()
+    $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
+    $prop.SetValue($grid, $true, $null)
+
+    $defaultStyle = New-Object System.Windows.Forms.DataGridViewCellStyle
+    $defaultStyle.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $defaultStyle.ForeColor = [System.Drawing.Color]::White
+    $defaultStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(80, 80, 80)
+    $defaultStyle.SelectionForeColor = [System.Drawing.Color]::White
+    $grid.DefaultCellStyle = $defaultStyle
+    $grid.ColumnHeadersDefaultCellStyle = $defaultStyle
+    $grid.EnableHeadersVisualStyles = $false
+
+    # Columnas (Sin acentos)
+    $colCheck = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $colCheck.HeaderText = "X"
+    $colCheck.Width = 30
+    $colCheck.Name = "Check"
+    $grid.Columns.Add($colCheck) | Out-Null
+
+    $colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colName.HeaderText = "Nombre"
     $colName.Name = "Name"
     $colName.ReadOnly = $true
-    $colName.Width = 200
+    $colName.Width = 250
     $grid.Columns.Add($colName) | Out-Null
 
     $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colStatus.HeaderText = "Estado"
     $colStatus.Name = "Status"
     $colStatus.ReadOnly = $true
-    $colStatus.Width = 80
+    $colStatus.Width = 100
     $grid.Columns.Add($colStatus) | Out-Null
 
     $colType = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colType.HeaderText = "Origen"
+    $colType.HeaderText = "Ubicacion / Origen"
     $colType.Name = "Type"
     $colType.ReadOnly = $true
-    $colType.Width = 100
+    $colType.Width = 150
     $grid.Columns.Add($colType) | Out-Null
 
-    # Columna oculta para ID unico
-    $colId = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colId.Name = "ID"
-    $colId.Visible = $false
-    $grid.Columns.Add($colId) | Out-Null
+    $colCmd = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colCmd.HeaderText = "Comando"
+    $colCmd.Name = "Command"
+    $colCmd.ReadOnly = $true
+    $grid.Columns.Add($colCmd) | Out-Null
 
     $form.Controls.Add($grid)
 
-    # --- 5. PANEL DE DETALLES (COMANDO) ---
+    # --- 5. PANEL DE DETALLES ---
     $grpDet = New-Object System.Windows.Forms.GroupBox
-    $grpDet.Text = "Detalles del Comando / Ruta"
+    $grpDet.Text = "Detalle del Comando Completo"
     $grpDet.ForeColor = [System.Drawing.Color]::Silver
-    $grpDet.Location = New-Object System.Drawing.Point(20, 480)
-    $grpDet.Size = New-Object System.Drawing.Size(890, 80)
+    $grpDet.Location = New-Object System.Drawing.Point(20, 500)
+    $grpDet.Size = New-Object System.Drawing.Size(940, 70)
     $form.Controls.Add($grpDet)
 
     $txtCommand = New-Object System.Windows.Forms.TextBox
-    $txtCommand.Location = New-Object System.Drawing.Point(15, 30)
-    $txtCommand.Size = New-Object System.Drawing.Size(860, 40)
+    $txtCommand.Location = New-Object System.Drawing.Point(15, 25)
+    $txtCommand.Size = New-Object System.Drawing.Size(910, 30)
     $txtCommand.ReadOnly = $true
     $txtCommand.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $txtCommand.ForeColor = [System.Drawing.Color]::Yellow
     $txtCommand.BorderStyle = "FixedSingle"
     $grpDet.Controls.Add($txtCommand)
 
-    # --- 6. BOTONES DE ACCION ---
+    # --- 6. BOTONES DE ACCION (AGREGADO ELIMINAR) ---
+    
+    # Boton Habilitar
     $btnEnable = New-Object System.Windows.Forms.Button
-    $btnEnable.Text = "HABILITAR SELECCIONADOS"
-    $btnEnable.Location = New-Object System.Drawing.Point(380, 580)
-    $btnEnable.Size = New-Object System.Drawing.Size(240, 40)
+    $btnEnable.Text = "HABILITAR"
+    $btnEnable.Location = New-Object System.Drawing.Point(280, 590)
+    $btnEnable.Size = New-Object System.Drawing.Size(200, 40)
     $btnEnable.BackColor = [System.Drawing.Color]::SeaGreen
     $btnEnable.ForeColor = [System.Drawing.Color]::White
     $btnEnable.FlatStyle = "Flat"
     $btnEnable.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnEnable)
 
+    # Boton Deshabilitar
     $btnDisable = New-Object System.Windows.Forms.Button
-    $btnDisable.Text = "DESHABILITAR SELECCIONADOS"
-    $btnDisable.Location = New-Object System.Drawing.Point(670, 580)
-    $btnDisable.Size = New-Object System.Drawing.Size(240, 40)
-    $btnDisable.BackColor = [System.Drawing.Color]::Crimson
-    $btnDisable.ForeColor = [System.Drawing.Color]::White
+    $btnDisable.Text = "DESHABILITAR"
+    $btnDisable.Location = New-Object System.Drawing.Point(500, 590)
+    $btnDisable.Size = New-Object System.Drawing.Size(200, 40)
+    $btnDisable.BackColor = [System.Drawing.Color]::Orange # Naranja para precaucion
+    $btnDisable.ForeColor = [System.Drawing.Color]::Black
     $btnDisable.FlatStyle = "Flat"
     $btnDisable.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnDisable)
 
+    # Boton Eliminar (Nuevo)
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "ELIMINAR"
+    $btnDelete.Location = New-Object System.Drawing.Point(720, 590)
+    $btnDelete.Size = New-Object System.Drawing.Size(240, 40)
+    $btnDelete.BackColor = [System.Drawing.Color]::Maroon # Rojo oscuro peligro
+    $btnDelete.ForeColor = [System.Drawing.Color]::White
+    $btnDelete.FlatStyle = "Flat"
+    $btnDelete.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnDelete)
+
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Marcar Todo"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 585)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(100, 30)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 595)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(120, 30)
     $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnSelectAll.FlatStyle = "Flat"
     $form.Controls.Add($btnSelectAll)
 
-    # --- LOGICA DE BACKEND ---
+    # Cache global
+    $script:StartupCache = @{} 
+    $script:StartupRawList = @() # Lista cruda para filtrado rapido
 
-    # --- CORRECCIoN AQUi: Quitamos el guion del nombre de variable ---
-    $GetRegistryStatus = {
-        param($Name, $Type)
-        # Type puede ser 'Run' o 'StartupFolder'
-        $locations = @(
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\$Type",
-            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\$Type"
-        )
-        
-        foreach ($path in $locations) {
-            if (Test-Path $path) {
-                $bytes = (Get-ItemProperty -Path $path -Name $Name -ErrorAction SilentlyContinue).$Name
-                if ($null -ne $bytes -and $bytes.Length -gt 0) {
-                    # Si el primer byte es impar (ej: 03), esta deshabilitado
-                    if ($bytes[0] % 2 -ne 0) { return 'Disabled' }
-                }
-            }
-        }
-        return 'Enabled' # Por defecto habilitado si no hay entrada en StartupApproved
-    }
-
+    # --- LOGICA DE CARGA DE DATOS ---
     $LoadData = {
+        $grid.SuspendLayout()
         $grid.Rows.Clear()
         $script:StartupCache.Clear()
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         
-        $items = @()
+        # 1. Obtener datos crudos (solo si la lista esta vacia o se pide refrescar)
+        # Esto permite que la barra de busqueda use datos en memoria rapido
+        if ($script:StartupRawList.Count -eq 0 -or $true) { # Forzamos recarga por seguridad
+            $items = @()
 
-        # A. Registro (Run)
-        $regPaths = @(
-            @{ P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"; Base="HKCU"; Type="Run" },
-            @{ P="HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; Base="HKLM"; Type="Run" },
-            @{ P="HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"; Base="HKLM"; Type="Run" }
-        )
-        foreach ($loc in $regPaths) {
-            if (Test-Path $loc.P) {
-                Get-ItemProperty $loc.P -ErrorAction SilentlyContinue | ForEach-Object {
-                    $_.PSObject.Properties | Where-Object { $_.Name -notin @('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider','(Default)') } | ForEach-Object {
-                        # CORRECCIoN: Llamada a la variable sin guion
-                        $statusCheck = & $GetRegistryStatus -Name $_.Name -Type "Run"
-                        
-                        $items += [PSCustomObject]@{
-                            Name = $_.Name; Command = $_.Value; Origin = "Registro ($($loc.Base))"; 
-                            InternalType = "Registry"; RegBase = $loc.Base; RegPath = $loc.P
-                            Status = $statusCheck
+            # A. Registro
+            $regPaths = @(
+                @{ P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"; Base="HKCU"; Type="Run" },
+                @{ P="HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; Base="HKLM"; Type="Run" },
+                @{ P="HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"; Base="HKLM"; Type="Run" }
+            )
+            foreach ($loc in $regPaths) {
+                if (Test-Path $loc.P) {
+                    Get-ItemProperty $loc.P -ErrorAction SilentlyContinue | ForEach-Object {
+                        $_.PSObject.Properties | Where-Object { $_.Name -notin @('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider','(Default)') } | ForEach-Object {
+                            $statusCheck = & $GetStartupStateSmart -Hive $loc.Base -Type "Run" -Name $_.Name
+                            $items += [PSCustomObject]@{
+                                Name = $_.Name; Command = $_.Value; Origin = "Registro ($($loc.Base))"
+                                InternalType = "Registry"; RegBase = $loc.Base; RegPath = $loc.P; Status = $statusCheck
+                            }
                         }
                     }
                 }
             }
-        }
 
-        # B. Carpetas de Inicio
-        $folders = @(
-            @{ P="$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; Base="Usuario" },
-            @{ P="$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; Base="Sistema" }
-        )
-        foreach ($loc in $folders) {
-            if (Test-Path $loc.P) {
-                Get-ChildItem $loc.P -File -ErrorAction SilentlyContinue | ForEach-Object {
-                    # CORRECCIoN: Llamada a la variable sin guion
-                    $statusCheck = & $GetRegistryStatus -Name $_.Name -Type "StartupFolder"
-
-                    $items += [PSCustomObject]@{
-                        Name = $_.Name; Command = $_.FullName; Origin = "Carpeta ($($loc.Base))"; 
-                        InternalType = "Folder"; RegBase = ""; RegPath = ""
-                        Status = $statusCheck
+            # B. Carpetas
+            $folders = @(
+                @{ P="$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; Base="HKCU" },
+                @{ P="$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; Base="HKLM" }
+            )
+            foreach ($loc in $folders) {
+                if (Test-Path $loc.P) {
+                    Get-ChildItem $loc.P -File -ErrorAction SilentlyContinue | ForEach-Object {
+                        $statusCheck = & $GetStartupStateSmart -Hive $loc.Base -Type "StartupFolder" -Name $_.Name
+                        $items += [PSCustomObject]@{
+                            Name = $_.Name; Command = $_.FullName; Origin = "Carpeta ($($loc.Base))"
+                            InternalType = "Folder"; RegBase = $loc.Base; RegPath = $loc.P; Status = $statusCheck
+                        }
                     }
                 }
             }
+
+            # C. Tareas
+            Get-ScheduledTask | Where-Object { ($_.Triggers.TriggerType -contains 'Logon') -and ($_.TaskPath -notlike "\Microsoft\*") } | ForEach-Object {
+                $act = ($_.Actions | Select-Object -First 1)
+                $cmd = "$($act.Execute) $($act.Arguments)"
+                $items += [PSCustomObject]@{
+                    Name = $_.TaskName; Command = $cmd; Origin = "Tarea Programada"
+                    InternalType = "Task"; RegBase = ""; RegPath = $_.TaskPath
+                    Status = if ($_.State -eq 'Disabled') { 'Disabled' } else { 'Enabled' }
+                }
+            }
+            
+            $script:StartupRawList = $items
         }
 
-        # C. Tareas Programadas (Logon)
-        Get-ScheduledTask | Where-Object { ($_.Triggers.TriggerType -contains 'Logon') -and ($_.TaskPath -notlike "\Microsoft\*") } | ForEach-Object {
-            $act = ($_.Actions | Select-Object -First 1)
-            $cmd = "$($act.Execute) $($act.Arguments)"
-            $items += [PSCustomObject]@{
-                Name = $_.TaskName; Command = $cmd; Origin = "Tarea Programada"; 
-                InternalType = "Task"; RegBase = ""; RegPath = $_.TaskPath
-                Status = if ($_.State -eq 'Disabled') { 'Disabled' } else { 'Enabled' }
+        # 2. Filtrar y Poblar
+        $searchTerm = $txtSearch.Text.Trim()
+        $filteredItems = $script:StartupRawList
+        
+        if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
+            $filteredItems = $script:StartupRawList | Where-Object { 
+                $_.Name -match $searchTerm -or $_.Command -match $searchTerm 
             }
         }
 
-        # Poblar Grid
-        foreach ($item in $items) {
-            $id = [Guid]::NewGuid().ToString()
-            $script:StartupCache[$id] = $item
-
+        foreach ($item in $filteredItems) {
             $rowId = $grid.Rows.Add()
             $row = $grid.Rows[$rowId]
-            $row.Cells["ID"].Value = $id
+            $row.Tag = $item 
+
             $row.Cells["Name"].Value = $item.Name
             $row.Cells["Type"].Value = $item.Origin
+            $row.Cells["Command"].Value = $item.Command
             
             if ($item.Status -eq 'Enabled') {
                 $row.Cells["Status"].Value = "Habilitado"
@@ -2273,48 +2419,42 @@ function Manage-StartupApps {
             }
         }
         
+        $grid.ResumeLayout()
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
         $grid.ClearSelection()
         $txtCommand.Text = ""
     }
 
     # --- EVENTOS ---
-
     $form.Add_Shown({ & $LoadData })
-    $btnRefresh.Add_Click({ & $LoadData })
+    $btnRefresh.Add_Click({ $script:StartupRawList = @(); & $LoadData })
+    
+    # Evento de Busqueda (Key Up)
+    $txtSearch.Add_KeyUp({ & $LoadData })
 
     $grid.Add_SelectionChanged({
         if ($grid.SelectedRows.Count -gt 0) {
-            # 1. Obtener el valor de la celda de forma segura
-            $val = $grid.SelectedRows[0].Cells["ID"].Value
-            
-            # 2. Convertir a String (o nulo si no existe)
-            $id = if ($val) { $val.ToString() } else { $null }
-
-            # 3. Validar que NO sea nulo antes de buscar en el Hash
-            if (-not [string]::IsNullOrEmpty($id) -and $script:StartupCache.ContainsKey($id)) {
-                $txtCommand.Text = $script:StartupCache[$id].Command
-            } else {
-                $txtCommand.Text = "" # Limpiar texto si no hay seleccion valida
-            }
+            $item = $grid.SelectedRows[0].Tag
+            if ($item) { $txtCommand.Text = $item.Command }
         }
     })
 
-    # --- EVENTO: BARRA ESPACIADORA PARA MARCAR/DESMARCAR ---
     $grid.Add_KeyDown({
         param($sender, $e)
         if ($e.KeyCode -eq 'Space') {
-            # Evita que la barra espaciadora haga scroll hacia abajo
             $e.SuppressKeyPress = $true 
-            
-            # Recorre todas las filas seleccionadas (permite seleccion multiple con Shift/Ctrl)
             foreach ($row in $sender.SelectedRows) {
-                # Invierte el valor actual (True -> False / False -> True)
-                # Nota: Verificamos si la celda es de solo lectura por seguridad
                 if (-not $row.Cells["Check"].ReadOnly) {
                     $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value)
                 }
             }
+        }
+    })
+    
+    $grid.Add_CellClick({
+        param($sender, $e)
+        if ($e.RowIndex -ge 0 -and $e.ColumnIndex -eq 0) { 
+             # Checkbox click handling
         }
     })
 
@@ -2322,50 +2462,53 @@ function Manage-StartupApps {
         foreach ($row in $grid.Rows) { $row.Cells["Check"].Value = $true }
     })
 
-    # Logica de Cambio de Estado
+    # Logica de Accion (Enable / Disable / Delete)
     $ApplyChange = {
-        param($Action) # 'Enable' o 'Disable'
+        param($Action) # 'Enable', 'Disable', 'Delete'
         
         $targets = @()
         foreach ($row in $grid.Rows) {
             if ($row.Cells["Check"].Value -eq $true) {
-                $targets += $script:StartupCache[$row.Cells["ID"].Value]
+                $targets += $row.Tag
             }
         }
 
         if ($targets.Count -eq 0) { return }
 
+        # Advertencia especial para Eliminar
+        if ($Action -eq 'Delete') {
+            $msg = "¿Estas seguro de eliminar permanentemente $($targets.Count) elementos?`n`nEsta accion NO se puede deshacer."
+            if ([System.Windows.Forms.MessageBox]::Show($msg, "Confirmacion de Eliminacion", 4, 48) -ne 'Yes') { return }
+        }
+
         foreach ($item in $targets) {
             try {
-                if ($item.InternalType -eq 'Task') {
-                    # Logica para Tareas
-                    if ($Action -eq 'Disable') { Disable-ScheduledTask -TaskName $item.Name -TaskPath $item.RegPath -ErrorAction Stop }
-                    else { Enable-ScheduledTask -TaskName $item.Name -TaskPath $item.RegPath -ErrorAction Stop }
+                if ($Action -eq 'Delete') {
+                    $res = & $DeleteStartupItem -Item $item
+                }
+                elseif ($item.InternalType -eq 'Task') {
+                    if ($Action -eq 'Enable') { 
+                        Enable-ScheduledTask -TaskName $item.Name -TaskPath $item.RegPath -ErrorAction Stop 
+                    } else { 
+                        Disable-ScheduledTask -TaskName $item.Name -TaskPath $item.RegPath -ErrorAction Stop 
+                    }
                 }
                 else {
-                    # Logica para Registro y Carpetas (StartupApproved)
-                    # Determinar ruta base del registro de aprobacion
-                    $baseHive = if ($item.InternalType -eq 'Registry' -and $item.RegBase -eq 'HKLM') { "HKLM:" } else { "HKCU:" }
-                    $subKey = if ($item.InternalType -eq 'Folder') { "StartupFolder" } else { "Run" }
-                    
-                    $approvedKey = "$baseHive\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\$subKey"
-                    
-                    if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey -Force | Out-Null }
-                    
-                    $bytes = if ($Action -eq 'Enable') { $script:EnabledBytes } else { $script:DisabledBytes }
-                    
-                    Set-ItemProperty -Path $approvedKey -Name $item.Name -Value $bytes -Type Binary -Force
+                    # Registro o Carpeta (StartupApproved)
+                    $boolState = ($Action -eq 'Enable')
+                    $res = & $SetStartupStateSmart -Item $item -Enable $boolState
                 }
-                Write-Log -LogLevel ACTION -Message "STARTUP GUI: Se aplico $Action a $($item.Name)"
             } catch {
-                Write-Log -LogLevel ERROR -Message "Fallo al cambiar estado de $($item.Name): $_"
+                # Log error silencioso o a consola
             }
         }
+        $script:StartupRawList = @() # Forzar recarga completa
         & $LoadData
     }
 
     $btnEnable.Add_Click({ & $ApplyChange -Action 'Enable' })
     $btnDisable.Add_Click({ & $ApplyChange -Action 'Disable' })
+    $btnDelete.Add_Click({ & $ApplyChange -Action 'Delete' })
 
     $form.ShowDialog() | Out-Null
     $form.Dispose()
@@ -2534,56 +2677,83 @@ function Repair-SystemFiles {
 function Clear-RAMCache {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
-	Write-Log -LogLevel INFO -Message "Usuario entro a la funcion de purgado de cache de RAM."
-
-    Write-Host "`n[+] Purgando la Memoria RAM en Cache (Standby List)..." -ForegroundColor Cyan
-    Write-Warning "Esto es para usos especificos (como benchmarks) y normalmente no es necesario."
     
-    if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') {
-		Write-Log -LogLevel WARN -Message "Usuario cancelo el purgado de cache de RAM."
-        Write-Host "[INFO] Operacion cancelada por el usuario." -ForegroundColor Yellow
-        return
-    }
+    Write-Log -LogLevel INFO -Message "SISTEMA: Iniciando purgado de memoria Standby con verificacion."
+    
+    Write-Host "`n[+] Purgando la Memoria RAM en Cache (Standby List)..." -ForegroundColor Cyan
+    Write-Warning "Esto vaciara la memoria 'En Espera' moviendola a 'Libre'."
+    
+    # 1. Comprobacion de Intencion
+    if ((Read-Host "¿Confirmar operacion? (S/N)").ToUpper() -ne 'S') { return }
 
-    # Ruta donde se guardara la herramienta
+    # 2. Gestion de la Herramienta (Descarga Segura)
     $toolDir = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "Tools"
-    if (-not (Test-Path $toolDir)) {
-        New-Item -Path $toolDir -ItemType Directory | Out-Null
-    }
+    if (-not (Test-Path $toolDir)) { New-Item -Path $toolDir -ItemType Directory | Out-Null }
     $toolPath = Join-Path -Path $toolDir -ChildPath "EmptyStandbyList.exe"
 
-    # Descargar la herramienta si no existe
     if (-not (Test-Path $toolPath)) {
-        Write-Host "`n[+] La herramienta 'EmptyStandbyList.exe' no se ha encontrado." -ForegroundColor Yellow
-        Write-Host "    Descargando desde una fuente confiable (Archive)..."
-        $url = "https://ia800303.us.archive.org/9/items/empty-standby-list/EmptyStandbyList.exe"
+        Write-Host "   - Herramienta no encontrada. Descargando..." -ForegroundColor Gray
         try {
+            $url = "https://ia800303.us.archive.org/9/items/empty-standby-list/EmptyStandbyList.exe"
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $url -OutFile $toolPath -UseBasicParsing
-            Write-Host "[OK] Herramienta descargada." -ForegroundColor Green
+            
+            # Descarga con timeout para no congelar el script
+            Invoke-WebRequest -Uri $url -OutFile $toolPath -UseBasicParsing -TimeoutSec 15
+            
+            # VALIDACION 1: Integridad basica (Tamaño > 0)
+            $fileInfo = Get-Item $toolPath
+            if ($fileInfo.Length -lt 10KB) { 
+                throw "El archivo descargado parece corrupto (demasiado pequeño)." 
+            }
+            Write-Host "   [OK] Herramienta descargada y verificada." -ForegroundColor Green
         } catch {
-            Write-Error "No se pudo descargar la herramienta. Verifica tu conexion a internet o si un antivirus la esta bloqueando."
-            Write-Error "Error especifico: $_"
-			Write-Log -LogLevel ERROR -Message "Fallo la descarga de EmptyStandbyList.exe: $_"
-            Read-Host "`nPresiona Enter para volver al menu..."
+            Write-Error "   [ERROR] No se pudo obtener la herramienta: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "RAM CLEAN: Fallo descarga de herramienta: $($_.Exception.Message)"
+            if (Test-Path $toolPath) { Remove-Item $toolPath -Force } # Limpiar archivo corrupto
             return
         }
     }
 
-    # Ejecutar la herramienta para limpiar la cache de la Standby List
-    if ($PSCmdlet.ShouldProcess("Sistema", "Purgar la lista de memoria en espera (Standby List)")) {
+    # 3. Medicion PREVIA (Snapshot)
+    # Usamos Available MBytes como proxy, ya que vaciar la Standby List incrementa la memoria Libre/Disponible
+    $ramBefore = (Get-CimInstance -ClassName Win32_OperatingSystem).FreePhysicalMemory
+    Write-Host "   - RAM Disponible Inicial: $([math]::Round($ramBefore / 1KB, 0)) MB" -ForegroundColor Gray
+
+    # 4. Ejecucion Controlada
+    if ($PSCmdlet.ShouldProcess("Memoria del Sistema", "Purgar lista de espera")) {
         try {
-            # Usamos -WindowStyle Hidden para que no haya un parpadeo de una ventana negra
-            Start-Process -FilePath $toolPath -ArgumentList "standbylist" -Verb RunAs -Wait -WindowStyle Hidden
-            Write-Log -LogLevel ACTION -Message "La memoria en cache (Standby List) fue purgada exitosamente."
-			Write-Host "`n[OK] La memoria en cache (Standby List) ha sido purgada." -ForegroundColor Green
-			Read-Host "`nPresiona Enter para volver al menu..."
+            $proc = Start-Process -FilePath $toolPath -ArgumentList "standbylist" -Verb RunAs -PassThru -WindowStyle Hidden -Wait
+            
+            # VALIDACION 2: Codigo de Salida
+            if ($proc.ExitCode -ne 0) {
+                throw "La herramienta devolvio el codigo de error $($proc.ExitCode)."
+            }
+            
+            # Pequeña pausa para que el SO actualice los contadores
+            Start-Sleep -Seconds 2 
+
+            # 5. Medicion POSTERIOR y Calculo de Exito
+            $ramAfter = (Get-CimInstance -ClassName Win32_OperatingSystem).FreePhysicalMemory
+            $freedKB = $ramAfter - $ramBefore
+            
+            # Normalizar (si sale negativo por uso del sistema, es 0)
+            if ($freedKB -lt 0) { $freedKB = 0 }
+            
+            $freedMB = [math]::Round($freedKB / 1KB, 0)
+            
+            Write-Host "`n   [EXITO] Operacion finalizada." -ForegroundColor Green
+            Write-Host "   -> Memoria Recuperada: " -NoNewline
+            Write-Host "$freedMB MB" -ForegroundColor Yellow
+            
+            Write-Log -LogLevel ACTION -Message "RAM CLEAN: Se purgo la memoria Standby. Recuperados aprox: $freedMB MB."
+
         } catch {
-            Write-Error "Ocurrio un error al ejecutar la herramienta. El archivo puede estar corrupto o bloqueado por un antivirus."
-            Write-Error "Error especifico: $_"
-            Read-Host "`nPresiona Enter para volver al menu..."
+            Write-Error "   [FALLO] Ocurrio un error al ejecutar el purgado: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "RAM CLEAN: Error de ejecucion - $($_.Exception.Message)"
         }
     }
+    
+    Read-Host "`nPresiona Enter para volver..."
 }
 
 # ===================================================================
@@ -2638,94 +2808,167 @@ function Clear-SystemCaches {
             default { continue }
         }
 
-        # --- EJECUCION DE TAREAS ---
-        Write-Host "`n[+] Iniciando operaciones..." -ForegroundColor Yellow
-        
-        foreach ($task in $tasks) {
-            try {
-                switch ($task) {
-                    "DNS" {
-                        Write-Host "   - Limpiando Cache DNS..." -NoNewline
-                        try {
-                            Clear-DnsClientCache -ErrorAction Stop
-                        } catch {
-                            cmd /c "ipconfig /flushdns" | Out-Null
-                        }
-                        Write-Host " [OK]" -ForegroundColor Green
-                        Write-Log -LogLevel ACTION -Message "CACHES: DNS limpiado."
-                    }
+        # --- EJECUCION DE TAREAS CON COMPROBACIONES ---
+        if ($tasks.Count -gt 0) {
+            Write-Host "`n[+] Iniciando operaciones..." -ForegroundColor Yellow
+            
+            foreach ($task in $tasks) {
+                Write-Host "   Processing: $task..." -ForegroundColor DarkGray
+                try {
+                    switch ($task) {
+                        "DNS" {
+                            Write-Host "   - Limpiando Cache DNS..." -NoNewline
+                            $dnsSuccess = $false
+                            
+                            # Intento 1: Cmdlet Moderno
+                            try {
+                                Clear-DnsClientCache -ErrorAction Stop
+                                $dnsSuccess = $true
+                            } catch {
+                                # Intento 2: Legacy
+                                $null = ipconfig.exe /flushdns
+                                if ($LASTEXITCODE -eq 0) { $dnsSuccess = $true }
+                            }
 
-                    "ARP" {
-                        Write-Host "   - Limpiando Tabla ARP..." -NoNewline
-                        cmd /c "netsh interface ip delete arpcache" | Out-Null
-                        Write-Host " [OK]" -ForegroundColor Green
-                    }
-
-                    "SSL" {
-                        Write-Host "   - Limpiando Cache SSL (Cryptnet)..." -NoNewline
-                        certutil -urlcache * delete | Out-Null
-                        Write-Host " [OK]" -ForegroundColor Green
-                    }
-
-                    "FONTS" {
-                        Write-Host "`n   - Limpiando Cache de Fuentes..." -ForegroundColor Cyan
-                        Write-Host "     * Deteniendo servicio de cache..." -ForegroundColor Gray
-                        
-                        $svc = Get-Service "FontCache" -ErrorAction SilentlyContinue
-                        if ($svc -and $svc.Status -eq 'Running') {
-                            Stop-Service "FontCache" -Force -ErrorAction SilentlyContinue
+                            if ($dnsSuccess) {
+                                Write-Host " [OK]" -ForegroundColor Green
+                                Write-Log -LogLevel ACTION -Message "CACHES: DNS limpiado exitosamente."
+                            } else {
+                                Write-Host " [FALLO]" -ForegroundColor Red
+                                Write-Log -LogLevel ERROR -Message "CACHES: Fallo al limpiar DNS."
+                            }
                         }
-                        
-                        $fontCachePath = "$env:SystemRoot\ServiceProfiles\LocalService\AppData\Local\FontCache"
-                        if (Test-Path $fontCachePath) {
-                            Remove-Item "$fontCachePath\*.dat" -Force -ErrorAction SilentlyContinue
-                            Write-Host "     * Archivos .dat eliminados." -ForegroundColor Gray
-                        }
-                        
-                        Start-Service "FontCache" -ErrorAction SilentlyContinue
-                        Write-Host "     [OK] Servicio reiniciado." -ForegroundColor Green
-                    }
 
-                    "ICONS" {
-                        Write-Host "`n   - Reconstruyendo Cache de Iconos..." -ForegroundColor Cyan
-                        Write-Host "     * Reiniciando Explorador de Windows..." -ForegroundColor Yellow
-                        
-                        # Matar Explorer
-                        Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
-                        Start-Sleep -Milliseconds 500
-                        
-                        # Borrar DBs
-                        $iconPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
-                        $items = Get-ChildItem -Path $iconPath -Filter "iconcache_*.db" -ErrorAction SilentlyContinue
-                        $items += Get-ChildItem -Path $iconPath -Filter "thumbcache_*.db" -ErrorAction SilentlyContinue
-                        
-                        foreach ($item in $items) {
-                            Remove-Item $item.FullName -Force -ErrorAction SilentlyContinue
+                        "ARP" {
+                            Write-Host "   - Limpiando Tabla ARP..." -NoNewline
+                            # Ejecucion y captura de error
+                            $proc = Start-Process "netsh.exe" -ArgumentList "interface ip delete arpcache" -NoNewWindow -PassThru -Wait
+                            
+                            if ($proc.ExitCode -eq 0) {
+                                Write-Host " [OK]" -ForegroundColor Green
+                            } elseif ($proc.ExitCode -eq 1) {
+                                Write-Host " [REQUIERE ELEVACION]" -ForegroundColor Red
+                            } else {
+                                Write-Host " [ERROR CODE: $($proc.ExitCode)]" -ForegroundColor Red
+                            }
                         }
-                        
-                        # Levantar Explorer
-                        if (-not (Get-Process "explorer" -ErrorAction SilentlyContinue)) {
-                            Start-Process "explorer.exe"
-                        }
-                        Write-Host "     [OK] Cache de iconos purgada." -ForegroundColor Green
-                    }
 
-                    "STORE" {
-                        Write-Host "`n   - Reseteando Microsoft Store (WSReset)..." -ForegroundColor Cyan
-                        Write-Host "     (Esto abrira una ventana externa, por favor espera...)" -ForegroundColor Gray
-                        # Ejecutamos sin esperar indefinidamente para no bloquear el script si falla
-                        Start-Process "wsreset.exe" -NoNewWindow
-                        Start-Sleep -Seconds 5
-                        Write-Host "     [OK] Comando enviado." -ForegroundColor Green
+                        "SSL" {
+                            Write-Host "   - Limpiando Cache SSL (Cryptnet)..." -NoNewline
+                            $proc = Start-Process "certutil.exe" -ArgumentList "-urlcache * delete" -NoNewWindow -PassThru -Wait
+                            
+                            if ($proc.ExitCode -eq 0) {
+                                Write-Host " [OK]" -ForegroundColor Green
+                            } else {
+                                Write-Host " [ADVERTENCIA]" -ForegroundColor Yellow
+                                Write-Host "     (Es posible que la cache ya estuviera vacia)" -ForegroundColor Gray
+                            }
+                        }
+
+                        "FONTS" {
+                            Write-Host "`n   - Limpiando Cache de Fuentes..." -ForegroundColor Cyan
+                            
+                            $svcName = "FontCache"
+                            $svc = Get-Service $svcName -ErrorAction SilentlyContinue
+                            $wasRunning = ($svc.Status -eq 'Running')
+
+                            # 1. Detener Servicio
+                            if ($wasRunning) {
+                                Write-Host "     * Deteniendo servicio de cache..." -ForegroundColor Gray
+                                Stop-Service $svcName -Force -ErrorAction SilentlyContinue
+                                Start-Sleep -Milliseconds 500
+                            }
+                            
+                            # 2. Eliminar Archivos
+                            $fontCachePath = "$env:SystemRoot\ServiceProfiles\LocalService\AppData\Local\FontCache"
+                            if (Test-Path $fontCachePath) {
+                                $files = Get-ChildItem "$fontCachePath\*.dat" -ErrorAction SilentlyContinue
+                                if ($files) {
+                                    Remove-Item "$fontCachePath\*.dat" -Force -ErrorAction SilentlyContinue
+                                    if (!(Test-Path "$fontCachePath\*.dat")) {
+                                        Write-Host "     * Archivos .dat eliminados." -ForegroundColor Green
+                                    } else {
+                                        Write-Host "     * Algunos archivos estaban bloqueados." -ForegroundColor Yellow
+                                    }
+                                } else {
+                                    Write-Host "     * No se encontraron archivos de cache." -ForegroundColor Gray
+                                }
+                            }
+                            
+                            # 3. Reiniciar Servicio (solo si estaba corriendo)
+                            if ($wasRunning) {
+                                Start-Service $svcName -ErrorAction SilentlyContinue
+                                Write-Host "     [OK] Servicio reiniciado." -ForegroundColor Green
+                            }
+                        }
+
+                        "ICONS" {
+                            Write-Host "`n   - Reconstruyendo Cache de Iconos..." -ForegroundColor Cyan
+                            Write-Host "     * Reiniciando Explorador de Windows..." -ForegroundColor Yellow
+                            
+                            # Comprobación de seguridad antes de matar Explorer
+                            try {
+                                Stop-Process -Name "explorer" -Force -ErrorAction Stop
+                                Start-Sleep -Milliseconds 500
+                                
+                                $iconPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
+                                $deletedCount = 0
+                                
+                                # Borrado selectivo
+                                $items = Get-ChildItem -Path $iconPath -Filter "iconcache_*.db" -ErrorAction SilentlyContinue
+                                $items += Get-ChildItem -Path $iconPath -Filter "thumbcache_*.db" -ErrorAction SilentlyContinue
+                                
+                                foreach ($item in $items) {
+                                    try {
+                                        Remove-Item $item.FullName -Force -ErrorAction Stop
+                                        $deletedCount++
+                                    } catch {}
+                                }
+                                Write-Host "     * Bases de datos purgadas: $deletedCount" -ForegroundColor Gray
+                            } catch {
+                                Write-Warning "     No se pudo detener el Explorador o acceder a los archivos."
+                            } finally {
+                                # Garantizar que Explorer vuelva
+                                if (-not (Get-Process "explorer" -ErrorAction SilentlyContinue)) {
+                                    Start-Process "explorer.exe"
+                                    Write-Host "     [OK] Explorador reiniciado." -ForegroundColor Green
+                                }
+                            }
+                        }
+
+                        "STORE" {
+                            Write-Host "`n   - Reseteando Microsoft Store (WSReset)..." -ForegroundColor Cyan
+                            Write-Host "     (Se abrira una ventana externa, no la cierres...)" -ForegroundColor Gray
+                            
+                            try {
+                                # Usamos Start-Process para monitorear
+                                $p = Start-Process "wsreset.exe" -PassThru
+                                
+                                # Esperamos maximo 10 segundos para no congelar el script si wsreset se cuelga
+                                $timeout = 0
+                                while (-not $p.HasExited -and $timeout -lt 10) {
+                                    Start-Sleep -Seconds 1
+                                    $timeout++
+                                }
+                                
+                                if ($p.HasExited) {
+                                    Write-Host "     [OK] Comando finalizado." -ForegroundColor Green
+                                } else {
+                                    Write-Host "     [INFO] WSReset sigue ejecutandose en segundo plano." -ForegroundColor Yellow
+                                }
+                            } catch {
+                                Write-Error "     Fallo al iniciar WSReset."
+                            }
+                        }
                     }
+                } catch {
+                    Write-Error "     [ERROR FATAL] Fallo en modulo $task : $($_.Exception.Message)"
                 }
-            } catch {
-                Write-Error "     [ERROR] Fallo en modulo $task : $($_.Exception.Message)"
             }
-        }
 
-        Write-Host "`n[FIN] Operaciones completadas." -ForegroundColor Green
-        Read-Host "Presiona Enter para continuar..."
+            Write-Host "`n[FIN] Operaciones completadas." -ForegroundColor Green
+            Read-Host "Presiona Enter para continuar..."
+        }
     }
 }
 
@@ -2733,146 +2976,288 @@ function Clear-SystemCaches {
 # MODULO DE Optimizacion de unidades
 # ===================================================================
 function Optimize-Drives {
-    Write-Log -LogLevel INFO -Message "DISCOS: Usuario entro al menu de optimizacion."
+    Write-Log -LogLevel INFO -Message "DISCOS: Usuario entro al menu de optimizacion avanzada."
     
-    # 1. Obtener estado Global de TRIM (Es un ajuste del sistema, no del disco)
-    # 0 = Activado (Bueno), 1 = Desactivado (Malo)
-    $trimQuery = (fsutil behavior query DisableDeleteNotify) -join " "
-    $isTrimEnabled = $trimQuery -match "DisableDeleteNotify = 0"
-    $trimLabel = if ($isTrimEnabled) { "ON" } else { "OFF" }
-    $trimColor = if ($isTrimEnabled) { "Green" } else { "Red" }
+    # --- CONFIGURACION DE LOGGING ---
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    $logDir = Join-Path -Path $parentDir -ChildPath "Logs"
+    if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+    
+    $logFileName = "Optimizacion_Detallada_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').log"
+    $logFile = Join-Path -Path $logDir -ChildPath $logFileName
 
-    # 2. Obtener unidades fijas
-    $volumes = Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.DriveLetter } | Sort-Object DriveLetter
-
-    if ($volumes.Count -eq 0) {
-        Write-Warning "No se detectaron unidades fijas para optimizar."
-        return
+    # --- HELPER 1: Escribir en Log (Limpieza Null Bytes) ---
+    function Write-LogFile {
+        param([string]$Text, [bool]$IsHeader = $false)
+        $cleanText = $Text -replace '\0', '' # Elimina bytes nulos que rompen logs
+        if ($IsHeader) {
+            $separator = "=" * 60
+            "$separator`r`n$cleanText`r`n$separator" | Out-File -FilePath $logFile -Append -Encoding UTF8
+        } else {
+            $cleanText | Out-File -FilePath $logFile -Append -Encoding UTF8
+        }
     }
 
-    # --- MENU INTERACTIVO ---
+    # --- HELPER 2: Salida Dual ---
+    function Write-Dual {
+        param(
+            [Parameter(Mandatory=$true)][string]$Message,
+            [string]$Color = "White",
+            [switch]$NoNewLine
+        )
+        if ($NoNewLine) { Write-Host $Message -NoNewline -ForegroundColor $Color }
+        else { Write-Host $Message -ForegroundColor $Color }
+
+        $timestamp = Get-Date -Format "HH:mm:ss"
+        Write-LogFile "[$timestamp] $Message"
+    }
+
+    # Header del Log
+    $headerInfo = "REPORTE DE OPTIMIZACION DE ALMACENAMIENTO`r`n" +
+                  "Fecha: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n" +
+                  "Equipo: $env:COMPUTERNAME | Usuario: $env:USERNAME`r`n" +
+                  "Sistema: $((Get-CimInstance Win32_OperatingSystem).Caption)"
+    Write-LogFile $headerInfo -IsHeader $true
+
+    # --- FUNCIONES INTERNAS ---
+    function Test-VolumeDirtyInternal {
+        param($Letter)
+        try {
+            $v = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$($Letter):'" -ErrorAction Stop
+            return $v.VolumeDirty
+        } catch { return $false }
+    }
+
+    function Get-MediaTypeInternal {
+        param($Letter)
+        try {
+            $part = Get-Partition -DriveLetter $Letter -ErrorAction Stop
+            $disk = Get-Disk -Number $part.DiskNumber -ErrorAction Stop
+            if ($disk.Model -match "Virtual|Storage Space" -or $disk.BusType -eq "FileBackedVirtual") { return "Virtual" }
+            $pDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $disk.Number } | Select-Object -First 1
+            if ($pDisk) { return $pDisk.MediaType }
+        } catch {}
+        return "Unknown"
+    }
+
+	# Estado Global TRIM
+    $trimQuery = (fsutil behavior query DisableDeleteNotify) -join " "
+    $isTrimEnabledGlobal = $trimQuery -match "DisableDeleteNotify = 0"
+    $trimLabelGlobal = if ($isTrimEnabledGlobal) { "ON (Habilitado)" } else { "OFF (Deshabilitado)" }
+    $trimColorGlobal = if ($isTrimEnabledGlobal) { "Green" } else { "Red" }
+
+    # --- BUCLE PRINCIPAL ---
     while ($true) {
-        Clear-Host
-        # --- PRE-ANALISIS VISUAL (Rápido) ---
-        # Reconstruimos la lista en cada vuelta por si cambia el estado tras optimizar
+        $volumes = Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.DriveLetter } | Sort-Object DriveLetter
+
+        if ($volumes.Count -eq 0) {
+            Write-Warning "No se detectaron unidades fijas."
+            return
+        }
+
+        # CONSTRUCCION DE INVENTARIO
         $driveList = @()
         foreach ($vol in $volumes) {
-            $type = "Desconocido"
+            $letter = $vol.DriveLetter
+            $type = Get-MediaTypeInternal -Letter $letter
+            $isDirty = Test-VolumeDirtyInternal -Letter $letter
+            $integrityStr = if ($isDirty) { "CORRUPTO" } else { "Sano" }
+            
+            $totalGB = [math]::Round($vol.Size / 1GB, 2)
+            $freeGB  = [math]::Round($vol.SizeRemaining / 1GB, 2)
+
+            $trimStatus = "N/A"
+            if ($type -eq 'SSD' -or $type -eq 'Virtual' -or $type -eq 'Tiered') {
+                if ($isTrimEnabledGlobal) { $trimStatus = "Activo" } else { $trimStatus = "Inactivo" }
+            } else { $trimStatus = "-" }
+
+            $blStatus = "Desbloqueado"
+            $bl = $null
             try {
-                $partition = Get-Partition -DriveLetter $vol.DriveLetter -ErrorAction SilentlyContinue
-                if ($partition) {
-                    $disk = Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue
-                    if ($disk) {
-                        # Correccion de tuberia critica
-                        $pDisk = $disk | Get-PhysicalDisk -ErrorAction SilentlyContinue | Select-Object -First 1
-                        if ($pDisk) { $type = $pDisk.MediaType }
-                    }
+                $bl = Get-BitLockerVolume -MountPoint "$($letter):" -ErrorAction SilentlyContinue
+                if ($bl) {
+                    if ($bl.ProtectionStatus -eq 'On' -and $bl.LockStatus -eq 'Locked') { $blStatus = "BLOQUEADO" }
+                    elseif ($bl.ProtectionStatus -eq 'On') { $blStatus = "Cifrado" }
                 }
             } catch {}
-            
+
             $driveList += [PSCustomObject]@{
-                Letter = $vol.DriveLetter
-                Label  = if ($vol.FileSystemLabel) { $vol.FileSystemLabel } else { "Sin Etiqueta" }
-                Free   = [math]::Round($vol.SizeRemaining / 1GB, 2)
-                Type   = $type
-                Obj    = $vol
+                Letter    = $letter
+                Label     = if ($vol.FileSystemLabel) { $vol.FileSystemLabel } else { "Sin Etiqueta" }
+                Total     = $totalGB
+                Free      = $freeGB
+                Type      = $type
+                Integrity = $integrityStr
+                BLStatus  = $blStatus
+                IsDirty   = $isDirty
+                IsLocked  = ($blStatus -eq "BLOQUEADO")
+                Trim      = $trimStatus
             }
         }
 
+        Clear-Host
         Write-Host "=======================================================" -ForegroundColor Cyan
         Write-Host "           Optimizacion de Almacenamiento              " -ForegroundColor Cyan
         Write-Host "=======================================================" -ForegroundColor Cyan
+        Write-Host "   Estado Global TRIM (OS): $trimLabelGlobal" -ForegroundColor $trimColorGlobal
+        Write-Host "   Archivo de Log: $logFileName" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "   Estado Global TRIM: " -NoNewline
-        Write-Host "TRIM: $trimLabel" -ForegroundColor $trimColor
-        Write-Host ""
-        Write-Host "   Unidades detectadas:" -ForegroundColor Yellow
         
+        $fmt = "{0,-4} | {1,-3} | {2,-12} | {3,-8} | {4,-10} | {5,-10} | {6,-10} | {7,-8} | {8}"
+        Write-Host ($fmt -f "Num", "Ltr", "Etiqueta", "Tipo", "Total (GB)", "Libre (GB)", "Integridad", "TRIM", "BitLocker") -ForegroundColor DarkGray
+        Write-Host ("-" * 115) -ForegroundColor DarkGray
+
         for ($i = 0; $i -lt $driveList.Count; $i++) {
             $d = $driveList[$i]
-            
-            # Formateo visual inteligente
-            Write-Host "   [$($i+1)] Unidad $($d.Letter): ($($d.Label))" -NoNewline
-            
-            if ($d.Type -eq 'SSD') {
-                Write-Host " - Tipo: " -NoNewline
-                Write-Host "SSD " -ForegroundColor Cyan -NoNewline
-                Write-Host "[TRIM: $trimLabel]" -ForegroundColor $trimColor -NoNewline
-            } elseif ($d.Type -eq 'HDD') {
-                Write-Host " - Tipo: " -NoNewline
-                Write-Host "HDD " -ForegroundColor Gray -NoNewline
-            } else {
-                Write-Host " - Tipo: $($d.Type)" -ForegroundColor Magenta -NoNewline
-            }
-            
-            Write-Host " - Libre: $($d.Free) GB"
+            $rowColor = "White"
+            if ($d.IsDirty) { $rowColor = "Red" }
+            elseif ($d.IsLocked) { $rowColor = "Magenta" }
+            elseif ($d.Type -eq 'SSD') { $rowColor = "Cyan" }
+            elseif ($d.Type -eq 'Virtual') { $rowColor = "Green" }
+            elseif ($d.Type -eq 'Tiered') { $rowColor = "Yellow" }
+
+            Write-Host ($fmt -f "[$($i+1)]", $d.Letter, $d.Label.Substring(0, [math]::Min($d.Label.Length, 12)), $d.Type, $d.Total, $d.Free, $d.Integrity, $d.Trim, $d.BLStatus) -ForegroundColor $rowColor
         }
         
         Write-Host ""
-        Write-Host "   [T] Optimizar TODAS las unidades (Recomendado)" -ForegroundColor Green
-        Write-Host "   [A] Analizar Fragmentacion (Solo Diagnostico - Lento)" -ForegroundColor Yellow
+        Write-Host "   [T] Optimizar TODAS (Lote Completo)" -ForegroundColor Green
+        Write-Host "   [A] Analizar TODAS (Solo Diagnostico)" -ForegroundColor Yellow
         Write-Host "   [V] Volver al menu anterior" -ForegroundColor Red
         Write-Host ""
         
-        $choice = Read-Host "   Selecciona una opcion"
+        $choice = Read-Host "   Selecciona una opcion (Numero de Unidad, T, A, V)"
         
         $targets = @()
         $analyzeOnly = $false
         
         if ($choice.ToUpper() -eq 'V') { return }
         elseif ($choice.ToUpper() -eq 'T') { $targets = $driveList }
-        elseif ($choice.ToUpper() -eq 'A') { 
-            $analyzeOnly = $true
-            # Para analizar, permitimos elegir cual o todas
-            $subChoice = Read-Host "   ¿Analizar todas [T] o una especifica (Numero)?"
-            if ($subChoice.ToUpper() -eq 'T') { $targets = $driveList }
-            elseif ($subChoice -match '^\d+$' -and [int]$subChoice -ge 1 -and [int]$subChoice -le $driveList.Count) {
-                $targets = @($driveList[[int]$subChoice - 1])
+        elseif ($choice.ToUpper() -eq 'A') { $analyzeOnly = $true; $targets = $driveList }
+        elseif ($choice -match '^\d+$') {
+            $index = [int]$choice - 1
+            if ($index -ge 0 -and $index -lt $driveList.Count) {
+                $found = $driveList[$index]
+                $targets = @($found)
+                Write-Host ""
+                Write-Host "   Has seleccionado la Unidad ($($found.Letter)):" -ForegroundColor Cyan
+                Write-Host "   [1] OPTIMIZAR (Ejecutar ReTrim/Defrag)" -ForegroundColor Green
+                Write-Host "   [2] ANALIZAR (Ver estado de fragmentacion)" -ForegroundColor Yellow
+                $subChoice = Read-Host "   ¿Que deseas hacer?"
+                if ($subChoice -eq '2') { $analyzeOnly = $true }
+                elseif ($subChoice -ne '1') { continue }
             } else { continue }
-        }
-        elseif ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $driveList.Count) {
-            $targets = @($driveList[[int]$choice - 1])
-        } else {
-            continue
-        }
+        } else { continue }
 
         # --- EJECUCION ---
         foreach ($item in $targets) {
-            Write-Host "`n[+] Procesando Unidad $($item.Letter): ($($item.Type))..." -ForegroundColor Yellow
+            Write-Dual "`n[+] Procesando Unidad $($item.Letter): ($($item.Type))..." -Color Yellow
+            Write-LogFile "`r`n--- INICIO OPERACION: Unidad $($item.Letter) ($($item.Type)) ---"
             
+            if ($item.IsLocked) { Write-Dual "   [OMITIDO] Unidad bloqueada por BitLocker." -Color Magenta; continue }
+            if ($item.IsDirty) { Write-Dual "   [PELIGRO] Unidad corrupta. Ejecuta CHKDSK primero." -Color Red; continue }
+
             try {
+                $params = @{ DriveLetter = $item.Letter; ErrorAction = "Stop"; Verbose = $true }
+                $cmdOutputRaw = $null
+
                 if ($analyzeOnly) {
-                    # --- MODO SOLO ANALISIS ---
-                    Write-Host "   - Analizando fragmentacion (Esto puede tardar)..." -ForegroundColor Cyan
-                    $analysis = Optimize-Volume -DriveLetter $item.Letter -Analyze -Verbose
+                    Write-Dual "   - Iniciando Analisis..." -Color Cyan
+                    $params.Add("Analyze", $true)
                     
-                    # Como Optimize-Volume a veces envia la salida al stream Verbose y no al Output,
-                    # intentamos capturar el objeto si devuelve algo, o confiamos en el texto en pantalla.
-                    # Nota: El comando nativo muestra el reporte en pantalla.
-                    Write-Host "   [INFO] Analisis finalizado. Revisa el reporte arriba." -ForegroundColor Gray
+                    # Captura Salida
+                    $cmdOutputRaw = Optimize-Volume @params 4>&1 | Out-String
+                    $cleanOutput = $cmdOutputRaw -replace '\0', '' -replace '\s+', ' '
                     
+                    # --- PARSER BILINGÜE ---
+                    $fragPercent = 0
+                    if ($cleanOutput -match "(?:fragmentado|fragmented)\s*=\s*(\d+)%") { $fragPercent = [int]$matches[1] }
+                    
+                    $needsOpt = $false
+                    if ($cleanOutput -match "(?:es necesario|you need to)") { $needsOpt = $true }
+                    
+                    $statusColor = if ($fragPercent -gt 10 -or $needsOpt) { "Yellow" } else { "Green" }
+                    $statusText = if ($needsOpt) { "OPTIMIZACION RECOMENDADA" } else { "Correcto (No requiere accion)" }
+                    
+                    Write-Dual "   ------------------------------------------------" -Color DarkGray
+                    Write-Dual "   [RESULTADO] Fragmentacion: $fragPercent%" -Color $statusColor
+                    Write-Dual "   [ESTADO]    $statusText" -Color $statusColor
+                    Write-Dual "   ------------------------------------------------" -Color DarkGray
+                    Write-Dual "   [OK] Analisis finalizado." -Color Green
+
                 } else {
-                    # --- MODO OPTIMIZACION ---
+                    # Logica de Optimizacion
                     if ($item.Type -eq 'SSD') {
-                        if (-not $isTrimEnabled) { Write-Warning "ALERTA: TRIM esta desactivado en Windows. El SSD no se optimizara correctamente." }
-                        Write-Host "   - Ejecutando Retrim..." -ForegroundColor Gray
-                        Optimize-Volume -DriveLetter $item.Letter -ReTrim
-                        Write-Log -LogLevel ACTION -Message "SSD $($item.Letter): TRIM completado."
-                    
+                        if (-not $isTrimEnabledGlobal) {
+                            Write-Dual "   [AUTO-FIX] Intentando activar TRIM (Registry)..." -Color Yellow
+                            Start-Process "fsutil.exe" -ArgumentList "behavior set DisableDeleteNotify 0" -NoNewWindow -PassThru -Wait > $null
+                            $isTrimEnabledGlobal = $true
+                        }
+                        Write-Dual "   - Ejecutando Retrim (Flash)..." -Color Cyan
+                        $params.Add("ReTrim", $true)
                     } elseif ($item.Type -eq 'HDD') {
-                        Write-Host "   - Ejecutando Desfragmentacion..." -ForegroundColor Gray
-                        Optimize-Volume -DriveLetter $item.Letter -Defrag
-                        Write-Log -LogLevel ACTION -Message "HDD $($item.Letter): Defrag completado."
-                    
+                        Write-Dual "   - Ejecutando Desfragmentacion..." -Color Cyan
+                        $params.Add("Defrag", $true)
+                    } elseif ($item.Type -eq 'Virtual') {
+                        Write-Dual "   - Ejecutando Slab Consolidation..." -Color Cyan
+                        $params.Add("SlabConsolidate", $true)
+                    } elseif ($item.Type -eq 'Tiered') {
+                        Write-Dual "   - Ejecutando Tier Optimization..." -Color Cyan
+                        $params.Add("TierOptimize", $true)
                     } else {
-                        Write-Host "   - Ejecutando optimizacion estandar..." -ForegroundColor Gray
-                        Optimize-Volume -DriveLetter $item.Letter -Normal
+                        Write-Dual "   - Ejecutando optimizacion estandar..." -Color Gray
+                        $params.Add("Normal", $true)
                     }
-                    Write-Host "   [OK] Optimizacion finalizada." -ForegroundColor Green
+                    
+                    # EJECUCION Y CAPTURA
+                    $cmdOutputRaw = Optimize-Volume @params 4>&1 | Out-String
+                    
+                    # --- PARSER DE RESULTADOS POST-OPTIMIZACION (NUEVO) ---
+                    $cleanOptOutput = $cmdOutputRaw -replace '\0', '' -replace '\s+', ' '
+                    
+                    # Buscamos el reporte posterior (comun en HDDs)
+                    $finalFrag = 0
+                    $foundReport = $false
+                    
+                    # Regex para encontrar fragmentacion en el "Post Defragmentation Report" o al final
+                    # Busca el ULTIMO porcentaje de fragmentacion mencionado
+                    if ($cleanOptOutput -match "(?:Post Defragmentation Report|Informe de optimización posterior).*?(?:fragmentado|fragmented)\s*=\s*(\d+)%") {
+                        $finalFrag = [int]$matches[1]
+                        $foundReport = $true
+                    } elseif ($cleanOptOutput -match "(?:fragmentado|fragmented)\s*=\s*(\d+)%") {
+                        # Fallback: si no encuentra el encabezado, busca cualquier porcentaje
+                        $finalFrag = [int]$matches[1]
+                        $foundReport = $true
+                    }
+
+                    if ($item.Type -eq 'HDD' -and $foundReport) {
+                        $col = if ($finalFrag -lt 5) { "Green" } else { "Yellow" }
+                        Write-Dual "   ------------------------------------------------" -Color DarkGray
+                        Write-Dual "   [REPORTE] Fragmentacion Final: $finalFrag%" -Color $col
+                        Write-Dual "   ------------------------------------------------" -Color DarkGray
+                    } elseif ($item.Type -eq 'SSD') {
+                        # SSDs no suelen dar reporte de fragmentacion tras retrim
+                        Write-Dual "   [REPORTE] Operacion TRIM completada exitosamente." -Color Green
+                    } else {
+                        Write-Dual "   [REPORTE] Optimizacion completada." -Color Green
+                    }
+
+                    Write-Dual "   [OK] Finalizado." -Color Green
                 }
+
+                if (-not [string]::IsNullOrWhiteSpace($cmdOutputRaw)) {
+                    Write-LogFile "DETALLES TECNICOS DE WINDOWS:"
+                    Write-LogFile "-----------------------------"
+                    Write-LogFile $cmdOutputRaw
+                    Write-LogFile "-----------------------------"
+                }
+
             } catch {
-                Write-Error "   [ERROR] Fallo en $($item.Letter): $($_.Exception.Message)"
-                Write-Log -LogLevel ERROR -Message "Fallo disco $($item.Letter): $($_.Exception.Message)"
+                $errMsg = $_.Exception.Message
+                if ($errMsg -match "not supported") {
+                    Write-Dual "   [AVISO] Operacion no soportada por el hardware." -Color Yellow
+                } else {
+                    Write-Dual "   [ERROR] $errMsg" -Color Red
+                }
             }
         }
         
@@ -2882,28 +3267,274 @@ function Optimize-Drives {
 }
 
 # ===================================================================
-# MODULO DE Reporte de energia del sistema
+# MODULO DE DIAGNOSTICO DE ENERGIA
 # ===================================================================
 function Generate-SystemReport {
-	$parentDir = Split-Path -Parent $PSScriptRoot
-	$diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
-    
-	if (-not (Test-Path $diagDir)) {
-		New-Item -Path $diagDir -ItemType Directory | Out-Null
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    # Activar estilos visuales
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Aegis Phoenix - Centro de Diagnostico de Energia"
+    $form.Size = New-Object System.Drawing.Size(800, 550)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $form.ForeColor = [System.Drawing.Color]::White
+
+    # --- 2. ENCABEZADO ---
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = "Diagnosticos de Energia y Hardware"
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 20)
+    $lblTitle.AutoSize = $true
+    $lblTitle.ForeColor = [System.Drawing.Color]::Cyan
+    $form.Controls.Add($lblTitle)
+
+    $lblSub = New-Object System.Windows.Forms.Label
+    $lblSub.Text = "Genera reportes detallados sobre la salud de la bateria, eficiencia y suspension."
+    $lblSub.Location = New-Object System.Drawing.Point(25, 55)
+    $lblSub.AutoSize = $true
+    $lblSub.ForeColor = [System.Drawing.Color]::Silver
+    $form.Controls.Add($lblSub)
+
+    # --- 3. CONTENEDOR DE OPCIONES ---
+    $grpOptions = New-Object System.Windows.Forms.GroupBox
+    $grpOptions.Text = "Selecciona un Reporte"
+    $grpOptions.Location = New-Object System.Drawing.Point(20, 90)
+    $grpOptions.Size = New-Object System.Drawing.Size(740, 280)
+    $grpOptions.ForeColor = [System.Drawing.Color]::LightGray
+    $form.Controls.Add($grpOptions)
+
+    # -- OPCION A: ENERGY REPORT --
+    $btnEnergy = New-Object System.Windows.Forms.Button
+    $btnEnergy.Text = "Reporte de Eficiencia (Energy)"
+    $btnEnergy.Location = New-Object System.Drawing.Point(30, 40)
+    $btnEnergy.Size = New-Object System.Drawing.Size(250, 50)
+    $btnEnergy.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnEnergy.ForeColor = [System.Drawing.Color]::White
+    $btnEnergy.FlatStyle = "Flat"
+    $btnEnergy.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $grpOptions.Controls.Add($btnEnergy)
+
+    $lblEnergy = New-Object System.Windows.Forms.Label
+    $lblEnergy.Text = "Analiza el comportamiento del sistema, busca errores de hardware USB y consumo excesivo."
+    $lblEnergy.Location = New-Object System.Drawing.Point(300, 45)
+    $lblEnergy.Size = New-Object System.Drawing.Size(400, 40)
+    $grpOptions.Controls.Add($lblEnergy)
+
+    # Selector de Duracion
+    $lblDur = New-Object System.Windows.Forms.Label
+    $lblDur.Text = "Duracion (seg):"
+    $lblDur.Location = New-Object System.Drawing.Point(30, 100)
+    $lblDur.AutoSize = $true
+    $grpOptions.Controls.Add($lblDur)
+
+    $numDuration = New-Object System.Windows.Forms.NumericUpDown
+    $numDuration.Location = New-Object System.Drawing.Point(120, 98)
+    $numDuration.Width = 60
+    $numDuration.Minimum = 5
+    $numDuration.Maximum = 300
+    $numDuration.Value = 60
+    $numDuration.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $numDuration.ForeColor = [System.Drawing.Color]::White
+    $grpOptions.Controls.Add($numDuration)
+
+    # -- OPCION B: BATTERY REPORT --
+    $btnBattery = New-Object System.Windows.Forms.Button
+    $btnBattery.Text = "Reporte de Bateria (Health)"
+    $btnBattery.Location = New-Object System.Drawing.Point(30, 150)
+    $btnBattery.Size = New-Object System.Drawing.Size(250, 50)
+    $btnBattery.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnBattery.ForeColor = [System.Drawing.Color]::LightGreen
+    $btnBattery.FlatStyle = "Flat"
+    $btnBattery.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $grpOptions.Controls.Add($btnBattery)
+
+    $lblBattery = New-Object System.Windows.Forms.Label
+    $lblBattery.Text = "Historial de uso, capacidad real vs diseño y ciclos de carga."
+    $lblBattery.Location = New-Object System.Drawing.Point(300, 155)
+    $lblBattery.Size = New-Object System.Drawing.Size(400, 40)
+    $grpOptions.Controls.Add($lblBattery)
+
+    # -- OPCION C: SLEEP STUDY --
+    $btnSleep = New-Object System.Windows.Forms.Button
+    $btnSleep.Text = "Sleep Study (Suspension)"
+    $btnSleep.Location = New-Object System.Drawing.Point(30, 210)
+    $btnSleep.Size = New-Object System.Drawing.Size(250, 50)
+    $btnSleep.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnSleep.ForeColor = [System.Drawing.Color]::White
+    $btnSleep.FlatStyle = "Flat"
+    $btnSleep.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $grpOptions.Controls.Add($btnSleep)
+
+    $lblSleep = New-Object System.Windows.Forms.Label
+    $lblSleep.Text = "Diagnostica drenaje de bateria durante la suspension (Modern Standby)."
+    $lblSleep.Location = New-Object System.Drawing.Point(300, 215)
+    $lblSleep.Size = New-Object System.Drawing.Size(400, 40)
+    $grpOptions.Controls.Add($lblSleep)
+
+    # --- 4. BARRA DE ESTADO ---
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(20, 390)
+    $progressBar.Size = New-Object System.Drawing.Size(740, 20)
+    $progressBar.Style = "Blocks" # Estilo sólido para llenado real
+    $form.Controls.Add($progressBar)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = "Listo para analizar."
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 420)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
+    $form.Controls.Add($lblStatus)
+
+    $btnOpenFolder = New-Object System.Windows.Forms.Button
+    $btnOpenFolder.Text = "Abrir Carpeta"
+    $btnOpenFolder.Location = New-Object System.Drawing.Point(560, 450)
+    $btnOpenFolder.Size = New-Object System.Drawing.Size(200, 40)
+    $btnOpenFolder.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $btnOpenFolder.ForeColor = [System.Drawing.Color]::White
+    $btnOpenFolder.FlatStyle = "Flat"
+    $form.Controls.Add($btnOpenFolder)
+
+    # --- VARIABLES DE ESTADO Y SINCRONIZACION ---
+    $script:ActiveProcess = $null
+    $script:ActiveReportPath = ""
+    $script:StartTime = $null
+    $script:TargetDuration = 0 # Variable para guardar la duración total
+
+    # --- 5. EL MONITOR ASINCRONO (TIMER DE CUENTA REGRESIVA) ---
+    $monitorTimer = New-Object System.Windows.Forms.Timer
+    $monitorTimer.Interval = 1000 # Actualizar cada segundo
+
+    $monitorTimer.Add_Tick({
+        # Calcular tiempo
+        if ($script:StartTime) {
+            $elapsed = (Get-Date) - $script:StartTime
+            $secondsElapsed = [int]$elapsed.TotalSeconds
+            
+            # Calculo inverso: Cuantos segundos faltan
+            $secondsRemaining = $script:TargetDuration - $secondsElapsed
+            if ($secondsRemaining -lt 0) { $secondsRemaining = 0 }
+
+            # Actualizar Barra (Se llena hacia arriba)
+            if ($secondsElapsed -le $progressBar.Maximum) {
+                $progressBar.Value = $secondsElapsed
+            }
+
+            # Actualizar Texto (Cuenta Regresiva)
+            $lblStatus.Text = "Analizando... Quedan $secondsRemaining segundos."
+        }
+
+        # Verificar si el proceso sigue vivo
+        if ($script:ActiveProcess -ne $null -and -not $script:ActiveProcess.HasExited) {
+            return
+        }
+
+        # --- EL PROCESO TERMINO ---
+        $monitorTimer.Stop()
+        $progressBar.Value = $progressBar.Maximum # Llenar barra al 100%
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        
+        # Reactivar botones
+        $btnEnergy.Enabled = $true; $btnBattery.Enabled = $true; $btnSleep.Enabled = $true
+
+        # Analizar resultados
+        if ($script:ActiveProcess.ExitCode -eq 0 -and (Test-Path $script:ActiveReportPath)) {
+            $lblStatus.Text = "Reporte generado con exito."
+            $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
+            
+            if ([System.Windows.Forms.MessageBox]::Show("Reporte generado exitosamente.`n`n¿Deseas abrirlo ahora?", "Completado", 'YesNo', 'Information') -eq 'Yes') {
+                Start-Process $script:ActiveReportPath
+            }
+        } else {
+            $lblStatus.Text = "Fallo al generar el reporte."
+            $lblStatus.ForeColor = [System.Drawing.Color]::Salmon
+            [System.Windows.Forms.MessageBox]::Show("El comando fallo.`nAsegurate de ejecutar como Administrador.`nCodigo: $($script:ActiveProcess.ExitCode)", "Error", 0, 16)
+        }
+    })
+
+    # --- LOGICA DE INICIO ---
+    $StartAnalysis = {
+        param($Type)
+        
+        # Preparar Directorios
+        $parentDir = Split-Path -Parent $PSScriptRoot
+        $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+        if (-not (Test-Path $diagDir)) { New-Item -Path $diagDir -ItemType Directory | Out-Null }
+        
+        $date = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+        $cmdArgs = ""
+        $duration = 0
+        
+        switch ($Type) {
+            'Energy' {
+                $duration = [int]$numDuration.Value
+                $lblStatus.Text = "Iniciando analisis de ENERGIA ($duration seg)..."
+                $script:ActiveReportPath = Join-Path $diagDir "Energy_Report_$date.html"
+                $cmdArgs = "/energy /output `"$script:ActiveReportPath`" /duration $duration"
+            }
+            'Battery' {
+                $duration = 5 # Estimado visual
+                $lblStatus.Text = "Generando reporte de BATERIA..."
+                $script:ActiveReportPath = Join-Path $diagDir "Battery_Report_$date.html"
+                $cmdArgs = "/batteryreport /output `"$script:ActiveReportPath`""
+            }
+            'Sleep' {
+                $duration = 5 # Estimado visual
+                $lblStatus.Text = "Analizando SUSPENSION..."
+                $script:ActiveReportPath = Join-Path $diagDir "Sleep_Study_$date.html"
+                $cmdArgs = "/sleepstudy /output `"$script:ActiveReportPath`""
+            }
+        }
+
+        # Configurar UI
+        $btnEnergy.Enabled = $false; $btnBattery.Enabled = $false; $btnSleep.Enabled = $false
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
+        
+        # Configurar Barra
+        $progressBar.Style = "Blocks"
+        $progressBar.Minimum = 0
+        $progressBar.Maximum = $duration
+        $progressBar.Value = 0
+        
+        # Guardar duración objetivo para la cuenta regresiva
+        $script:TargetDuration = $duration
+        
+        # Iniciar
+        try {
+            $script:StartTime = Get-Date
+            $script:ActiveProcess = Start-Process "powercfg.exe" -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+            $monitorTimer.Start()
+        } catch {
+            $lblStatus.Text = "Error al iniciar proceso: $_"
+            $lblStatus.ForeColor = [System.Drawing.Color]::Red
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+            $btnEnergy.Enabled = $true; $btnBattery.Enabled = $true; $btnSleep.Enabled = $true
+        }
     }
+
+    # --- EVENTOS ---
+    $btnEnergy.Add_Click({ & $StartAnalysis -Type 'Energy' })
+    $btnBattery.Add_Click({ & $StartAnalysis -Type 'Battery' })
+    $btnSleep.Add_Click({ & $StartAnalysis -Type 'Sleep' })
     
-    $reportPath = Join-Path -Path $diagDir -ChildPath "Reporte_Salud_$(Get-Date -Format 'yyyy-MM-dd_HH-mm').html"
-    Write-Log -LogLevel INFO -Message "Generando reporte de energia del sistema."
-    powercfg /energy /output $reportPath /duration 60
-    
-    if (Test-Path $reportPath) {
-        Write-Host "[OK] Reporte generado en: '$reportPath'" -ForegroundColor Green
-        Start-Process $reportPath
-	} else {
-     	Write-Error "No se pudo generar el reporte."
-    }
-		
-	Read-Host "`nPresiona Enter para volver..."
+    $btnOpenFolder.Add_Click({
+        $parentDir = Split-Path -Parent $PSScriptRoot
+        $diagDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
+        if (Test-Path $diagDir) { Start-Process $diagDir }
+    })
+
+    # Limpieza al cerrar
+    $form.Add_FormClosing({ $monitorTimer.Stop() })
+
+    $form.ShowDialog() | Out-Null
+    $form.Dispose()
 }
 
 # ===================================================================
@@ -2915,8 +3546,8 @@ function Show-NetworkDiagnosticsMenu {
 
     # --- 1. CONFIGURACION DEL FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Aegis Phoenix - Centro de Diagnostico de Red"
-    $form.Size = New-Object System.Drawing.Size(980, 700)
+    $form.Text = "Aegis Phoenix - Centro de Diagnostico de Red Avanzado"
+    $form.Size = New-Object System.Drawing.Size(1000, 720)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
@@ -2926,81 +3557,98 @@ function Show-NetworkDiagnosticsMenu {
     # --- 2. PANELES ---
     $pnlLeft = New-Object System.Windows.Forms.Panel
     $pnlLeft.Location = New-Object System.Drawing.Point(10, 10)
-    $pnlLeft.Size = New-Object System.Drawing.Size(280, 640)
+    $pnlLeft.Size = New-Object System.Drawing.Size(290, 660)
     $pnlLeft.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 40)
     $form.Controls.Add($pnlLeft)
 
-    # --- SECCION 1: ESTADO ---
+    # --- SECCION 1: ESTADO EN VIVO ---
     $grpStatus = New-Object System.Windows.Forms.GroupBox
-    $grpStatus.Text = "Estado de Conexion"
+    $grpStatus.Text = "Monitor de Estado"
     $grpStatus.ForeColor = [System.Drawing.Color]::LightGray
     $grpStatus.Location = New-Object System.Drawing.Point(10, 10)
-    $grpStatus.Size = New-Object System.Drawing.Size(260, 70)
+    $grpStatus.Size = New-Object System.Drawing.Size(270, 80)
     $pnlLeft.Controls.Add($grpStatus)
 
     $lblConnStatus = New-Object System.Windows.Forms.Label
-    $lblConnStatus.Text = "Iniciando..."
-    $lblConnStatus.Location = New-Object System.Drawing.Point(15, 30)
+    $lblConnStatus.Text = "Analizando..."
+    $lblConnStatus.Location = New-Object System.Drawing.Point(15, 25)
     $lblConnStatus.AutoSize = $true
-    $lblConnStatus.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $lblConnStatus.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
     $grpStatus.Controls.Add($lblConnStatus)
 
-    # --- SECCION 2: DIAGNOSTICO ---
+    $lblPublicIP = New-Object System.Windows.Forms.Label
+    $lblPublicIP.Text = "IP Pub: ..."
+    $lblPublicIP.Location = New-Object System.Drawing.Point(15, 50)
+    $lblPublicIP.AutoSize = $true
+    $lblPublicIP.ForeColor = [System.Drawing.Color]::Cyan
+    $grpStatus.Controls.Add($lblPublicIP)
+
+    # --- SECCION 2: DIAGNOSTICO INTELIGENTE ---
     $grpDiag = New-Object System.Windows.Forms.GroupBox
-    $grpDiag.Text = "Herramientas de Lectura"
+    $grpDiag.Text = "Analisis y Pruebas"
     $grpDiag.ForeColor = [System.Drawing.Color]::Cyan
     $grpDiag.Location = New-Object System.Drawing.Point(10, 100)
-    $grpDiag.Size = New-Object System.Drawing.Size(260, 230)
+    $grpDiag.Size = New-Object System.Drawing.Size(270, 240)
     $pnlLeft.Controls.Add($grpDiag)
 
+    $btnSmartDiag = New-Object System.Windows.Forms.Button
+    $btnSmartDiag.Text = "DIAGNOSTICO INTELIGENTE"
+    $btnSmartDiag.Location = New-Object System.Drawing.Point(15, 25)
+    $btnSmartDiag.Size = New-Object System.Drawing.Size(240, 40)
+    $btnSmartDiag.BackColor = [System.Drawing.Color]::Teal
+    $btnSmartDiag.ForeColor = [System.Drawing.Color]::White
+    $btnSmartDiag.FlatStyle = "Flat"
+    $btnSmartDiag.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $grpDiag.Controls.Add($btnSmartDiag)
+
     $btnIpConfig = New-Object System.Windows.Forms.Button
-    $btnIpConfig.Text = "Ver IP Completa (ipconfig)"
-    $btnIpConfig.Location = New-Object System.Drawing.Point(15, 30)
-    $btnIpConfig.Size = New-Object System.Drawing.Size(230, 35)
+    $btnIpConfig.Text = "Ver Detalles IP (ipconfig /all)"
+    $btnIpConfig.Location = New-Object System.Drawing.Point(15, 75)
+    $btnIpConfig.Size = New-Object System.Drawing.Size(240, 30)
     $btnIpConfig.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnIpConfig.ForeColor = [System.Drawing.Color]::White
     $btnIpConfig.FlatStyle = "Flat"
     $grpDiag.Controls.Add($btnIpConfig)
 
-    $btnPing = New-Object System.Windows.Forms.Button
-    $btnPing.Text = "Prueba de Ping (Google)"
-    $btnPing.Location = New-Object System.Drawing.Point(15, 75)
-    $btnPing.Size = New-Object System.Drawing.Size(230, 35)
-    $btnPing.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnPing.ForeColor = [System.Drawing.Color]::White
-    $btnPing.FlatStyle = "Flat"
-    $grpDiag.Controls.Add($btnPing)
-
-    $btnDns = New-Object System.Windows.Forms.Button
-    $btnDns.Text = "Resolucion DNS (nslookup)"
-    $btnDns.Location = New-Object System.Drawing.Point(15, 120)
-    $btnDns.Size = New-Object System.Drawing.Size(230, 35)
-    $btnDns.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $btnDns.ForeColor = [System.Drawing.Color]::White
-    $btnDns.FlatStyle = "Flat"
-    $grpDiag.Controls.Add($btnDns)
-
     $btnTrace = New-Object System.Windows.Forms.Button
-    $btnTrace.Text = "Trazar Ruta (Tracert)"
-    $btnTrace.Location = New-Object System.Drawing.Point(15, 165)
-    $btnTrace.Size = New-Object System.Drawing.Size(230, 35)
+    $btnTrace.Text = "Trazar Ruta (Tracert Google)"
+    $btnTrace.Location = New-Object System.Drawing.Point(15, 115)
+    $btnTrace.Size = New-Object System.Drawing.Size(240, 30)
     $btnTrace.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnTrace.ForeColor = [System.Drawing.Color]::White
     $btnTrace.FlatStyle = "Flat"
     $grpDiag.Controls.Add($btnTrace)
 
+    $btnNslookup = New-Object System.Windows.Forms.Button
+    $btnNslookup.Text = "Prueba DNS (Nslookup)"
+    $btnNslookup.Location = New-Object System.Drawing.Point(15, 155)
+    $btnNslookup.Size = New-Object System.Drawing.Size(240, 30)
+    $btnNslookup.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnNslookup.ForeColor = [System.Drawing.Color]::White
+    $btnNslookup.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnNslookup)
+    
+    $btnArp = New-Object System.Windows.Forms.Button
+    $btnArp.Text = "Ver Tabla ARP (Dispositivos)"
+    $btnArp.Location = New-Object System.Drawing.Point(15, 195)
+    $btnArp.Size = New-Object System.Drawing.Size(240, 30)
+    $btnArp.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $btnArp.ForeColor = [System.Drawing.Color]::White
+    $btnArp.FlatStyle = "Flat"
+    $grpDiag.Controls.Add($btnArp)
+
     # --- SECCION 3: REPARACION ---
     $grpRepair = New-Object System.Windows.Forms.GroupBox
-    $grpRepair.Text = "Acciones de Reparacion"
+    $grpRepair.Text = "Herramientas de Reparacion"
     $grpRepair.ForeColor = [System.Drawing.Color]::Orange
     $grpRepair.Location = New-Object System.Drawing.Point(10, 350)
-    $grpRepair.Size = New-Object System.Drawing.Size(260, 180)
+    $grpRepair.Size = New-Object System.Drawing.Size(270, 200)
     $pnlLeft.Controls.Add($grpRepair)
 
     $btnFlush = New-Object System.Windows.Forms.Button
     $btnFlush.Text = "Limpiar Cache DNS"
     $btnFlush.Location = New-Object System.Drawing.Point(15, 30)
-    $btnFlush.Size = New-Object System.Drawing.Size(230, 35)
+    $btnFlush.Size = New-Object System.Drawing.Size(240, 35)
     $btnFlush.BackColor = [System.Drawing.Color]::FromArgb(70, 50, 50)
     $btnFlush.ForeColor = [System.Drawing.Color]::White
     $btnFlush.FlatStyle = "Flat"
@@ -3009,26 +3657,44 @@ function Show-NetworkDiagnosticsMenu {
     $btnRenew = New-Object System.Windows.Forms.Button
     $btnRenew.Text = "Renovar IP (Release/Renew)"
     $btnRenew.Location = New-Object System.Drawing.Point(15, 75)
-    $btnRenew.Size = New-Object System.Drawing.Size(230, 35)
+    $btnRenew.Size = New-Object System.Drawing.Size(240, 35)
     $btnRenew.BackColor = [System.Drawing.Color]::FromArgb(70, 50, 50)
     $btnRenew.ForeColor = [System.Drawing.Color]::White
     $btnRenew.FlatStyle = "Flat"
     $grpRepair.Controls.Add($btnRenew)
 
     $btnReset = New-Object System.Windows.Forms.Button
-    $btnReset.Text = "Reset Completo de Red"
+    $btnReset.Text = "RESET TOTAL DE RED (Reinicio)"
     $btnReset.Location = New-Object System.Drawing.Point(15, 120)
-    $btnReset.Size = New-Object System.Drawing.Size(230, 35)
+    $btnReset.Size = New-Object System.Drawing.Size(240, 35)
     $btnReset.BackColor = [System.Drawing.Color]::Maroon
     $btnReset.ForeColor = [System.Drawing.Color]::White
     $btnReset.FlatStyle = "Flat"
-    $btnReset.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btnReset.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $grpRepair.Controls.Add($btnReset)
+    
+    $lblResetWarn = New-Object System.Windows.Forms.Label
+    $lblResetWarn.Text = "* Reinicia Winsock y TCP/IP"
+    $lblResetWarn.Location = New-Object System.Drawing.Point(15, 165)
+    $lblResetWarn.AutoSize = $true
+    $lblResetWarn.ForeColor = [System.Drawing.Color]::Gray
+    $lblResetWarn.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $grpRepair.Controls.Add($lblResetWarn)
+
+    # --- BOTONES INFERIORES ---
+    $btnExport = New-Object System.Windows.Forms.Button
+    $btnExport.Text = "Exportar Log"
+    $btnExport.Location = New-Object System.Drawing.Point(10, 570)
+    $btnExport.Size = New-Object System.Drawing.Size(130, 30)
+    $btnExport.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+    $btnExport.FlatStyle = "Flat"
+    $btnExport.ForeColor = [System.Drawing.Color]::White
+    $pnlLeft.Controls.Add($btnExport)
 
     $btnClearLog = New-Object System.Windows.Forms.Button
-    $btnClearLog.Text = "Limpiar Pantalla"
-    $btnClearLog.Location = New-Object System.Drawing.Point(10, 590)
-    $btnClearLog.Size = New-Object System.Drawing.Size(260, 30)
+    $btnClearLog.Text = "Limpiar Log"
+    $btnClearLog.Location = New-Object System.Drawing.Point(150, 570)
+    $btnClearLog.Size = New-Object System.Drawing.Size(130, 30)
     $btnClearLog.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
     $btnClearLog.FlatStyle = "Flat"
     $btnClearLog.ForeColor = [System.Drawing.Color]::White
@@ -3036,8 +3702,8 @@ function Show-NetworkDiagnosticsMenu {
 
     # --- 3. CONSOLA VIRTUAL (OUTPUT) ---
     $consoleBox = New-Object System.Windows.Forms.RichTextBox
-    $consoleBox.Location = New-Object System.Drawing.Point(300, 10)
-    $consoleBox.Size = New-Object System.Drawing.Size(650, 640)
+    $consoleBox.Location = New-Object System.Drawing.Point(310, 10)
+    $consoleBox.Size = New-Object System.Drawing.Size(660, 660)
     $consoleBox.BackColor = [System.Drawing.Color]::FromArgb(10, 10, 15)
     $consoleBox.ForeColor = [System.Drawing.Color]::LightGreen
     $consoleBox.Font = New-Object System.Drawing.Font("Consolas", 10)
@@ -3045,77 +3711,58 @@ function Show-NetworkDiagnosticsMenu {
     $consoleBox.ScrollBars = "Vertical"
     $form.Controls.Add($consoleBox)
 
-    # --- TOOLTIPS (DESCRIPCIONES EMERGENTES) ---
+    # --- TOOLTIPS ---
     $tt = New-Object System.Windows.Forms.ToolTip
-    $tt.AutoPopDelay = 5000
-    $tt.InitialDelay = 800
-    $tt.ReshowDelay = 500
-    $tt.ShowAlways = $true
+    $tt.SetToolTip($btnSmartDiag, "Ejecuta una bateria de pruebas: Ping a Gateway, Ping a Internet, Resolucion DNS y Latencia.")
+    $tt.SetToolTip($btnReset, "Restablece la pila TCP/IP y Winsock a valores de fabrica. Requiere reinicio.")
 
-    # Asignacion de textos (Sin acentos para consistencia)
-    $tt.SetToolTip($btnIpConfig, "Muestra tu direccion IP local, mascara de subred y puerta de enlace.")
-    $tt.SetToolTip($btnPing, "Envia paquetes a Google (8.8.8.8) para verificar si tienes salida a Internet.")
-    $tt.SetToolTip($btnDns, "Prueba si tu sistema puede traducir nombres (ej. google.com) a direcciones IP.")
-    $tt.SetToolTip($btnTrace, "Muestra la ruta y saltos que toman tus datos hasta llegar a Google.")
-    
-    $tt.SetToolTip($btnFlush, "Borra la memoria temporal de nombres DNS. util si no puedes entrar a ciertas webs.")
-    $tt.SetToolTip($btnRenew, "Desconecta y vuelve a solicitar una direccion IP al router (DCHP).")
-    $tt.SetToolTip($btnReset, "ADVERTENCIA: Restablece Winsock y TCP/IP a fabrica. Requiere reiniciar el PC.")
-    
-    $tt.SetToolTip($btnClearLog, "Borra todo el texto de la consola de la derecha.")
-    $tt.SetToolTip($lblConnStatus, "Estado actual de tu conexion a Internet.")
-
-    # --- FUNCIONES HELPER ---
-    
+    # --- FUNCIONES DE LOGGING ---
     $LogToBox = {
-        param($Msg, $Color = "LightGreen", $IsHeader = $false)
+        param($Msg, $Color = "LightGreen", $IsHeader = $false, $IsBold = $false)
         
         $consoleBox.SelectionStart = $consoleBox.TextLength
         $consoleBox.SelectionLength = 0
         $consoleBox.SelectionColor = [System.Drawing.Color]::FromName($Color)
         
-        $time = Get-Date -Format "HH:mm:ss"
+        if ($IsBold) { $consoleBox.SelectionFont = New-Object System.Drawing.Font($consoleBox.Font, [System.Drawing.FontStyle]::Bold) }
+        else { $consoleBox.SelectionFont = New-Object System.Drawing.Font($consoleBox.Font, [System.Drawing.FontStyle]::Regular) }
+        
+        $timestamp = Get-Date -Format "HH:mm:ss"
         
         if ($IsHeader) {
             $consoleBox.AppendText("`r`n" + ("=" * 60) + "`r`n")
-            $consoleBox.AppendText(" [$time]  $Msg`r`n")
+            $consoleBox.AppendText(" [$timestamp]  $Msg`r`n")
             $consoleBox.AppendText(("=" * 60) + "`r`n")
         } else {
-            if ($Msg -match "^\s*$") { 
-                $consoleBox.AppendText("$Msg`r`n") 
-            } else {
-                if ($Msg.StartsWith(" ")) {
-                    $consoleBox.AppendText("$Msg`r`n") 
-                } else {
-                    $consoleBox.AppendText(" [$time] $Msg`r`n") 
-                }
-            }
+            if ($Msg -match "^\s*$") { $consoleBox.AppendText("$Msg`r`n") }
+            else { $consoleBox.AppendText(" [$timestamp] $Msg`r`n") }
         }
         $consoleBox.ScrollToCaret()
     }
 
+    # --- FUNCION: EJECUCION ASINCRONA ROBUSTA ---
     $RunAsyncProcess = {
         param($Exe, $CmdArgs, $Title, $ClearConsole = $true)
         
         if ($ClearConsole) { $consoleBox.Clear() }
-        
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        & $LogToBox -Msg "INICIANDO: $Title" -IsHeader $true -Color "Cyan"
+        & $LogToBox -Msg "EJECUTANDO: $Title" -IsHeader $true -Color "Cyan"
         [System.Windows.Forms.Application]::DoEvents()
 
-        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-        $pinfo.FileName = $Exe
-        $pinfo.Arguments = $CmdArgs
-        $pinfo.RedirectStandardOutput = $true
-        $pinfo.RedirectStandardError = $true
-        $pinfo.UseShellExecute = $false
-        $pinfo.CreateNoWindow = $true
-        
-        $oemEncoding = [System.Text.Encoding]::GetEncoding([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
-        $pinfo.StandardOutputEncoding = $oemEncoding
-        $pinfo.StandardErrorEncoding = $oemEncoding
-
         try {
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = $Exe
+            $pinfo.Arguments = $CmdArgs
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.RedirectStandardError = $true
+            $pinfo.UseShellExecute = $false
+            $pinfo.CreateNoWindow = $true
+            
+            # CRITICO: Usar codificacion OEM para leer correctamente tildes y caracteres de consola
+            $oemEncoding = [System.Text.Encoding]::GetEncoding([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
+            $pinfo.StandardOutputEncoding = $oemEncoding
+            $pinfo.StandardErrorEncoding = $oemEncoding
+
             $p = New-Object System.Diagnostics.Process
             $p.StartInfo = $pinfo
             $p.Start() | Out-Null
@@ -3123,127 +3770,175 @@ function Show-NetworkDiagnosticsMenu {
             while (-not $p.HasExited) {
                 $line = $p.StandardOutput.ReadLine()
                 if ($null -ne $line) {
-                    $lineColor = "White"
-                    if ($line -match "Error|Fallo|Unreachable|agotado|timed out") { $lineColor = "Salmon" }
-                    if ($line -match "Reply|Respuesta|Pinging") { $lineColor = "LightGreen" }
+                    $c = "White"
+                    if ($line -match "error|fallo|failed|unreachable|agotado|timed out") { $c = "Salmon" }
+                    if ($line -match "reply|respuesta|ms") { $c = "LightGreen" }
+                    if ($line -match "tracing|trazando|haciendo ping") { $c = "Yellow" }
                     
+                    # Logica especial para ipconfig
+                    if ($line -match "IPv4") { $c = "Cyan" }
+
                     $consoleBox.SelectionStart = $consoleBox.TextLength
                     $consoleBox.SelectionLength = 0
-                    $consoleBox.SelectionColor = [System.Drawing.Color]::FromName($lineColor)
+                    $consoleBox.SelectionColor = [System.Drawing.Color]::FromName($c)
                     $consoleBox.AppendText("$line`r`n")
                     $consoleBox.ScrollToCaret()
-                    
                     [System.Windows.Forms.Application]::DoEvents()
                 }
             }
             
-            $rest = $p.StandardOutput.ReadToEnd()
-            if ($rest) { $consoleBox.AppendText("$rest`r`n") }
-            
+            # Leer remanente
+            $rest = $p.StandardOutput.ReadToEnd(); if ($rest) { $consoleBox.AppendText("$rest`r`n") }
             $err = $p.StandardError.ReadToEnd()
             if (-not [string]::IsNullOrWhiteSpace($err)) {
-                if ($err -match "Respuesta no autoritativa|Non-authoritative") {
-                    $consoleBox.SelectionColor = [System.Drawing.Color]::Cyan
-                    $consoleBox.AppendText("NOTA: $err`r`n") 
-                } else {
-                    $consoleBox.SelectionColor = [System.Drawing.Color]::Salmon
-                    $consoleBox.AppendText("ERROR DE SISTEMA: $err`r`n") 
+                if ($err -notmatch "Non-authoritative") { # Ignorar advertencia comun de nslookup
+                    & $LogToBox -Msg "STDERR: $err" -Color "Salmon"
                 }
             }
 
         } catch {
-            & $LogToBox -Msg "Error critico al ejecutar el proceso: $_" -Color "Red"
+            & $LogToBox -Msg "Error critico al ejecutar proceso: $_" -Color "Red"
+        }
+        
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        & $LogToBox -Msg "Fin del proceso." -Color "Gray"
+    }
+
+    # --- FUNCION: DIAGNOSTICO INTELIGENTE (.NET) ---
+    $RunSmartDiag = {
+        $consoleBox.Clear()
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        & $LogToBox -Msg "INICIANDO DIAGNOSTICO INTELIGENTE" -IsHeader $true -Color "Cyan"
+        
+        $pingSender = New-Object System.Net.NetworkInformation.Ping
+        $success = $true
+
+        # 1. Gateway
+        & $LogToBox -Msg "PASO 1: Verificando Puerta de Enlace (Router Local)..." -Color "Yellow" -IsBold $true
+        $gateway = (Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue).NextHop
+        if ($gateway) {
+            try {
+                $reply = $pingSender.Send($gateway, 1000)
+                if ($reply.Status -eq 'Success') {
+                    & $LogToBox -Msg "   [OK] Router accesible en $gateway (Latencia: $($reply.RoundtripTime) ms)" -Color "LightGreen"
+                } else {
+                    & $LogToBox -Msg "   [FALLO] No se recibe respuesta del Router ($gateway)." -Color "Red"
+                    & $LogToBox -Msg "   -> Posible problema de cable o Wi-Fi local." -Color "Salmon"
+                    $success = $false
+                }
+            } catch {
+                & $LogToBox -Msg "   [ERROR] No se pudo hacer ping al Gateway." -Color "Red"
+            }
+        } else {
+            & $LogToBox -Msg "   [FALLO] No se detecta Puerta de Enlace. ¿Estas conectado?" -Color "Red"
+            $success = $false
+        }
+
+        # 2. Internet (IP)
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 500
+        & $LogToBox -Msg "`r`nPASO 2: Verificando Salida a Internet (Ping 8.8.8.8)..." -Color "Yellow" -IsBold $true
+        try {
+            $reply = $pingSender.Send("8.8.8.8", 2000)
+            if ($reply.Status -eq 'Success') {
+                & $LogToBox -Msg "   [OK] Conexion a Internet confirmada (Latencia: $($reply.RoundtripTime) ms)" -Color "LightGreen"
+            } else {
+                & $LogToBox -Msg "   [FALLO] El Router responde, pero no hay Internet." -Color "Red"
+                & $LogToBox -Msg "   -> Problema de tu proveedor (ISP) o del modem." -Color "Salmon"
+                $success = $false
+            }
+        } catch {
+             & $LogToBox -Msg "   [ERROR] Fallo general de ping." -Color "Red"
+             $success = $false
+        }
+
+        # 3. DNS
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 500
+        & $LogToBox -Msg "`r`nPASO 3: Verificando Resolucion de Nombres (DNS)..." -Color "Yellow" -IsBold $true
+        try {
+            $dns = [System.Net.Dns]::GetHostAddresses("google.com")
+            if ($dns) {
+                & $LogToBox -Msg "   [OK] DNS funciona correctamente ($($dns[0].IPAddressToString))" -Color "LightGreen"
+            }
+        } catch {
+            & $LogToBox -Msg "   [FALLO] Internet funciona, pero el DNS falla." -Color "Red"
+            & $LogToBox -Msg "   -> Recomendacion: Usa 'Limpiar Cache DNS' o cambia tus DNS a 8.8.8.8/1.1.1.1" -Color "Orange"
+            $success = $false
+        }
+
+        if ($success) {
+            & $LogToBox -Msg "`r`n[CONCLUSION] Tu red parece funcionar correctamente." -Color "Cyan" -IsBold $true
+        } else {
+            & $LogToBox -Msg "`r`n[CONCLUSION] Se detectaron problemas. Revisa los pasos en rojo." -Color "Salmon" -IsBold $true
         }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        & $LogToBox -Msg "Proceso finalizado." -Color "Gray" -IsHeader $false
     }
 
     # --- EVENTOS ---
+    $btnSmartDiag.Add_Click({ & $RunSmartDiag })
+    $btnIpConfig.Add_Click({ & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/all" -Title "Configuracion IP" })
+    $btnTrace.Add_Click({ & $RunAsyncProcess -Exe "tracert.exe" -CmdArgs "-d 8.8.8.8" -Title "Traza de Ruta" })
+    $btnNslookup.Add_Click({ & $RunAsyncProcess -Exe "nslookup.exe" -CmdArgs "google.com" -Title "Prueba DNS" })
+    $btnArp.Add_Click({ & $RunAsyncProcess -Exe "arp.exe" -CmdArgs "-a" -Title "Tabla ARP" })
 
-    $btnIpConfig.Add_Click({
-        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/all" -Title "Configuracion IP Detallada"
-    })
-
-    $btnPing.Add_Click({
-        & $RunAsyncProcess -Exe "ping.exe" -CmdArgs "8.8.8.8" -Title "Prueba de Conectividad (Google DNS)"
-    })
-
-    $btnDns.Add_Click({
-        & $RunAsyncProcess -Exe "nslookup.exe" -CmdArgs "google.com" -Title "Resolucion de Nombres (DNS)"
-    })
-
-    $btnTrace.Add_Click({
-        & $RunAsyncProcess -Exe "tracert.exe" -CmdArgs "-d 8.8.8.8" -Title "Traza de Ruta (Tracert)"
-    })
-
-    $btnFlush.Add_Click({
-        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/flushdns" -Title "Limpiar Cache DNS"
-    })
-
-    $btnRenew.Add_Click({
-        if ([System.Windows.Forms.MessageBox]::Show("Esto desconectara internet momentaneamente. ¿Continuar?", "Confirmar", 'YesNo', 'Warning') -ne 'Yes') { return }
-        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/release" -Title "Paso 1: Liberar IP" -ClearConsole $true
-        & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/renew" -Title "Paso 2: Renovar IP" -ClearConsole $false
-        & $StartStatusCheck
+    $btnFlush.Add_Click({ & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/flushdns" -Title "Limpieza de Cache DNS" })
+    $btnRenew.Add_Click({ 
+        if ([System.Windows.Forms.MessageBox]::Show("Esto desconectara momentaneamente la red. ¿Seguir?", "Confirmar", 'YesNo') -eq 'Yes') {
+            & $RunAsyncProcess -Exe "cmd.exe" -CmdArgs "/c ipconfig /release && ipconfig /renew" -Title "Renovacion de IP" 
+        }
     })
 
     $btnReset.Add_Click({
-        $msg = "ADVERTENCIA CRITICA:`n`nEsto restablecera Winsock y la pila TCP/IP a fabrica.`nEs necesario REINICIAR el equipo para completar.`n`n¿Deseas continuar?"
-        if ([System.Windows.Forms.MessageBox]::Show($msg, "Reset Completo de Red", 'YesNo', 'Error') -eq 'Yes') {
-            & $RunAsyncProcess -Exe "netsh.exe" -CmdArgs "winsock reset" -Title "Paso 1: Reset Winsock" -ClearConsole $true
-            & $RunAsyncProcess -Exe "netsh.exe" -CmdArgs "int ip reset" -Title "Paso 2: Reset TCP/IP" -ClearConsole $false
-            [System.Windows.Forms.MessageBox]::Show("Reset completado.`nPor favor, reinicia tu equipo ahora.", "Reinicio Requerido", 'OK', 'Information')
+        if ([System.Windows.Forms.MessageBox]::Show("ADVERTENCIA: Esto reiniciara Winsock y la pila TCP/IP.\nEs necesario REINICIAR el PC despues.\n\n¿Continuar?", "Reset Critico", 'YesNo', 'Warning') -eq 'Yes') {
+            & $RunAsyncProcess -Exe "cmd.exe" -CmdArgs "/c netsh winsock reset && netsh int ip reset" -Title "Reset Completo de Red"
+            [System.Windows.Forms.MessageBox]::Show("Reset completado. Por favor reinicia tu equipo.", "Informacion", 0, 64)
         }
     })
 
     $btnClearLog.Add_Click({ $consoleBox.Clear() })
 
-    # --- LOGICA DE INICIO ---
-    $timerCheck = New-Object System.Windows.Forms.Timer
-    $timerCheck.Interval = 500
-    
-    $StartStatusCheck = {
-        $lblConnStatus.Text = "Verificando..."
-        $lblConnStatus.ForeColor = [System.Drawing.Color]::Yellow
-        
-        $script:NetJob = Start-Job -ScriptBlock {
-            $ping = New-Object System.Net.NetworkInformation.Ping
-            try {
-                $reply = $ping.Send("8.8.8.8", 2000)
-                return ($reply.Status -eq "Success")
-            } catch { return $false }
-        }
-        $timerCheck.Start()
-    }
-
-    $timerCheck.Add_Tick({
-        if ($script:NetJob.State -eq 'Completed' -or $script:NetJob.State -eq 'Failed') {
-            $timerCheck.Stop()
-            $result = Receive-Job -Job $script:NetJob -ErrorAction SilentlyContinue
-            Remove-Job -Job $script:NetJob -Force
-            
-            if ($result -eq $true) {
-                $lblConnStatus.Text = "CONECTADO"
-                $lblConnStatus.ForeColor = [System.Drawing.Color]::LightGreen
-                & $LogToBox -Msg "Estado Inicial: Conectado a Internet." -Color "Gray"
-            } else {
-                $lblConnStatus.Text = "SIN CONEXION"
-                $lblConnStatus.ForeColor = [System.Drawing.Color]::Salmon
-                & $LogToBox -Msg "Estado Inicial: Sin acceso a Internet." -Color "Salmon"
-            }
+    $btnExport.Add_Click({
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Filter = "Archivo de Texto (*.txt)|*.txt"
+        $sfd.FileName = "Diagnostico_Red_$(Get-Date -Format 'yyyyMMdd_HHmm').txt"
+        if ($sfd.ShowDialog() -eq 'OK') {
+            $consoleBox.Text | Out-File $sfd.FileName -Encoding UTF8
+            [System.Windows.Forms.MessageBox]::Show("Log guardado.", "Exito", 0, 64)
         }
     })
 
-    $form.Add_Shown({ 
-        & $LogToBox -Msg "Bienvenido al Centro de Diagnostico." -Color "White"
-        & $StartStatusCheck
+    # --- TAREA DE FONDO: IP PUBLICA Y ESTADO ---
+    $form.Add_Shown({
+        & $LogToBox -Msg "Bienvenido. Selecciona una opcion para comenzar." -Color "Gray"
+
+        # Check simple inicial
+        $ping = New-Object System.Net.NetworkInformation.Ping
+        try {
+            if (($ping.Send("8.8.8.8", 1000)).Status -eq 'Success') {
+                $lblConnStatus.Text = "CONECTADO"
+                $lblConnStatus.ForeColor = [System.Drawing.Color]::LightGreen
+
+                # Intentar obtener IP Publica (Async dummy via job logic simplificada visualmente)
+                try {
+                    $web = Invoke-RestMethod -Uri "http://ip-api.com/json" -TimeoutSec 3 -ErrorAction Stop
+                    $lblPublicIP.Text = "IP: $($web.query) ($($web.isp))"
+                } catch {
+                    $lblPublicIP.Text = "IP Pub: (No disponible)"
+                }
+            } else {
+                $lblConnStatus.Text = "SIN INTERNET"
+                $lblConnStatus.ForeColor = [System.Drawing.Color]::Salmon
+            }
+        } catch {
+            $lblConnStatus.Text = "ERROR RED"
+            $lblConnStatus.ForeColor = [System.Drawing.Color]::Red
+        }
     })
 
     $form.ShowDialog() | Out-Null
     $form.Dispose()
-    
-    Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 
 # ===================================================================
@@ -5866,34 +6561,56 @@ function Show-InventoryMenu {
 }
 
 # ===================================================================
-# --- MoDULO DE Gestion de Drivers ---
+# --- MODULO DE GESTION DE DRIVERS ---
 # ===================================================================
 function Show-DriverMenu {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    # --- 1. CONFIGURACION DEL FORMULARIO PRINCIPAL ---
+    # --- 1. CONFIGURACION DEL FORMULARIO ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Aegis Phoenix - Gestion de Drivers"
-    $form.Size = New-Object System.Drawing.Size(980, 700)
+    $form.Text = "Aegis Phoenix - Administrador de Controladores (Drivers)"
+    $form.Size = New-Object System.Drawing.Size(1050, 750)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
     $form.ForeColor = [System.Drawing.Color]::White
 
-    # --- 2. PANEL SUPERIOR ---
+    # --- 2. PANEL SUPERIOR (FILTROS) ---
     $lblInfo = New-Object System.Windows.Forms.Label
-    $lblInfo.Text = "Controladores de Terceros"
+    $lblInfo.Text = "Repositorio de Drivers (Driver Store)"
     $lblInfo.Location = New-Object System.Drawing.Point(20, 15)
     $lblInfo.AutoSize = $true
     $lblInfo.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($lblInfo)
 
+    $lblSearch = New-Object System.Windows.Forms.Label
+    $lblSearch.Text = "Filtrar:"
+    $lblSearch.Location = New-Object System.Drawing.Point(350, 23)
+    $lblSearch.AutoSize = $true
+    $lblSearch.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblSearch)
+
+    $txtSearch = New-Object System.Windows.Forms.TextBox
+    $txtSearch.Location = New-Object System.Drawing.Point(410, 20)
+    $txtSearch.Width = 300
+    $txtSearch.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
+    $txtSearch.ForeColor = [System.Drawing.Color]::Yellow
+    $txtSearch.BorderStyle = "FixedSingle"
+    $form.Controls.Add($txtSearch)
+
+    $chkShowMS = New-Object System.Windows.Forms.CheckBox
+    $chkShowMS.Text = "Mostrar Microsoft"
+    $chkShowMS.Location = New-Object System.Drawing.Point(730, 20)
+    $chkShowMS.AutoSize = $true
+    $chkShowMS.ForeColor = [System.Drawing.Color]::Silver
+    $form.Controls.Add($chkShowMS)
+
     $btnRefresh = New-Object System.Windows.Forms.Button
-    $btnRefresh.Text = "Refrescar Lista"
-    $btnRefresh.Location = New-Object System.Drawing.Point(800, 15)
-    $btnRefresh.Size = New-Object System.Drawing.Size(140, 30)
+    $btnRefresh.Text = "Refrescar"
+    $btnRefresh.Location = New-Object System.Drawing.Point(880, 15)
+    $btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
     $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnRefresh.ForeColor = [System.Drawing.Color]::White
     $btnRefresh.FlatStyle = "Flat"
@@ -5902,18 +6619,20 @@ function Show-DriverMenu {
     # --- 3. DATAGRIDVIEW ---
     $grid = New-Object System.Windows.Forms.DataGridView
     $grid.Location = New-Object System.Drawing.Point(20, 60)
-    $grid.Size = New-Object System.Drawing.Size(920, 420)
+    $grid.Size = New-Object System.Drawing.Size(990, 420)
     $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
     $grid.BorderStyle = "None"
     $grid.GridColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $grid.RowHeadersVisible = $false
     $grid.AllowUserToAddRows = $false
-    
-    # Habilitar Seleccion Multiple para facilitar el uso
     $grid.SelectionMode = "FullRowSelect"
-    $grid.MultiSelect = $true 
-    
+    $grid.MultiSelect = $true
     $grid.AutoSizeColumnsMode = "Fill"
+    
+    # Optimizacion grafica
+    $type = $grid.GetType()
+    $prop = $type.GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic)
+    $prop.SetValue($grid, $true, $null)
 
     # Estilos
     $defaultStyle = New-Object System.Windows.Forms.DataGridViewCellStyle
@@ -5932,261 +6651,295 @@ function Show-DriverMenu {
     $colCheck.Name = "Check"
     $grid.Columns.Add($colCheck) | Out-Null
 
-    $colInfName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colInfName.HeaderText = "ID (OEM)"
-    $colInfName.Name = "InfName"
-    $colInfName.Width = 80
-    $grid.Columns.Add($colInfName) | Out-Null
+    $colInf = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colInf.HeaderText = "Archivo INF"
+    $colInf.Name = "InfName"
+    $colInf.Width = 100
+    $colInf.ReadOnly = $true
+    $grid.Columns.Add($colInf) | Out-Null
 
     $colProv = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colProv.HeaderText = "Fabricante"
+    $colProv.HeaderText = "Fabricante (Provider)"
+    $colProv.Name = "Provider"
     $colProv.Width = 200
+    $colProv.ReadOnly = $true
     $grid.Columns.Add($colProv) | Out-Null
 
     $colClass = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colClass.HeaderText = "Clase"
+    $colClass.HeaderText = "Clase de Dispositivo"
+    $colClass.Name = "Class"
     $colClass.Width = 150
+    $colClass.ReadOnly = $true
     $grid.Columns.Add($colClass) | Out-Null
 
     $colVer = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colVer.HeaderText = "Version"
+    $colVer.Name = "Version"
     $colVer.Width = 100
+    $colVer.ReadOnly = $true
     $grid.Columns.Add($colVer) | Out-Null
 
     $colDate = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colDate.HeaderText = "Fecha"
+    $colDate.Name = "Date"
     $colDate.Width = 100
+    $colDate.ReadOnly = $true
     $grid.Columns.Add($colDate) | Out-Null
-    
+
+    # Columna oculta para ID objeto
+    $colObj = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colObj.Name = "ObjID"
+    $colObj.Visible = $false
+    $grid.Columns.Add($colObj) | Out-Null
+
     $form.Controls.Add($grid)
 
-    # --- EVENTO DE TECLADO (Barra Espaciadora) ---
-    # Este bloque debe ir DESPUÉS de añadir el grid al formulario
-    $grid.Add_KeyDown({
-        param($sender, $e)
-        if ($e.KeyCode -eq 'Space') {
-            # Detener el comportamiento por defecto (bajar scroll)
-            $e.SuppressKeyPress = $true 
-            
-            # Recorrer todas las filas seleccionadas (soporta multiseleccion)
-            foreach ($row in $sender.SelectedRows) {
-                # Invertir el valor del checkbox
-                $currentState = $row.Cells["Check"].Value
-                # Manejar valores nulos por seguridad
-                if ($currentState -eq $null) { $currentState = $false }
-                $row.Cells["Check"].Value = -not $currentState
-            }
-        }
-    })
+    # --- 4. PANEL DE DETALLES ---
+    $grpDet = New-Object System.Windows.Forms.GroupBox
+    $grpDet.Text = "Informacion Detallada"
+    $grpDet.ForeColor = [System.Drawing.Color]::Silver
+    $grpDet.Location = New-Object System.Drawing.Point(20, 490)
+    $grpDet.Size = New-Object System.Drawing.Size(990, 70)
+    $form.Controls.Add($grpDet)
 
-    # --- 4. BARRA DE ESTADO ---
+    $lblDetailPath = New-Object System.Windows.Forms.Label
+    $lblDetailPath.Text = "Selecciona un driver para ver detalles..."
+    $lblDetailPath.Location = New-Object System.Drawing.Point(15, 25)
+    $lblDetailPath.AutoSize = $true
+    $lblDetailPath.ForeColor = [System.Drawing.Color]::Cyan
+    $grpDet.Controls.Add($lblDetailPath)
+
+    # --- 5. BARRA DE ESTADO ---
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(20, 490)
-    $progressBar.Size = New-Object System.Drawing.Size(920, 20)
+    $progressBar.Location = New-Object System.Drawing.Point(20, 570)
+    $progressBar.Size = New-Object System.Drawing.Size(990, 10)
     $form.Controls.Add($progressBar)
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Text = "Listo."
-    $lblStatus.Location = New-Object System.Drawing.Point(20, 520)
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 590)
     $lblStatus.AutoSize = $true
     $lblStatus.ForeColor = [System.Drawing.Color]::Yellow
     $form.Controls.Add($lblStatus)
 
-    # --- 5. BOTONES DE ACCIoN ---
+    # --- 6. BOTONES DE ACCION ---
     $btnSelectAll = New-Object System.Windows.Forms.Button
-    $btnSelectAll.Text = "Marcar Todo"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 560)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(100, 30)
+    $btnSelectAll.Text = "Todo"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(20, 620)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(60, 40)
     $btnSelectAll.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     $btnSelectAll.FlatStyle = "Flat"
     $form.Controls.Add($btnSelectAll)
 
     $btnBackup = New-Object System.Windows.Forms.Button
-    $btnBackup.Text = "BACKUP SELECCIONADOS"
-    $btnBackup.Location = New-Object System.Drawing.Point(140, 550)
-    $btnBackup.Size = New-Object System.Drawing.Size(390, 50)
+    $btnBackup.Text = "EXPORTAR (Backup)"
+    $btnBackup.Location = New-Object System.Drawing.Point(90, 620)
+    $btnBackup.Size = New-Object System.Drawing.Size(250, 40)
     $btnBackup.BackColor = [System.Drawing.Color]::SeaGreen
     $btnBackup.ForeColor = [System.Drawing.Color]::White
     $btnBackup.FlatStyle = "Flat"
-    $btnBackup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btnBackup.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnBackup)
 
     $btnRestore = New-Object System.Windows.Forms.Button
-    $btnRestore.Text = "RESTAURAR DRIVERS"
-    $btnRestore.Location = New-Object System.Drawing.Point(550, 550)
-    $btnRestore.Size = New-Object System.Drawing.Size(390, 50)
-    $btnRestore.BackColor = [System.Drawing.Color]::FromArgb(70, 50, 50)
+    $btnRestore.Text = "INSTALAR (Restaurar)"
+    $btnRestore.Location = New-Object System.Drawing.Point(350, 620)
+    $btnRestore.Size = New-Object System.Drawing.Size(250, 40)
+    $btnRestore.BackColor = [System.Drawing.Color]::FromArgb(70, 70, 70)
     $btnRestore.ForeColor = [System.Drawing.Color]::White
     $btnRestore.FlatStyle = "Flat"
-    $btnRestore.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btnRestore.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $form.Controls.Add($btnRestore)
 
-    # --- LoGICA: ESCANEAR ---
-    $ScanDrivers = {
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "ELIMINAR (Limpiar)"
+    $btnDelete.Location = New-Object System.Drawing.Point(610, 620)
+    $btnDelete.Size = New-Object System.Drawing.Size(200, 40)
+    $btnDelete.BackColor = [System.Drawing.Color]::Maroon
+    $btnDelete.ForeColor = [System.Drawing.Color]::White
+    $btnDelete.FlatStyle = "Flat"
+    $btnDelete.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($btnDelete)
+
+    # Checkbox para Forzar Instalacion
+    $chkForce = New-Object System.Windows.Forms.CheckBox
+    $chkForce.Text = "Forzar accion (/force)"
+    $chkForce.Location = New-Object System.Drawing.Point(830, 620)
+    $chkForce.Width = 150
+    $chkForce.ForeColor = [System.Drawing.Color]::Salmon
+    $form.Controls.Add($chkForce)
+
+    # --- VARIABLES Y CACHE ---
+    $script:DriverCache = @()
+
+    # --- LOGICA: RENDERIZAR GRID (Rapido) ---
+    $RenderGrid = {
+        $grid.SuspendLayout()
         $grid.Rows.Clear()
-        $lblStatus.Text = "Escaneando drivers instalados..."
+        
+        $searchTerm = $txtSearch.Text.Trim()
+        
+        $filtered = $script:DriverCache
+        
+        # Filtro de Busqueda
+        if (-not [string]::IsNullOrWhiteSpace($searchTerm)) {
+            $filtered = $filtered | Where-Object { 
+                $_.ProviderName -match $searchTerm -or 
+                $_.ClassName -match $searchTerm -or 
+                $_.Driver -match $searchTerm 
+            }
+        }
+
+        # Filtro de Microsoft
+        if (-not $chkShowMS.Checked) {
+            $filtered = $filtered | Where-Object { $_.ProviderName -notmatch "^Microsoft" }
+        }
+
+        foreach ($d in $filtered) {
+            $rowId = $grid.Rows.Add()
+            $row = $grid.Rows[$rowId]
+            
+            $row.Cells["InfName"].Value = $d.Driver
+            $row.Cells["Provider"].Value = $d.ProviderName
+            $row.Cells["Class"].Value = $d.ClassName
+            $row.Cells["Version"].Value = $d.Version
+            $row.Cells["Date"].Value = try { $d.Date.ToString("yyyy-MM-dd") } catch { $d.Date }
+            
+            # Guardamos el objeto real en una columna oculta o en el Tag para uso posterior
+            $row.Tag = $d 
+
+            # Colorear Microsoft en gris si se muestran
+            if ($d.ProviderName -match "^Microsoft") {
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+            }
+        }
+        $grid.ResumeLayout()
+        $grid.ClearSelection()
+    }
+
+    # --- LOGICA: ESCANEAR SISTEMA (Lento) ---
+    $ScanDrivers = {
+        $lblStatus.Text = "Escaneando Driver Store... (Esto puede tardar)"
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         [System.Windows.Forms.Application]::DoEvents()
 
         try {
-            $drivers = Get-WindowsDriver -Online -ErrorAction Stop | Where-Object { $_.ProviderName -ne 'Microsoft' }
-            foreach ($d in $drivers) {
-                # Convertimos fecha si es posible, o string plano
-                $dDate = try { $d.Date.ToString("yyyy-MM-dd") } catch { $d.Date }
-                $grid.Rows.Add($false, $d.Driver, $d.ProviderName, $d.ClassName, $d.Version, $dDate) | Out-Null
-            }
-            $lblStatus.Text = "Se encontraron $($drivers.Count) drivers de terceros."
+            $script:DriverCache = @(Get-WindowsDriver -Online -ErrorAction Stop)
+            $lblStatus.Text = "Drivers cargados: $($script:DriverCache.Count)"
             $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
         } catch {
-            $lblStatus.Text = "Error al escanear: $_"
+            $lblStatus.Text = "Error al leer drivers: $_"
             $lblStatus.ForeColor = [System.Drawing.Color]::Salmon
+            $script:DriverCache = @()
         }
+        
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        $grid.ClearSelection()
+        & $RenderGrid
     }
 
-    # Eventos Simples
-    $btnSelectAll.Add_Click({ foreach ($row in $grid.Rows) { $row.Cells["Check"].Value = -not ($row.Cells["Check"].Value) } })
+    # --- EVENTOS ---
     $form.Add_Shown({ & $ScanDrivers })
     $btnRefresh.Add_Click({ & $ScanDrivers })
+    $txtSearch.Add_KeyUp({ & $RenderGrid })
+    $chkShowMS.Add_CheckedChanged({ & $RenderGrid })
 
-    # --- LoGICA: BACKUP SELECTIVO ---
-    $btnBackup.Add_Click({
-        $targets = @()
-        foreach ($row in $grid.Rows) {
-            if ($row.Cells["Check"].Value -eq $true) { $targets += $row.Cells["InfName"].Value }
+    $grid.Add_SelectionChanged({
+        if ($grid.SelectedRows.Count -gt 0) {
+            $d = $grid.SelectedRows[0].Tag
+            $lblDetailPath.Text = "Origen: $($d.OriginalFileName) | Firmado por: $($d.SignerName)"
         }
-
-        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No has seleccionado ningun driver.", "Aviso", 0, 48); return }
-
-        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = "Carpeta destino para $($targets.Count) drivers"
-        if ($dialog.ShowDialog() -ne 'OK') { return }
-        $destPath = $dialog.SelectedPath
-
-        $progressBar.Value = 0
-        $progressBar.Maximum = $targets.Count
-        $btnBackup.Enabled = $false
-        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        
-        $count = 0
-        $errors = 0
-
-        foreach ($infName in $targets) {
-            $count++
-            $lblStatus.Text = "Exportando ($count/$($targets.Count)): $infName..."
-            $progressBar.Value = $count
-            [System.Windows.Forms.Application]::DoEvents()
-
-            try {
-                $proc = Start-Process -FilePath "pnputil.exe" -ArgumentList "/export-driver `"$infName`" `"$destPath`"" -WindowStyle Hidden -PassThru -Wait
-                if ($proc.ExitCode -ne 0) { $errors++ }
-            } catch { $errors++ }
-        }
-
-        $lblStatus.Text = "Proceso finalizado."
-        $lblStatus.ForeColor = if ($errors -eq 0) { [System.Drawing.Color]::LightGreen } else { [System.Drawing.Color]::Orange }
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        $btnBackup.Enabled = $true
-        [System.Windows.Forms.MessageBox]::Show("Exportacion completada.`nDrivers: $($targets.Count)`nErrores: $errors", "Informe", 0, 64)
     })
 
-    # --- LoGICA: RESTORE CON DIaLOGO PERSONALIZADO ---
-    $btnRestore.Add_Click({
-        # Crear Dialogo Modal Personalizado
-        $dlg = New-Object System.Windows.Forms.Form
-        $dlg.Text = "Metodo de Restauracion"
-        $dlg.Size = New-Object System.Drawing.Size(450, 180)
-        $dlg.StartPosition = "CenterParent"
-        $dlg.FormBorderStyle = "FixedDialog"
-        $dlg.MaximizeBox = $false
-        $dlg.MinimizeBox = $false
-        $dlg.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 48)
-        $dlg.ForeColor = [System.Drawing.Color]::White
+    # Evento de checkbox en celda y Barra Espaciadora
+    $grid.Add_CellClick({ param($s,$e) if($e.RowIndex -ge 0 -and $e.ColumnIndex -ne 0){ $r=$grid.Rows[$e.RowIndex]; $r.Cells[0].Value = -not $r.Cells[0].Value } })
+    $grid.Add_KeyDown({ param($s,$e) if($e.KeyCode -eq 'Space'){ $e.SuppressKeyPress=$true; foreach($r in $s.SelectedRows){ $r.Cells[0].Value = -not $r.Cells[0].Value } } })
+    $btnSelectAll.Add_Click({ foreach($r in $grid.Rows){ $r.Cells[0].Value = -not $r.Cells[0].Value } })
 
-        $lblQ = New-Object System.Windows.Forms.Label
-        $lblQ.Text = "¿Como deseas restaurar los drivers?"
-        $lblQ.Location = New-Object System.Drawing.Point(20, 20)
-        $lblQ.AutoSize = $true
-        $lblQ.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-        $dlg.Controls.Add($lblQ)
+    # --- ACCION: BACKUP ---
+    $btnBackup.Add_Click({
+        $targets = @($grid.Rows | Where-Object { $_.Cells[0].Value } | ForEach-Object { $_.Cells["InfName"].Value })
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona drivers.", "Aviso", 0, 48); return }
 
-        $btnFolder = New-Object System.Windows.Forms.Button
-        $btnFolder.Text = "Desde Carpeta (Backup Completo)"
-        $btnFolder.Location = New-Object System.Drawing.Point(20, 60)
-        $btnFolder.Size = New-Object System.Drawing.Size(190, 50)
-        $btnFolder.BackColor = [System.Drawing.Color]::SeaGreen
-        $btnFolder.FlatStyle = "Flat"
-        $btnFolder.ForeColor = [System.Drawing.Color]::White
-        $btnFolder.DialogResult = [System.Windows.Forms.DialogResult]::Yes 
-        $dlg.Controls.Add($btnFolder)
-
-        $btnFiles = New-Object System.Windows.Forms.Button
-        $btnFiles.Text = "Seleccionar Archivos (.inf)"
-        $btnFiles.Location = New-Object System.Drawing.Point(220, 60)
-        $btnFiles.Size = New-Object System.Drawing.Size(190, 50)
-        $btnFiles.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-        $btnFiles.FlatStyle = "Flat"
-        $btnFiles.ForeColor = [System.Drawing.Color]::White
-        $btnFiles.DialogResult = [System.Windows.Forms.DialogResult]::No 
-        $dlg.Controls.Add($btnFiles)
-
-        # Mostrar Dialogo
-        $result = $dlg.ShowDialog($form)
-        $filesToInstall = @()
-
-        if ($result -eq 'Yes') {
-            # MODO CARPETA
-            $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
-            $folderDialog.Description = "Selecciona la carpeta con el backup"
-            if ($folderDialog.ShowDialog() -ne 'OK') { return }
-            
-            $lblStatus.Text = "Buscando drivers en carpeta..."
-            [System.Windows.Forms.Application]::DoEvents()
-            $filesToInstall = Get-ChildItem -Path $folderDialog.SelectedPath -Filter "*.inf" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-        } 
-        elseif ($result -eq 'No') {
-            # MODO ARCHIVOS
-            $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
-            $fileDialog.Title = "Selecciona archivos .INF"
-            $fileDialog.Filter = "Informacion de instalacion (*.inf)|*.inf"
-            $fileDialog.Multiselect = $true
-            if ($fileDialog.ShowDialog() -ne 'OK') { return }
-            $filesToInstall = $fileDialog.FileNames
-        }
-        else { return } # Cancelado
-
-        if ($filesToInstall.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("No se encontraron archivos validos.", "Aviso", 0, 48)
-            return
-        }
-
-        # Ejecucion
-        $progressBar.Value = 0
-        $progressBar.Maximum = $filesToInstall.Count
-        $btnRestore.Enabled = $false
-        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog; $dlg.Description = "Carpeta de destino"
+        if ($dlg.ShowDialog() -ne 'OK') { return }
         
-        $count = 0
-        $errors = 0
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0; $progressBar.Maximum = $targets.Count; $cnt = 0; $errs = 0
 
-        foreach ($filePath in $filesToInstall) {
-            $count++
-            $fName = [System.IO.Path]::GetFileName($filePath)
-            $lblStatus.Text = "Instalando ($count/$($filesToInstall.Count)): $fName"
-            $progressBar.Value = $count
+        foreach ($inf in $targets) {
+            $cnt++; $progressBar.Value = $cnt
+            $lblStatus.Text = "Exportando $inf..."
             [System.Windows.Forms.Application]::DoEvents()
-
+            
             try {
-                $proc = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver `"$filePath`" /install" -WindowStyle Hidden -PassThru -Wait
-                if ($proc.ExitCode -ne 0) { $errors++ }
-            } catch { $errors++ }
+                $p = Start-Process "pnputil.exe" -ArgumentList "/export-driver `"$inf`" `"$($dlg.SelectedPath)`"" -NoNewWindow -PassThru -Wait
+                if ($p.ExitCode -ne 0) { $errs++ }
+            } catch { $errs++ }
+        }
+        
+        $lblStatus.Text = "Backup finalizado."
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        [System.Windows.Forms.MessageBox]::Show("Backup completado. Errores: $errs", "Info", 0, 64)
+    })
+
+    # --- ACCION: DELETE (NUEVO) ---
+    $btnDelete.Add_Click({
+        $targets = @($grid.Rows | Where-Object { $_.Cells[0].Value } | ForEach-Object { $_.Cells["InfName"].Value })
+        if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona drivers para eliminar.", "Aviso", 0, 48); return }
+
+        if ([System.Windows.Forms.MessageBox]::Show("PELIGRO: Vas a eliminar $($targets.Count) drivers del almacén del sistema.`n`nSi eliminas un driver en uso, el dispositivo dejará de funcionar.`n¿Estás seguro?", "Confirmar Eliminación", 4, 48) -ne 'Yes') { return }
+
+        if ($chkForce.Checked) {
+             if ([System.Windows.Forms.MessageBox]::Show("HAS MARCADO 'FORZAR'.`nEsto eliminará el driver incluso si está en uso.`n¿Confirmación final?", "PELIGRO EXTREMO", 4, 16) -ne 'Yes') { return }
         }
 
-        $lblStatus.Text = "Instalacion finalizada."
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0; $progressBar.Maximum = $targets.Count; $cnt = 0; $errs = 0
+        $argsBase = "/delete-driver"
+        if ($chkForce.Checked) { $argsBase += " /force" }
+
+        foreach ($inf in $targets) {
+            $cnt++; $progressBar.Value = $cnt
+            $lblStatus.Text = "Eliminando $inf..."
+            [System.Windows.Forms.Application]::DoEvents()
+            
+            try {
+                $p = Start-Process "pnputil.exe" -ArgumentList "$argsBase `"$inf`"" -NoNewWindow -PassThru -Wait
+                if ($p.ExitCode -ne 0) { $errs++ }
+            } catch { $errs++ }
+        }
+        
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        $btnRestore.Enabled = $true
-        [System.Windows.Forms.MessageBox]::Show("Instalacion completada.`nErrores: $errors", "Informe", 0, 64)
+        [System.Windows.Forms.MessageBox]::Show("Eliminación completada. Errores (Archivos en uso): $errs", "Info", 0, 64)
+        & $ScanDrivers # Recargar lista
+    })
+
+    # --- ACCION: RESTORE ---
+    $btnRestore.Add_Click({
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Title = "Selecciona archivos .INF"; $dlg.Filter = "Drivers (*.inf)|*.inf"; $dlg.Multiselect = $true
+        if ($dlg.ShowDialog() -ne 'OK') { return }
+        
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $progressBar.Value = 0; $progressBar.Maximum = $dlg.FileNames.Count; $cnt = 0; $errs = 0
+        
+        $argsBase = "/add-driver /install"
+        if ($chkForce.Checked) { $argsBase += " /force" }
+
+        foreach ($file in $dlg.FileNames) {
+            $cnt++; $progressBar.Value = $cnt
+            $fname = [System.IO.Path]::GetFileName($file)
+            $lblStatus.Text = "Instalando $fname..."
+            [System.Windows.Forms.Application]::DoEvents()
+            
+            try {
+                $p = Start-Process "pnputil.exe" -ArgumentList "$argsBase `"$file`"" -NoNewWindow -PassThru -Wait
+                if ($p.ExitCode -ne 0) { $errs++ }
+            } catch { $errs++ }
+        }
+        
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        [System.Windows.Forms.MessageBox]::Show("Instalación completada. Errores: $errs", "Info", 0, 64)
         & $ScanDrivers
     })
 
@@ -8487,81 +9240,117 @@ function Clean-BrowserCaches {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
 
-    Write-Log -LogLevel INFO -Message "MANTENIMIENTO: Usuario inicio la limpieza de cache de navegadores."
+    Write-Log -LogLevel INFO -Message "MANTENIMIENTO: Inicio de limpieza robusta de navegadores."
     Clear-Host
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "         Limpieza Profunda de Navegadores              " -ForegroundColor Cyan
+    Write-Host "            Limpieza Profunda de Navegadores           " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Esta operacion realizara lo siguiente:" -ForegroundColor Gray
-    Write-Host " 1. Cerrara los navegadores abiertos." -ForegroundColor Red
-    Write-Host " 2. Eliminara Cache, GPU Cache y Code Cache."
-    Write-Host " 3. Preservara tus contraseñas, historial y marcadores." -ForegroundColor Green
+    Write-Host "   [!] ADVERTENCIA: Se cerraran forzosamente los navegadores." -ForegroundColor Yellow
+    Write-Host "   [i] Se verificara que los archivos no esten bloqueados." -ForegroundColor Gray
     Write-Host ""
     
     if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
 
-    # Definicion de Navegadores y Rutas (Chromium y Gecko)
-    # Usamos wildcards (*) para cubrir todos los perfiles (Default, Profile 1, etc.)
+    # Definición expandida de objetivos
     $browsers = @(
         @{ Name="Google Chrome"; Process="chrome"; Path="$env:LOCALAPPDATA\Google\Chrome\User Data\*\Cache*" },
         @{ Name="Google Chrome (GPU)"; Process="chrome"; Path="$env:LOCALAPPDATA\Google\Chrome\User Data\*\GPUCache*" },
-        
         @{ Name="Microsoft Edge"; Process="msedge"; Path="$env:LOCALAPPDATA\Microsoft\Edge\User Data\*\Cache*" },
         @{ Name="Microsoft Edge (GPU)"; Process="msedge"; Path="$env:LOCALAPPDATA\Microsoft\Edge\User Data\*\GPUCache*" },
-        
         @{ Name="Brave Browser"; Process="brave"; Path="$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data\*\Cache*" },
-        
         @{ Name="Opera Stable"; Process="opera"; Path="$env:LOCALAPPDATA\Opera Software\Opera Stable\Cache*" },
         @{ Name="Opera GX"; Process="opera_gx"; Path="$env:LOCALAPPDATA\Opera Software\Opera GX Stable\Cache*" },
-
         @{ Name="Mozilla Firefox"; Process="firefox"; Path="$env:LOCALAPPDATA\Mozilla\Firefox\Profiles\*\cache2*" }
     )
 
-    $totalFreed = 0
+    $globalFreed = 0
 
     foreach ($b in $browsers) {
-        Write-Host "`n[+] Procesando $($b.Name)..." -ForegroundColor Yellow
+        Write-Host "`n[+] Analizando: $($b.Name)..." -ForegroundColor Cyan
         
-        # 1. Matar Proceso
-        if (Get-Process -Name $b.Process -ErrorAction SilentlyContinue) {
-            Write-Host "   - Cerrando proceso $($b.Process)..." -ForegroundColor Gray
-            Stop-Process -Name $b.Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500 # Esperar liberacion de archivos
+        # --- FASE 1: GESTION DE PROCESOS (DETERMINISTA) ---
+        $proc = Get-Process -Name $b.Process -ErrorAction SilentlyContinue
+        if ($proc) {
+            Write-Host "   - Cerrando $($b.Process) (Intento suave)..." -ForegroundColor Gray
+            $proc | Stop-Process -ErrorAction SilentlyContinue
+            
+            # Espera inteligente (Polling): Esperar hasta 10 segundos a que muera
+            $timeout = 0
+            while ((Get-Process -Name $b.Process -ErrorAction SilentlyContinue) -and $timeout -lt 20) {
+                Start-Sleep -Milliseconds 500
+                $timeout++
+                Write-Host "." -NoNewline -ForegroundColor DarkGray
+            }
+            
+            # Kill forzoso si sigue vivo
+            if (Get-Process -Name $b.Process -ErrorAction SilentlyContinue) {
+                Write-Host "`n   - Proceso atascado. Forzando cierre..." -ForegroundColor Red
+                Stop-Process -Name $b.Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 1 # Tiempo extra para liberar I/O handles
+            } else {
+                Write-Host "`n   - Proceso finalizado correctamente." -ForegroundColor Green
+            }
         }
 
-        # 2. Expandir Rutas (Manejo de Perfiles multiples)
-        # Get-Item expande el asterisco (*) en las rutas reales
+        # --- FASE 2: LIMPIEZA CON VALIDACION DE BLOQUEOS ---
         $targetFolders = Get-Item -Path $b.Path -ErrorAction SilentlyContinue
-
+        
         if ($targetFolders) {
             foreach ($folder in $targetFolders) {
+                $folderSizeBefore = 0
                 try {
-                    # Calcular tamaño antes de borrar
-                    $size = (Get-ChildItem -Path $folder.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-                    $totalFreed += $size
-                    $sizeMB = [math]::Round($size / 1MB, 2)
+                    $folderSizeBefore = (Get-ChildItem -Path $folder.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+                } catch {}
 
-                    # Borrar contenido, manteniendo la carpeta raiz del cache
-                    Remove-Item -Path "$($folder.FullName)\*" -Recurse -Force -ErrorAction SilentlyContinue
+                if ($folderSizeBefore -gt 0) {
+                    Write-Host "   - Limpiando: $($folder.FullName)" -ForegroundColor Gray
                     
-                    Write-Host "   [OK] Limpiado: $($folder.Name) ($sizeMB MB)" -ForegroundColor Green
-                    Write-Log -LogLevel ACTION -Message "BROWSER CLEAN: $($b.Name) - Liberado $sizeMB MB en $($folder.FullName)"
-                }
-                catch {
-                    Write-Host "   [ERROR] No se pudo limpiar: $($folder.FullName)" -ForegroundColor Red
+                    # Intentamos borrar el contenido. Si falla, reintentamos una vez más.
+                    try {
+                        Remove-Item -Path "$($folder.FullName)\*" -Recurse -Force -ErrorAction Stop
+                    } catch {
+                        Write-Warning "     Archivos bloqueados. Reintentando en 2 segundos..."
+                        Start-Sleep -Seconds 2
+                        try {
+                            Remove-Item -Path "$($folder.FullName)\*" -Recurse -Force -ErrorAction SilentlyContinue
+                        } catch {
+                            Write-Log -LogLevel ERROR -Message "BROWSER CLEAN: No se pudo limpiar totalmente $($folder.FullName)"
+                        }
+                    }
+
+                    # Calculamos el resultado REAL
+                    $folderSizeAfter = 0
+                    try {
+                        $folderSizeAfter = (Get-ChildItem -Path $folder.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+                    } catch {}
+
+                    $freed = $folderSizeBefore - $folderSizeAfter
+                    if ($freed -lt 0) { $freed = 0 } # Evitar negativos raros
+                    
+                    $globalFreed += $freed
+                    $freedMB = [math]::Round($freed / 1MB, 2)
+                    
+                    if ($freed -gt 0) {
+                        Write-Host "     [OK] Liberado: $freedMB MB" -ForegroundColor Green
+                    } else {
+                        Write-Host "     [INFO] Ya estaba limpio o bloqueado." -ForegroundColor DarkGray
+                    }
                 }
             }
-        } else {
-            Write-Host "   - No instalado o sin cache." -ForegroundColor DarkGray
         }
     }
 
-    $totalFreedMB = [math]::Round($totalFreed / 1MB, 2)
-    Write-Host "`n=======================================================" -ForegroundColor Cyan
-    Write-Host "   LIMPIEZA COMPLETADA" -ForegroundColor Green
-    Write-Host "   Espacio total recuperado: $totalFreedMB MB" -ForegroundColor Yellow
-    Write-Host "=======================================================" -ForegroundColor Cyan
+    $totalFreedMB = [math]::Round($globalFreed / 1MB, 2)
+    Write-Host "`n-------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "   RESUMEN FINAL DE LIMPIEZA" -ForegroundColor Cyan
+    if ($totalFreedMB -gt 0) {
+        Write-Host "   Espacio Real Recuperado: $totalFreedMB MB" -ForegroundColor Green
+        Write-Log -LogLevel ACTION -Message "BROWSER CLEAN: Limpieza masiva completada. Recuperados $totalFreedMB MB."
+    } else {
+        Write-Host "   No se requeria limpieza." -ForegroundColor White
+    }
+    Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
     
     Read-Host "Presiona Enter para volver..."
 }
@@ -8769,7 +9558,7 @@ function Show-AdvancedMenu {
         Write-Host "   [2] Inventario y Reportes del Sistema"
         Write-Host "       (Genera un informe detallado del hardware y software de tu PC)" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "   [3] Gestion de Drivers (Backup/Listar)"
+        Write-Host "   [3] Gestion de Drivers (Backup/Listar/Eliminar)"
         Write-Host "       (Crea una copia de seguridad de tus drivers, esencial para reinstalar Windows)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "   [4] Gestion de Software (Multi-Motor)"
