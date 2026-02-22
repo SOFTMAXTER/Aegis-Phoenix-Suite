@@ -9,10 +9,37 @@
 .AUTHOR
     SOFTMAXTER
 .VERSION
-    4.9.1
+    4.9.2
+
+# ==============================================================================
+# Copyright (C) 2026 SOFTMAXTER
+#
+# DUAL LICENSING NOTICE:
+# This software is dual-licensed. By default, Aegis Phoenix Suite is 
+# distributed under the GNU General Public License v3.0 (GPLv3).
+# 
+# 1. OPEN SOURCE (GPLv3):
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details: <https://www.gnu.org/licenses/>.
+#
+# 2. COMMERCIAL LICENSE:
+# If you wish to integrate this software into a proprietary/commercial product, 
+# distribute it without revealing your source code, or require commercial 
+# support, you must obtain a commercial license from the original author.
+#
+# Please contact softmaxter@hotmail.com for commercial licensing inquiries.
+# ==============================================================================
+
 #>
 
-$script:Version = "4.9.1"
+$script:Version = "4.9.2"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -93,7 +120,7 @@ function Invoke-FullRepoUpdater {
         Write-Log -LogLevel INFO -Message "UPDATER: Nueva version detectada. Local: v$($script:Version) | Remota: v$remoteVersionStr"
         
 		Write-Host ""
-        $confirmation = Read-Host "¿Deseas descargar e instalar la actualizacion ahora? (S/N)"
+        $confirmation = Read-Host "Deseas descargar e instalar la actualizacion ahora? (S/N)"
         
         if ($confirmation.ToUpper() -eq 'S') {
             Write-Warning "`nEl actualizador se ejecutara en una nueva ventana."
@@ -693,9 +720,9 @@ function Manage-SystemServices {
         }
 
         $confirmMsg = if ($Mode -eq 'Disable') { 
-            "¿Deshabilitar $($targets.Count) servicios? Esto detendra su ejecucion." 
+            "Deshabilitar $($targets.Count) servicios? Esto detendra su ejecucion." 
         } else { 
-            "¿Restaurar $($targets.Count) servicios a su estado recomendado?" 
+            "Restaurar $($targets.Count) servicios a su estado recomendado?" 
         }
 
         if ([System.Windows.Forms.MessageBox]::Show($confirmMsg, "Confirmar", 4, 32) -ne 'Yes') { return }
@@ -1084,7 +1111,7 @@ function Manage-ThirdPartyServices {
         }
 
         $msg = if ($ActionType -eq 'Disable') { "Deshabilitar" } else { "Restaurar" }
-        if ([System.Windows.Forms.MessageBox]::Show("¿Seguro de $msg $($targets.Count) servicios?", "Confirmar", 4, 32) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("Seguro de $msg $($targets.Count) servicios?", "Confirmar", 4, 32) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
@@ -1501,12 +1528,12 @@ function Show-CleaningMenu {
 
         # Advertencia especial para DEEP CLEAN
         if ($tasks -contains "DEEP") {
-            $warn = "Has seleccionado 'Limpieza Profunda'.\n\n- Esto borrara Windows.old (no podras volver atras).\n- Se ejecutara DISM y CleanMgr.\n- El proceso puede tardar mucho.\n\n¿Deseas continuar?"
+            $warn = "Has seleccionado 'Limpieza Profunda'.\n\n- Esto borrara Windows.old (no podras volver atras).\n- Se ejecutara DISM y CleanMgr.\n- El proceso puede tardar mucho.\n\nDeseas continuar?"
             if ([System.Windows.Forms.MessageBox]::Show($warn, "Advertencia Critica", 4, 48) -ne 'Yes') { return }
         }
 
         # Confirmacion general
-        if ([System.Windows.Forms.MessageBox]::Show("¿Iniciar proceso de limpieza?", "Confirmar", 4, 32) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("Iniciar proceso de limpieza?", "Confirmar", 4, 32) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $btnClean.Enabled = $false
@@ -1830,7 +1857,7 @@ function Show-BloatwareMenu {
 
     # --- MENU CONTEXTUAL ---
     $ctxMenu = New-Object System.Windows.Forms.ContextMenuStrip
-    $itemGoogle = $ctxMenu.Items.Add("Buscar en Google (¿Que es esto?)")
+    $itemGoogle = $ctxMenu.Items.Add("Buscar en Google (Que es esto?)")
     $itemGoogle.Add_Click({
         if ($grid.SelectedRows.Count -gt 0) {
             $appName = $grid.SelectedRows[0].Cells["DisplayName"].Value
@@ -1996,7 +2023,7 @@ function Show-BloatwareMenu {
     })
 
     $btnRestoreStore.Add_Click({
-        if ([System.Windows.Forms.MessageBox]::Show("Esto intentara descargar y registrar la Microsoft Store nuevamente.\nÚsalo si la borraste por error.\n\n¿Continuar?", "Restaurar Tienda", 'YesNo', 'Warning') -eq 'Yes') {
+        if ([System.Windows.Forms.MessageBox]::Show("Esto intentara descargar y registrar la Microsoft Store nuevamente.\nÚsalo si la borraste por error.\n\nContinuar?", "Restaurar Tienda", 'YesNo', 'Warning') -eq 'Yes') {
             $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
             $lblStatus.Text = "Restaurando Microsoft Store..."
             [System.Windows.Forms.Application]::DoEvents()
@@ -2022,7 +2049,7 @@ function Show-BloatwareMenu {
 
         if ($appsToRemove.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("No hay apps seleccionadas.", "Aviso", 0, 48); return }
 
-        if ([System.Windows.Forms.MessageBox]::Show("¿Eliminar $($appsToRemove.Count) aplicaciones?\n\nEsta accion no se puede deshacer facilmente.", "Confirmar", 4, 32) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("Eliminar $($appsToRemove.Count) aplicaciones?\n\nEsta accion no se puede deshacer facilmente.", "Confirmar", 4, 32) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $btnRemove.Enabled = $false
@@ -2477,7 +2504,7 @@ function Manage-StartupApps {
 
         # Advertencia especial para Eliminar
         if ($Action -eq 'Delete') {
-            $msg = "¿Estas seguro de eliminar permanentemente $($targets.Count) elementos?`n`nEsta accion NO se puede deshacer."
+            $msg = "Estas seguro de eliminar permanentemente $($targets.Count) elementos?`n`nEsta accion NO se puede deshacer."
             if ([System.Windows.Forms.MessageBox]::Show($msg, "Confirmacion de Eliminacion", 4, 48) -ne 'Yes') { return }
         }
 
@@ -2612,7 +2639,7 @@ function Repair-SystemFiles {
     Write-Warning "Esta operacion requiere reiniciar y puede tardar VARIAS HORAS."
     Write-Warning "Durante el analisis, NO podras usar el equipo."
     
-    $chkdskChoice = Read-Host "`n¿Deseas programar este analisis profundo para el proximo reinicio? (S/N)"
+    $chkdskChoice = Read-Host "`nDeseas programar este analisis profundo para el proximo reinicio? (S/N)"
     
     if ($chkdskChoice.ToUpper() -eq 'S') {
         try {
@@ -2658,7 +2685,7 @@ function Repair-SystemFiles {
         }
         
         Write-Host "[RECOMENDACION] $msg" -ForegroundColor Cyan
-        $choice = Read-Host "`n¿Deseas reiniciar ahora? (S/N)"
+        $choice = Read-Host "`nDeseas reiniciar ahora? (S/N)"
         if ($choice.ToUpper() -eq 'S') {
             Write-Host "Reiniciando el sistema en 60 segundos..." -ForegroundColor Yellow
             Start-Sleep -Seconds 60
@@ -2672,71 +2699,130 @@ function Repair-SystemFiles {
 }
 
 # ===================================================================
-# MODULO DE Purgado de cache de RAM
+# MODULO DE Purgado de cache de RAM (Nativo C#)
 # ===================================================================
 function Clear-RAMCache {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
     
-    Write-Log -LogLevel INFO -Message "SISTEMA: Iniciando purgado de memoria Standby con verificacion."
+    Write-Log -LogLevel INFO -Message "SISTEMA: Iniciando purgado de memoria Standby (Motor Nativo C#)."
     
     Write-Host "`n[+] Purgando la Memoria RAM en Cache (Standby List)..." -ForegroundColor Cyan
     Write-Warning "Esto vaciara la memoria 'En Espera' moviendola a 'Libre'."
     
-    # 1. Comprobacion de Intencion
-    if ((Read-Host "¿Confirmar operacion? (S/N)").ToUpper() -ne 'S') { return }
+    if ((Read-Host "Confirmar operacion? (S/N)").ToUpper() -ne 'S') { return }
 
-    # 2. Gestion de la Herramienta (Descarga Segura)
-    $toolDir = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "Tools"
-    if (-not (Test-Path $toolDir)) { New-Item -Path $toolDir -ItemType Directory | Out-Null }
-    $toolPath = Join-Path -Path $toolDir -ChildPath "EmptyStandbyList.exe"
+    # --- 1. MOTOR C# NATIVO PARA GESTION DE MEMORIA ---
+    $csharpMemoryPurger = @"
+    using System;
+    using System.Runtime.InteropServices;
 
-    if (-not (Test-Path $toolPath)) {
-        Write-Host "   - Herramienta no encontrada. Descargando..." -ForegroundColor Gray
-        try {
-            $url = "https://ia800303.us.archive.org/9/items/empty-standby-list/EmptyStandbyList.exe"
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            
-            # Descarga con timeout para no congelar el script
-            Invoke-WebRequest -Uri $url -OutFile $toolPath -UseBasicParsing -TimeoutSec 15
-            
-            # VALIDACION 1: Integridad basica (Tamaño > 0)
-            $fileInfo = Get-Item $toolPath
-            if ($fileInfo.Length -lt 10KB) { 
-                throw "El archivo descargado parece corrupto (demasiado pequeño)." 
+    public class AegisMemoryPurger
+    {
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool OpenProcessToken(IntPtr ProcessHandle, UInt32 DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool AdjustTokenPrivileges(IntPtr TokenHandle, [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges, ref TOKEN_PRIVILEGES NewState, UInt32 Zero, IntPtr Null1, IntPtr Null2);
+
+        [DllImport("ntdll.dll")]
+        static extern UInt32 NtSetSystemInformation(int InfoClass, IntPtr Info, int Length);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetCurrentProcess();
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct LUID {
+            public uint LowPart;
+            public int HighPart;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct TOKEN_PRIVILEGES {
+            public uint PrivilegeCount;
+            public LUID Luid;
+            public uint Attributes;
+        }
+
+        const uint TOKEN_QUERY = 0x0008;
+        const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+        const string SE_PROFILE_SINGLE_PROCESS_NAME = "SeProfileSingleProcessPrivilege";
+        const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+
+        public static bool ExecutePurge()
+        {
+            try {
+                // 1. Obtener el token del proceso actual
+                IntPtr tokenHandle;
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out tokenHandle)) return false;
+
+                // 2. Buscar el LUID del privilegio necesario para tocar la memoria Standby
+                LUID luid;
+                if (!LookupPrivilegeValue(null, SE_PROFILE_SINGLE_PROCESS_NAME, out luid)) return false;
+
+                // 3. Ajustar privilegios
+                TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES();
+                tp.PrivilegeCount = 1;
+                tp.Luid = luid;
+                tp.Attributes = SE_PRIVILEGE_ENABLED;
+                if (!AdjustTokenPrivileges(tokenHandle, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero)) return false;
+
+                // 4. Llamada API a NtSetSystemInformation
+                // SystemMemoryListInformation (Clase 80), Comando 4 (EmptyStandbyList)
+                int infoClass = 80; 
+                int command = 4;    
+                
+                IntPtr pCommand = Marshal.AllocHGlobal(Marshal.SizeOf(command));
+                Marshal.WriteInt32(pCommand, command);
+                
+                uint status = NtSetSystemInformation(infoClass, pCommand, Marshal.SizeOf(command));
+                Marshal.FreeHGlobal(pCommand);
+
+                // Si status es 0 (STATUS_SUCCESS), la operacion fue un exito
+                return (status == 0);
+            } catch {
+                return false;
             }
-            Write-Host "   [OK] Herramienta descargada y verificada." -ForegroundColor Green
+        }
+    }
+"@
+
+    # Compilar el código solo si no existe ya en la sesión actual
+    if (-not ([System.Management.Automation.PSTypeName]'AegisMemoryPurger').Type) {
+        try {
+            Add-Type -TypeDefinition $csharpMemoryPurger -Language CSharp
         } catch {
-            Write-Error "   [ERROR] No se pudo obtener la herramienta: $($_.Exception.Message)"
-            Write-Log -LogLevel ERROR -Message "RAM CLEAN: Fallo descarga de herramienta: $($_.Exception.Message)"
-            if (Test-Path $toolPath) { Remove-Item $toolPath -Force } # Limpiar archivo corrupto
+            Write-Error "   [ERROR] No se pudo compilar el motor de purgado en memoria: $($_.Exception.Message)"
+            Write-Log -LogLevel ERROR -Message "RAM CLEAN: Error compilando AegisMemoryPurger."
             return
         }
     }
 
-    # 3. Medicion PREVIA (Snapshot)
-    # Usamos Available MBytes como proxy, ya que vaciar la Standby List incrementa la memoria Libre/Disponible
+    # --- 2. MEDICION PREVIA (Snapshot) ---
     $ramBefore = (Get-CimInstance -ClassName Win32_OperatingSystem).FreePhysicalMemory
     Write-Host "   - RAM Disponible Inicial: $([math]::Round($ramBefore / 1KB, 0)) MB" -ForegroundColor Gray
 
-    # 4. Ejecucion Controlada
-    if ($PSCmdlet.ShouldProcess("Memoria del Sistema", "Purgar lista de espera")) {
-        try {
-            $proc = Start-Process -FilePath $toolPath -ArgumentList "standbylist" -Verb RunAs -PassThru -WindowStyle Hidden -Wait
-            
-            # VALIDACION 2: Codigo de Salida
-            if ($proc.ExitCode -ne 0) {
-                throw "La herramienta devolvio el codigo de error $($proc.ExitCode)."
-            }
-            
-            # Pequeña pausa para que el SO actualice los contadores
-            Start-Sleep -Seconds 2 
+    # --- 3. EJECUCION DE PURGADO ---
+    if ($PSCmdlet.ShouldProcess("Memoria del Sistema", "Purgar lista de espera (Motor Nativo)")) {
+        Write-Host "   - Inyectando instruccion al Kernel de Windows..." -ForegroundColor DarkGray
+        
+        $success = [AegisMemoryPurger]::ExecutePurge()
+        
+        if ($success) {
+            # Pequeña pausa para que el SO actualice los contadores en WMI
+            Start-Sleep -Seconds 1 
 
-            # 5. Medicion POSTERIOR y Calculo de Exito
+            # --- 4. MEDICION POSTERIOR ---
             $ramAfter = (Get-CimInstance -ClassName Win32_OperatingSystem).FreePhysicalMemory
             $freedKB = $ramAfter - $ramBefore
             
-            # Normalizar (si sale negativo por uso del sistema, es 0)
+            # Normalizar si sale negativo por fluctuaciones naturales de uso del sistema
             if ($freedKB -lt 0) { $freedKB = 0 }
             
             $freedMB = [math]::Round($freedKB / 1KB, 0)
@@ -2745,11 +2831,10 @@ function Clear-RAMCache {
             Write-Host "   -> Memoria Recuperada: " -NoNewline
             Write-Host "$freedMB MB" -ForegroundColor Yellow
             
-            Write-Log -LogLevel ACTION -Message "RAM CLEAN: Se purgo la memoria Standby. Recuperados aprox: $freedMB MB."
-
-        } catch {
-            Write-Error "   [FALLO] Ocurrio un error al ejecutar el purgado: $($_.Exception.Message)"
-            Write-Log -LogLevel ERROR -Message "RAM CLEAN: Error de ejecucion - $($_.Exception.Message)"
+            Write-Log -LogLevel ACTION -Message "RAM CLEAN: Se purgo la memoria Standby con API nativa. Recuperados aprox: $freedMB MB."
+        } else {
+            Write-Error "   [FALLO] El Kernel rechazo la orden. Asegurate de ejecutar como Administrador real."
+            Write-Log -LogLevel ERROR -Message "RAM CLEAN: NtSetSystemInformation devolvio un error."
         }
     }
     
@@ -3142,7 +3227,7 @@ function Optimize-Drives {
                 Write-Host "   Has seleccionado la Unidad ($($found.Letter)):" -ForegroundColor Cyan
                 Write-Host "   [1] OPTIMIZAR (Ejecutar ReTrim/Defrag)" -ForegroundColor Green
                 Write-Host "   [2] ANALIZAR (Ver estado de fragmentacion)" -ForegroundColor Yellow
-                $subChoice = Read-Host "   ¿Que deseas hacer?"
+                $subChoice = Read-Host "   Que deseas hacer?"
                 if ($subChoice -eq '2') { $analyzeOnly = $true }
                 elseif ($subChoice -ne '1') { continue }
             } else { continue }
@@ -3448,7 +3533,7 @@ function Generate-SystemReport {
             $lblStatus.Text = "Reporte generado con exito."
             $lblStatus.ForeColor = [System.Drawing.Color]::LightGreen
             
-            if ([System.Windows.Forms.MessageBox]::Show("Reporte generado exitosamente.`n`n¿Deseas abrirlo ahora?", "Completado", 'YesNo', 'Information') -eq 'Yes') {
+            if ([System.Windows.Forms.MessageBox]::Show("Reporte generado exitosamente.`n`nDeseas abrirlo ahora?", "Completado", 'YesNo', 'Information') -eq 'Yes') {
                 Start-Process $script:ActiveReportPath
             }
         } else {
@@ -3830,7 +3915,7 @@ function Show-NetworkDiagnosticsMenu {
                 & $LogToBox -Msg "   [ERROR] No se pudo hacer ping al Gateway." -Color "Red"
             }
         } else {
-            & $LogToBox -Msg "   [FALLO] No se detecta Puerta de Enlace. ¿Estas conectado?" -Color "Red"
+            & $LogToBox -Msg "   [FALLO] No se detecta Puerta de Enlace. Estas conectado?" -Color "Red"
             $success = $false
         }
 
@@ -3885,13 +3970,13 @@ function Show-NetworkDiagnosticsMenu {
 
     $btnFlush.Add_Click({ & $RunAsyncProcess -Exe "ipconfig.exe" -CmdArgs "/flushdns" -Title "Limpieza de Cache DNS" })
     $btnRenew.Add_Click({ 
-        if ([System.Windows.Forms.MessageBox]::Show("Esto desconectara momentaneamente la red. ¿Seguir?", "Confirmar", 'YesNo') -eq 'Yes') {
+        if ([System.Windows.Forms.MessageBox]::Show("Esto desconectara momentaneamente la red. Seguir?", "Confirmar", 'YesNo') -eq 'Yes') {
             & $RunAsyncProcess -Exe "cmd.exe" -CmdArgs "/c ipconfig /release && ipconfig /renew" -Title "Renovacion de IP" 
         }
     })
 
     $btnReset.Add_Click({
-        if ([System.Windows.Forms.MessageBox]::Show("ADVERTENCIA: Esto reiniciara Winsock y la pila TCP/IP.\nEs necesario REINICIAR el PC despues.\n\n¿Continuar?", "Reset Critico", 'YesNo', 'Warning') -eq 'Yes') {
+        if ([System.Windows.Forms.MessageBox]::Show("ADVERTENCIA: Esto reiniciara Winsock y la pila TCP/IP.\nEs necesario REINICIAR el PC despues.\n\nContinuar?", "Reset Critico", 'YesNo', 'Warning') -eq 'Yes') {
             & $RunAsyncProcess -Exe "cmd.exe" -CmdArgs "/c netsh winsock reset && netsh int ip reset" -Title "Reset Completo de Red"
             [System.Windows.Forms.MessageBox]::Show("Reset completado. Por favor reinicia tu equipo.", "Informacion", 0, 64)
         }
@@ -4278,7 +4363,7 @@ function Show-WifiManager {
 
         if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona una red para eliminar.", "Aviso", 0, 48); return }
 
-        if ([System.Windows.Forms.MessageBox]::Show("¿Eliminar $($targets.Count) redes Wi-Fi del sistema?\n\nEsta accion olvidara las contrasenas y no se conectara automaticamente.", "Confirmar Eliminacion", 4, 32) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("Eliminar $($targets.Count) redes Wi-Fi del sistema?\n\nEsta accion olvidara las contrasenas y no se conectara automaticamente.", "Confirmar Eliminacion", 4, 32) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $progressBar.Value = 0
@@ -4469,7 +4554,7 @@ function Invoke-QuickEventScan {
     
     # Opcion para generar un reporte detallado
     if ($detectedIssues.Count -gt 0) {
-        $exportChoice = Read-Host "`n¿Deseas exportar los resultados a un reporte detallado? (S/N)"
+        $exportChoice = Read-Host "`nDeseas exportar los resultados a un reporte detallado? (S/N)"
         if ($exportChoice.ToUpper() -eq 'S') {
             Export-DetailedEventReport -Events $detectedIssues
         }
@@ -4664,7 +4749,7 @@ function Invoke-AdvancedEventAnalysis {
                 $exportOptions += "   [N] No exportar"
                 
                 Write-Host ($exportOptions -join "`n") -ForegroundColor Gray
-                $exportChoice = Read-Host "`n¿Deseas exportar estos resultados a un archivo? (S/T/N)"
+                $exportChoice = Read-Host "`nDeseas exportar estos resultados a un archivo? (S/T/N)"
                 
                 if ($exportChoice.ToUpper() -eq 'S' -and $selectedEvents.Count -gt 0) {
                     Export-EventResults -Events $selectedEvents -FileNamePrefix "Eventos_Seleccionados"
@@ -5021,7 +5106,7 @@ function Generate-ComprehensiveHtmlReport {
         Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8 -Force
         Write-Host "`n[OK] Reporte HTML generado correctamente en: '$reportPath'" -ForegroundColor Green
         
-        $openChoice = Read-Host "`n¿Deseas abrir el reporte ahora? (S/N)"
+        $openChoice = Read-Host "`nDeseas abrir el reporte ahora? (S/N)"
         if ($openChoice.ToUpper() -eq 'S') {
             Start-Process $reportPath
         }
@@ -5216,7 +5301,7 @@ function Search-EventSolutions {
         }
         
         # Ofrecer exportar las soluciones
-        $exportChoice = Read-Host "`n¿Deseas exportar estas soluciones a un archivo de texto? (S/N)"
+        $exportChoice = Read-Host "`nDeseas exportar estas soluciones a un archivo de texto? (S/N)"
         if ($exportChoice.ToUpper() -eq 'S') {
             $parentDir = Split-Path -Parent $PSScriptRoot
             $reportDir = Join-Path -Path $parentDir -ChildPath "Diagnosticos"
@@ -5295,7 +5380,7 @@ function Start-RealTimeMonitoring {
     Write-Host "   Presiona Ctrl+C para detener el monitoreo en cualquier momento."
     Write-Warning "Este modo puede generar mucho texto en la consola."
     
-    $confirm = Read-Host "`n¿Estas seguro de que deseas iniciar el monitoreo en tiempo real? (S/N)"
+    $confirm = Read-Host "`nEstas seguro de que deseas iniciar el monitoreo en tiempo real? (S/N)"
     if ($confirm.ToUpper() -ne 'S') {
         Write-Host "`n[INFO] Monitoreo cancelado por el usuario." -ForegroundColor Yellow
         Read-Host "`nPresiona Enter para continuar..."
@@ -5470,7 +5555,7 @@ function Start-RealTimeMonitoring {
         Write-Host ""
         
         if ($eventCount -gt 0) {
-            $exportChoice = Read-Host "¿Deseas exportar estos eventos a un archivo de registro? (S/N)"
+            $exportChoice = Read-Host "Deseas exportar estos eventos a un archivo de registro? (S/N)"
             if ($exportChoice.ToUpper() -eq 'S') {
                 $parentDir = Split-Path -Parent $PSScriptRoot
                 $logDir = Join-Path -Path $parentDir -ChildPath "Logs"
@@ -5825,7 +5910,7 @@ function Export-DetailedEventReport {
     Set-Content -Path $reportPath -Value $htmlContent -Encoding UTF8
     
     Write-Host "`n[OK] Reporte detallado generado en: '$reportPath'" -ForegroundColor Green
-    $openChoice = Read-Host "¿Deseas abrir el reporte ahora? (S/N)"
+    $openChoice = Read-Host "Deseas abrir el reporte ahora? (S/N)"
     if ($openChoice.ToUpper() -eq 'S') {
         Start-Process $reportPath
     }
@@ -5924,7 +6009,7 @@ by SOFTMAXTER
     Write-Host "   - TXT (legible): $txtPath"
     Write-Host "   - CSV (analisis): $csvPath"
     
-    $openChoice = Read-Host "`n¿Deseas abrir la carpeta con los resultados? (S/N)"
+    $openChoice = Read-Host "`nDeseas abrir la carpeta con los resultados? (S/N)"
     if ($openChoice.ToUpper() -eq 'S') {
         Start-Process $diagDir
     }
@@ -6887,10 +6972,10 @@ function Show-DriverMenu {
         $targets = @($grid.Rows | Where-Object { $_.Cells[0].Value } | ForEach-Object { $_.Cells["InfName"].Value })
         if ($targets.Count -eq 0) { [System.Windows.Forms.MessageBox]::Show("Selecciona drivers para eliminar.", "Aviso", 0, 48); return }
 
-        if ([System.Windows.Forms.MessageBox]::Show("PELIGRO: Vas a eliminar $($targets.Count) drivers del almacén del sistema.`n`nSi eliminas un driver en uso, el dispositivo dejará de funcionar.`n¿Estás seguro?", "Confirmar Eliminación", 4, 48) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("PELIGRO: Vas a eliminar $($targets.Count) drivers del almacén del sistema.`n`nSi eliminas un driver en uso, el dispositivo dejará de funcionar.`nEstás seguro?", "Confirmar Eliminación", 4, 48) -ne 'Yes') { return }
 
         if ($chkForce.Checked) {
-             if ([System.Windows.Forms.MessageBox]::Show("HAS MARCADO 'FORZAR'.`nEsto eliminará el driver incluso si está en uso.`n¿Confirmación final?", "PELIGRO EXTREMO", 4, 16) -ne 'Yes') { return }
+             if ([System.Windows.Forms.MessageBox]::Show("HAS MARCADO 'FORZAR'.`nEsto eliminará el driver incluso si está en uso.`nConfirmación final?", "PELIGRO EXTREMO", 4, 16) -ne 'Yes') { return }
         }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -7207,7 +7292,7 @@ function Invoke-UserDataBackup {
         
         if ($srcDrive -and $destDrive -and ($srcDrive -eq $destDrive)) {
             Write-Warning "AVISO: Origen y Destino estan en la misma unidad fisica ($srcDrive)."
-            if ((Read-Host "¿Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
+            if ((Read-Host "Estas seguro de que deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
         }
     } catch {}
     
@@ -7439,7 +7524,7 @@ function Move-UserProfileFolders {
 
     Write-Log -LogLevel INFO -Message "Usuario entro al Modulo de Reubicacion de Carpetas de Usuario."
 
-    # --- UTILIDAD PARA MANTENER LA CONSOLA VISIBLE (MEJORADO) ---
+    # --- UTILIDAD PARA MANTENER LA CONSOLA VISIBLE ---
     if (-not ([System.Management.Automation.PSTypeName]'Win32ConsoleUtils').Type) {
         try {
             Add-Type -TypeDefinition @"
@@ -7458,20 +7543,14 @@ function Move-UserProfileFolders {
                 [DllImport("user32.dll", SetLastError = true)]
                 public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
-                // Constantes para SetWindowPos
                 public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
-                public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
                 public const uint SWP_NOSIZE = 0x0001;
                 public const uint SWP_NOMOVE = 0x0002;
                 public const uint SWP_SHOWWINDOW = 0x0040;
-                
-                // Constante para ShowWindow
                 public const int SW_RESTORE = 9;
             }
 "@ -ErrorAction Stop
-        } catch { 
-            # Ignorar si el tipo ya existe
-        }
+        } catch {}
     }
 
     $folderMappings = @{
@@ -7485,7 +7564,7 @@ function Move-UserProfileFolders {
     $registryPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 
     Write-Host "`n[+] Paso 1: Selecciona la carpeta RAIZ donde se crearan las nuevas carpetas de usuario." -ForegroundColor Yellow
-    Write-Host "    (Ejemplo: Si seleccionas 'D:\MisDatos', se crearan 'D:\MisDatos\Escritorio', 'D:\MisDatos\Documentos', etc.)" -ForegroundColor Gray
+    Write-Host "    (Ejemplo: Si seleccionas 'D:\MisDatos', se crearan 'D:\MisDatos\Escritorio', etc.)" -ForegroundColor Gray
     
     $newBasePath = Select-PathDialog -DialogType Folder -Title "Selecciona la NUEVA UBICACION BASE para tus carpetas"
     
@@ -7502,12 +7581,25 @@ function Move-UserProfileFolders {
          return
     }
 
+    # --- NUEVO: ANALISIS INTELIGENTE DE RUTAS Y ONEDRIVE ---
     $selectableFolders = $folderMappings.Keys | Sort-Object
     $folderItems = @()
+    $hasOneDriveLocks = $false
+
     foreach ($folderName in $selectableFolders) {
+        $regName = $folderMappings[$folderName].RegValue
+        $currentPathRaw = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
+        $currentPathExpanded = try { [Environment]::ExpandEnvironmentVariables($currentPathRaw) } catch { $currentPathRaw }
+        
+        # Deteccion de seguridad: Comprobar si OneDrive controla la carpeta
+        $isOneDriveLocked = [bool]($currentPathExpanded -match "\\OneDrive")
+        if ($isOneDriveLocked) { $hasOneDriveLocks = $true }
+
         $folderItems += [PSCustomObject]@{
             Name     = $folderName
             Selected = $false
+            Path     = $currentPathExpanded
+            IsLocked = $isOneDriveLocked
         }
     }
 
@@ -7523,20 +7615,32 @@ function Move-UserProfileFolders {
         
         for ($i = 0; $i -lt $folderItems.Count; $i++) {
             $item = $folderItems[$i]
-            $status = if ($item.Selected) { "[X]" } else { "[ ]" }
-            $currentPath = (Get-ItemProperty -Path $registryPath -Name $folderMappings[$item.Name].RegValue -ErrorAction SilentlyContinue).($folderMappings[$item.Name].RegValue)
-            $currentPathExpanded = try { [Environment]::ExpandEnvironmentVariables($currentPath) } catch { $currentPath }
-            Write-Host ("   [{0}] {1} {2,-12} -> Actual: {3}" -f ($i + 1), $status, $item.Name, $currentPathExpanded)
+            
+            if ($item.IsLocked) {
+                # Diseño de advertencia visual para elementos bloqueados
+                Write-Host ("   [{0}] [!] {1,-12} -> BLOQUEADO POR ONEDRIVE" -f ($i + 1), $item.Name) -ForegroundColor Red
+            } else {
+                $status = if ($item.Selected) { "[X]" } else { "[ ]" }
+                Write-Host ("   [{0}] {1} {2,-12} -> Actual: {3}" -f ($i + 1), $status, $item.Name, $item.Path) -ForegroundColor White
+            }
         }
         
         $selectedCount = $folderItems.Where({$_.Selected}).Count
         if ($selectedCount -gt 0) {
-            Write-Host ""
-            Write-Host "   ($selectedCount carpeta(s) seleccionada(s))" -ForegroundColor Cyan
+            Write-Host "`n   ($selectedCount carpeta(s) seleccionada(s))" -ForegroundColor Cyan
+        }
+
+        if ($hasOneDriveLocks) {
+            Write-Host "`n[ADVERTENCIA DE SEGURIDAD]" -ForegroundColor DarkYellow
+            Write-Host "No puedes reubicar carpetas controladas por Microsoft OneDrive." -ForegroundColor Gray
+            Write-Host "Pasos para desbloquearlas:" -ForegroundColor Gray
+            Write-Host " 1. Clic derecho en el icono de la nube de OneDrive (barra de tareas)." -ForegroundColor Gray
+            Write-Host " 2. Ve a 'Configuracion' -> 'Sincronizacion y copia de seguridad'." -ForegroundColor Gray
+            Write-Host " 3. Clic en 'Administrar copias de seguridad' y desactiva las carpetas deseadas." -ForegroundColor Gray
         }
 
         Write-Host "`n--- Acciones ---" -ForegroundColor Yellow
-        Write-Host "   [Numero] Marcar/Desmarcar        [T] Marcar Todas"
+        Write-Host "   [Numero] Marcar/Desmarcar        [T] Marcar Todas (Libres)"
         Write-Host "   [C] Continuar con la Reubicacion [N] Desmarcar Todas"
         Write-Host ""
         Write-Host "   [V] Cancelar y Volver" -ForegroundColor Red
@@ -7545,8 +7649,18 @@ function Move-UserProfileFolders {
 
         if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le $folderItems.Count) {
             $index = [int]$choice - 1
-            $folderItems[$index].Selected = -not $folderItems[$index].Selected
-        } elseif ($choice.ToUpper() -eq 'T') { $folderItems.ForEach({$_.Selected = $true}) }
+            if ($folderItems[$index].IsLocked) {
+                [System.Console]::Beep(400, 200)
+                Write-Warning "Carpeta protegida por OneDrive. Sigue las instrucciones para desbloquearla."
+                Start-Sleep -Seconds 3
+            } else {
+                $folderItems[$index].Selected = -not $folderItems[$index].Selected
+            }
+        } 
+        elseif ($choice.ToUpper() -eq 'T') { 
+            # Marcar todas, excepto las bloqueadas
+            $folderItems | Where-Object { -not $_.IsLocked } | ForEach-Object { $_.Selected = $true } 
+        }
         elseif ($choice.ToUpper() -eq 'N') { $folderItems.ForEach({$_.Selected = $false}) }
         elseif ($choice.ToUpper() -notin @('C', 'V')) {
              Write-Warning "Opcion no valida." ; Start-Sleep -Seconds 1
@@ -7568,14 +7682,11 @@ function Move-UserProfileFolders {
 
     # --- CALCULO DE ESPACIO AUTOMATICO ---
     Clear-Host
-	Write-Host "`n[+] Calculando espacio necesario..." -ForegroundColor Yellow
+    Write-Host "`n[+] Calculando espacio necesario..." -ForegroundColor Yellow
     $totalRequiredBytes = 0
     foreach ($folder in $foldersToProcess) {
-        $regVal = $folderMappings[$folder.Name].RegValue
-        $pathRaw = (Get-ItemProperty -Path $registryPath -Name $regVal -ErrorAction SilentlyContinue).($regVal)
-        $pathExpanded = try { [Environment]::ExpandEnvironmentVariables($pathRaw) } catch { $pathRaw }
         try {
-            $size = (Get-ChildItem -Path $pathExpanded -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            $size = (Get-ChildItem -Path $folder.Path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
             $totalRequiredBytes += $size
         } catch {}
     }
@@ -7600,7 +7711,7 @@ function Move-UserProfileFolders {
     }
 
     # --- MENU DE ACCION ---
-	Write-Host "`n--- TIPO DE ACCION ---" -ForegroundColor Cyan
+    Write-Host "`n--- TIPO DE ACCION ---" -ForegroundColor Cyan
     Write-Host "   [1] Mover Archivos Y Actualizar Registro (Recomendado)"
     Write-Host "   [2] Solo Actualizar Registro (Si ya moviste archivos manualmente)"
     
@@ -7626,12 +7737,8 @@ function Move-UserProfileFolders {
     if ($verificationMode -eq 'Simulation') {
         Write-Host "`n[SIMULACION] Ejecutando Robocopy /L para previsualizar..." -ForegroundColor Cyan
         foreach ($folder in $foldersToProcess) {
-            $regName = $folderMappings[$folder.Name].RegValue
-            $currentPath = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
-            $src = try { [Environment]::ExpandEnvironmentVariables($currentPath) } catch { $currentPath }
             $dest = Join-Path $newBasePath $folderMappings[$folder.Name].DefaultName
-            
-            Start-Process "robocopy.exe" -ArgumentList "`"$src`" `"$dest`" /L /E /NP /NJH /NJS" -Wait -PassThru -NoNewWindow
+            Start-Process "robocopy.exe" -ArgumentList "`"$($folder.Path)`" `"$dest`" /L /E /NP /NJH /NJS" -Wait -PassThru -NoNewWindow
         }
         Write-Host "`nSimulacion completada. Revisa la salida arriba." -ForegroundColor Yellow
         if ((Read-Host "¿Deseas proceder con el movimiento REAL? (S/N)").ToUpper() -ne 'S') { return }
@@ -7639,43 +7746,30 @@ function Move-UserProfileFolders {
     }
 
     Write-Host ""
-	Write-Warning "Cerrando aplicaciones y explorador..."
+    Write-Warning "Cerrando aplicaciones y explorador..."
     $confirmation = Read-Host "¿Confirmar inicio? (SI/NO)"
     if ($confirmation -ne 'SI') { return }
 
     # --- [SEGURIDAD] CERRAR EXPLORER Y FORZAR VISIBILIDAD ---
     Write-Host "Cerrando el Explorador de Windows..." -ForegroundColor Yellow
     Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
-    
-    # Esperamos un momento para que el sistema reaccione al cierre
     Start-Sleep -Seconds 1
     
-    # --- [FIX CRiTICO] FORZAR LA CONSOLA AL FRENTE (TOPMOST) ---
     try {
         $hWnd = [Win32ConsoleUtils]::GetConsoleWindow()
         if ($hWnd -ne [IntPtr]::Zero) {
-            # 1. Asegurar que no esté minimizada
             [Win32ConsoleUtils]::ShowWindow($hWnd, [Win32ConsoleUtils]::SW_RESTORE) 
-            
-            # 2. Forzar "Siempre visible" (TopMost) para que no se pierda tras el fondo
-            # HWND_TOPMOST (-1) coloca la ventana sobre todas las demas no-topmost
             [Win32ConsoleUtils]::SetWindowPos($hWnd, [Win32ConsoleUtils]::HWND_TOPMOST, 0, 0, 0, 0, ([Win32ConsoleUtils]::SWP_NOMOVE -bor [Win32ConsoleUtils]::SWP_NOSIZE -bor [Win32ConsoleUtils]::SWP_SHOWWINDOW)) | Out-Null
-            
-            # 3. Dar foco
             [Win32ConsoleUtils]::SetForegroundWindow($hWnd) | Out-Null
-            
         }
-    } catch {
-    }
+    } catch {}
 
     $globalSuccess = $true
     
     foreach ($op in $foldersToProcess) {
         $regName = $folderMappings[$op.Name].RegValue
-        $rawPath = (Get-ItemProperty -Path $registryPath -Name $regName -ErrorAction SilentlyContinue).($regName)
-        $srcPath = [Environment]::ExpandEnvironmentVariables($rawPath)
+        $srcPath = $op.Path
         
-        # Validacion de existencia de origen
         if (-not (Test-Path $srcPath)) {
             Write-Warning "   [OMITIDO] La carpeta de origen no existe en disco: $srcPath"
             continue
@@ -7685,10 +7779,8 @@ function Move-UserProfileFolders {
 
         Write-Host "`nProcesando: $($op.Name)..." -ForegroundColor Cyan
 
-        # 1. Crear Directorio
         if (-not (Test-Path $destPath)) { New-Item -Path $destPath -ItemType Directory -Force | Out-Null }
 
-        # 2. Mover/Copiar
         $filesMoved = $true
         if ($actionType -eq 'MoveAndRegister') {
             $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Logs"
@@ -7696,12 +7788,10 @@ function Move-UserProfileFolders {
             $logFile = Join-Path $logDir "Move_$($op.Name).log"
 
             if ($verificationMode -eq 'Hash') {
-                # MODO SEGURO: Copiar -> Verificar -> Borrar
                 Write-Host "   [HASH] Copiando archivos (Modo Seguro)..." -ForegroundColor Yellow
                 $args = @("`"$srcPath`"", "`"$destPath`"", "/MOVE", "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/J", "/R:2", "/W:2", "/NP", "/LOG:`"$logFile`"")
                 Start-Process "robocopy.exe" -ArgumentList $args -Wait -WindowStyle Hidden
                 
-                # Verificar Hash Manualmente (adaptado para renombres)
                 Write-Host "   [HASH] Verificando integridad..." -ForegroundColor Yellow
                 $hashError = $false
                 
@@ -7740,9 +7830,8 @@ function Move-UserProfileFolders {
                     $globalSuccess = $false
                 }
             } else {
-                # MODO ESTANDAR: Mover directo (/MOVE)
                 Write-Host "   [MOVE] Moviendo archivos..." -ForegroundColor Gray
-				$args = @("`"$srcPath`"", "`"$destPath`"", "/MOVE", "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/J", "/R:2", "/W:2", "/NP", "/LOG:`"$logFile`"")
+                $args = @("`"$srcPath`"", "`"$destPath`"", "/MOVE", "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/J", "/R:2", "/W:2", "/NP", "/LOG:`"$logFile`"")
                 $p = Start-Process "robocopy.exe" -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
                 if ($p.ExitCode -ge 8) { 
                     Write-Error "   Error Robocopy (Cod $($p.ExitCode))."
@@ -7751,18 +7840,16 @@ function Move-UserProfileFolders {
                 }
             }
         } else {
-            # Solo registro: copiar desktop.ini
             $ini = Join-Path $srcPath "desktop.ini"
             if (Test-Path $ini) { Copy-Item $ini (Join-Path $destPath "desktop.ini") -Force -ErrorAction SilentlyContinue }
         }
 
-        # 3. Registro
+        # 3. Actualizar Registro
         if ($filesMoved) {
             try {
                 Set-ItemProperty -Path $registryPath -Name $regName -Value $destPath -Type ExpandString -Force
                 Write-Host "   Registro actualizado." -ForegroundColor Green
                 
-                # --- MAGIA DE ICONOS ---
                 $srcIni = Join-Path $srcPath "desktop.ini"
                 $destIni = Join-Path $destPath "desktop.ini"
                 if ((Test-Path $srcIni) -and (-not (Test-Path $destIni))) {
@@ -7770,7 +7857,6 @@ function Move-UserProfileFolders {
                 }
                 
                 if (Test-Path $destIni) { (Get-Item $destIni -Force).Attributes = 'Hidden', 'System' }
-                # CRITICO: La carpeta contenedora debe ser ReadOnly
                 (Get-Item $destPath -Force).Attributes = 'ReadOnly'
                 
                 Write-Log -LogLevel ACTION -Message "Registro actualizado para $($op.Name) -> $destPath"
@@ -7780,7 +7866,6 @@ function Move-UserProfileFolders {
         }
     }
 
-    # --- [SEGURIDAD] RESTAURAR EXPLORER ---
     Write-Host "`nRestaurando escritorio..." -ForegroundColor Yellow
     Start-Sleep -Seconds 1
     Invoke-ExplorerRestart
@@ -8069,7 +8154,7 @@ function Show-ScheduledTasks {
             }
         }
 
-        $msg = "¿Estas seguro de $verb $($targets.Count) tareas seleccionadas?"
+        $msg = "Estas seguro de $verb $($targets.Count) tareas seleccionadas?"
         if ($Mode -eq 'Delete') {
             $msg += "`n`n¡Esta accion NO se puede deshacer!"
         }
@@ -8453,7 +8538,7 @@ function Ensure-ChocolateyIsInstalled {
     Write-Host "El gestor de paquetes 'Chocolatey' no esta instalado." -ForegroundColor Yellow
     
     if ($script:SoftwareEngine -eq 'Chocolatey') {
-        $installChoice = Read-Host "¿Deseas instalarlo ahora? (S/N)"
+        $installChoice = Read-Host "Deseas instalarlo ahora? (S/N)"
         if ($installChoice -eq 'S' -or $installChoice -eq 's') {
             Write-Host "`n[+] Instalando Chocolatey..." -ForegroundColor Yellow
             try {
@@ -8672,7 +8757,7 @@ function Invoke-BatchInstallation {
         Write-Host "   - $software" -ForegroundColor White
     }
 
-    $confirm = Read-Host "`n¿Continuar con la instalacion? (S/N)"
+    $confirm = Read-Host "`nContinuar con la instalacion? (S/N)"
     if ($confirm -ne 'S' -and $confirm -ne 's') { return }
 	Write-Log -LogLevel INFO -Message "SOFTWARE: Iniciando instalacion en masa desde '$filePath' con el motor '$($script:SoftwareEngine)'."
 
@@ -9089,7 +9174,7 @@ function Show-TweakManagerMenu {
         if ($targets.Count -eq 0) { return }
 
         $actionTxt = if ($Mode -eq 'Enable') { "ACTIVAR" } else { "RESTAURAR" }
-        if ([System.Windows.Forms.MessageBox]::Show("¿$actionTxt $($targets.Count) ajustes?", "Confirmar", 4, 32) -ne 'Yes') { return }
+        if ([System.Windows.Forms.MessageBox]::Show("$actionTxt $($targets.Count) ajustes?", "Confirmar", 4, 32) -ne 'Yes') { return }
 
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $needRestart = $false
@@ -9107,7 +9192,7 @@ function Show-TweakManagerMenu {
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
 
         if ($needExplorer -and -not $needRestart) {
-            if ([System.Windows.Forms.MessageBox]::Show("Se requiere reiniciar el Explorador. ¿Hacerlo ahora?", "Aviso", 4, 32) -eq 'Yes') {
+            if ([System.Windows.Forms.MessageBox]::Show("Se requiere reiniciar el Explorador. Hacerlo ahora?", "Aviso", 4, 32) -eq 'Yes') {
 
                 $grid.ShowCellToolTips = $false
                 [System.Windows.Forms.Application]::DoEvents() 
@@ -9250,7 +9335,7 @@ function Clean-BrowserCaches {
     Write-Host "   [i] Se verificara que los archivos no esten bloqueados." -ForegroundColor Gray
     Write-Host ""
     
-    if ((Read-Host "¿Deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
+    if ((Read-Host "Deseas continuar? (S/N)").ToUpper() -ne 'S') { return }
 
     # Definición expandida de objetivos
     $browsers = @(
@@ -9383,7 +9468,7 @@ function Show-AdminMenu {
         
         switch ($adminChoice.ToUpper()) {
             '1' {
-                if ((Read-Host "`nADVERTENCIA: Esto eliminara permanentemente los registros de eventos. ¿Estas seguro? (S/N)").ToUpper() -eq 'S') {
+                if ((Read-Host "`nADVERTENCIA: Esto eliminara permanentemente los registros de eventos. Estas seguro? (S/N)").ToUpper() -eq 'S') {
                     
                     $targetLogs = @("Application", "Security", "System", "Setup")
                     Write-Host ""
