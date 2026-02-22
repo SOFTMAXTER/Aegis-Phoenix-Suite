@@ -170,7 +170,7 @@ try {
     Write-UpdateLog "[PASO 4/6] Preparando instalacion (limpiando archivos antiguos)..."
     
     # --- EXCLUSIONES ESPECIFICAS DE AEGIS PHOENIX SUITE ---
-    `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos", "Tools"
+    `$itemsToRemove = Get-ChildItem -Path "$installPath" -Exclude "Logs", "Backup", "Reportes", "Diagnosticos"
     if (`$null -ne `$itemsToRemove) { 
         Remove-Item -Path `$itemsToRemove.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
