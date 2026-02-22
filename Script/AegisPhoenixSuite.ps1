@@ -238,6 +238,29 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
+try {
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+    $name = "LongPathsEnabled"
+    
+    # Obtenemos la propiedad; si no existe, no arrojará error gracias a SilentlyContinue
+    $regItem = Get-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
+    
+    if ($null -ne $regItem -and $regItem.$name -eq 1) {
+        # Write-Host " -> [OK] El soporte para rutas largas ya esta habilitado en el sistema." -ForegroundColor Green
+        # Si ya tienes declarada la funcion Write-Log en este punto, puedes descomentar la siguiente linea:
+        # Write-Log -LogLevel INFO -Message "Soporte para rutas largas (Long Paths) preexistente y verificado."
+    } else {
+        Write-Host " -> [-] Habilitando soporte para rutas largas en el Registro..." -ForegroundColor Yellow
+        Set-ItemProperty -Path $regPath -Name $name -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Host " -> [OK] Soporte habilitado exitosamente." -ForegroundColor Green
+        # Write-Log -LogLevel ACTION -Message "Soporte para rutas largas (Long Paths) habilitado dinamicamente."
+    }
+} catch {
+    Write-Warning "No se pudo comprobar o habilitar el soporte para rutas largas de forma automatica."
+    Write-Host "Asegurate de que tu directorio temporal (Scratch_DIR) tenga una ruta muy corta (ej. C:\S) para evitar errores de extraccion con DISM." -ForegroundColor Yellow
+    # Write-Log -LogLevel ERROR -Message "Fallo al comprobar/habilitar LongPathsEnabled: $($_.Exception.Message)"
+}
+
 Write-Log -LogLevel INFO -Message "================================================="
 Write-Log -LogLevel INFO -Message "Aegis Phoenix Suite v$($script:Version) iniciado en modo Administrador."
 
