@@ -159,3 +159,15 @@ Al iniciar, se presentan las categorías principales de la suite.
 Este script realiza operaciones avanzadas que modifican el sistema. El autor no se hace responsable de la pérdida de datos o daños que puedan ocurrir en tu sistema.
 
 **Se recomienda encarecidamente crear una copia de seguridad y utilizar la función "Crear Punto de Restauracion" (Opción 1) antes de aplicar cambios importantes.**
+
+## 📝 Licencia y Modelo de Negocio (Dual Licensing)
+
+Este proyecto está protegido bajo derechos de autor y utiliza un modelo de **Doble Licencia (Dual Licensing)** para garantizar que siga siendo libre para la comunidad, ofreciendo al mismo tiempo un marco legal estructurado para integraciones corporativas.
+
+### 1. Licencia Comunitaria (Open Source)
+Distribuido bajo la **Licencia GNU GPLv3**. Eres libre de usar, estudiar, modificar y compartir este software de forma gratuita. Sin embargo, bajo esta licencia de naturaleza *Copyleft*, cualquier obra derivada, script o producto que integre código de Aegis Phoenix Suite **debe ser publicado con su código fuente abierto** bajo esta misma licencia. El software se entrega "tal cual", sin garantías explícitas o implícitas.
+
+### 2. Licencia Comercial Exclusiva
+Si representas a una empresa o entidad que desea integrar el motor o la arquitectura de Aegis Phoenix Suite en una herramienta comercial propietaria (cerrada), distribuirlo sin revelar su código fuente, o requiere un Acuerdo de Nivel de Servicio (SLA) y soporte técnico garantizado, **debes adquirir una Licencia Comercial**. 
+
+Para discutir regalías (royalties), adquisiciones o emitir una licencia comercial para tu corporación, por favor contacta a: `[softmaxter@hotmail.com]`
