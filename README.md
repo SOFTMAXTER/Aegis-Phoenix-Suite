@@ -1,7 +1,7 @@
 # Aegis Phoenix Suite v4.9.2 by SOFTMAXTER
 
 <p align="center">
-  <img width="240" height="240" alt="Aegis Phoenix Logo" src="https://github.com/user-attachments/assets/a553a8e6-17a4-43d4-b479-05a1dd217c8f" />
+  <img width="250" height="250" alt="Aegis Phoenix Logo" src="https://github.com/user-attachments/assets/64a553f6-9e92-437d-98a8-38e4749aad47" />
 </p>
 
 **Aegis Phoenix Suite** es un completo script de PowerShell diseñado para simplificar la administración, optimización y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de `DISM`, directivas de registro, `PowerShell` y gestores de paquetes en una interfaz híbrida que combina la eficiencia de la consola con la usabilidad de **nuevas interfaces gráficas (GUI)** modernas y fáciles de usar.
