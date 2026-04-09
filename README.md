@@ -1,173 +1,146 @@
-# Aegis Phoenix Suite v4.9.2 by SOFTMAXTER
+# AdminImagenOffline V1.5.2 by SOFTMAXTER
 
 <p align="center">
-  <img width="250" height="250" alt="Aegis Phoenix Logo" src="https://github.com/user-attachments/assets/64a553f6-9e92-437d-98a8-38e4749aad47" />
+  <img width="250" height="250" alt="AdminImagenOffline Logo" src="https://github.com/user-attachments/assets/806cdf93-5a4d-41f1-9d0d-372882c4afcc" />
 </p>
 
-**Aegis Phoenix Suite** es un completo script de PowerShell diseñado para simplificar la administración, optimización y mantenimiento de los sistemas operativos Windows 10 y 11. El script encapsula complejas operaciones de `DISM`, directivas de registro, `PowerShell` y gestores de paquetes en una interfaz híbrida que combina la eficiencia de la consola con la usabilidad de **nuevas interfaces gráficas (GUI)** modernas y fáciles de usar.
+**AdminImagenOffline** es un completo script orquestador en PowerShell, diseñado para simplificar la administración y el mantenimiento de imágenes de instalación de Windows (`.wim`, `.esd`, `.vhd`, `.vhdx`). El script encapsula complejas operaciones de `DISM`, manipulación del Registro a bajo nivel y otras herramientas del sistema en una suite de menús interactivos y GUIs fáciles de usar.
 
-Fue creado para administradores de TI, técnicos de soporte y entusiastas de Windows que necesitan aplicar una amplia gama de mejoras, reparaciones y personalizaciones de manera eficiente, controlada y reversible.
+Fue creado para administradores de TI, técnicos de soporte y entusiastas de la personalización de Windows que necesitan modificar, limpiar, reparar, optimizar o convertir imágenes del sistema operativo de manera eficiente, segura y sin conexión.
 
-## Novedades v4.9.1:
+## Características Principales
 
-* **Limpieza Profunda de Navegadores**: Módulo dedicado para purgar cachés de Chrome, Edge, Firefox, Brave y Opera, cerrando procesos de forma segura.
-* **Interfaz Gráfica (GUI) Optimizada**: Mejoras en los gestores (Ajustes, Servicios, Inicio, Drivers, Limpieza) con estilo oscuro, tablas ordenables y renderizado `DoubleBuffered` para evitar parpadeos.
-
-## Caracteristicas Principales
-
-* **Experiencia Visual Renovada**: Navegación por menús de consola principales que lanzan herramientas gráficas (Windows Forms) para una gestión detallada.
-* **Módulo de Auto-Actualización Robusto**: Comprueba si hay una nueva versión en GitHub al iniciar, la descarga y la instala de forma segura preservando la integridad del sistema.
-* **Autoelevación de Privilegios**: El script verifica si se está ejecutando como Administrador y, de no ser así, solicita los permisos necesarios.
-* **Registro Completo de Actividad**: Todas las acciones se guardan en `Logs/Registro.log` para auditoría.
-* **Gestor de Ajustes Visual y Dinámico**: GUI optimizada con buscador y filtrado por categorías para aplicar tweaks de rendimiento, seguridad, privacidad y UI de Windows 11.
-* **Gestor de Servicios Inteligente**: Interfaces gráficas dedicadas para servicios de sistema y de terceros, con diferenciación visual de estados y protección de configuración original.
-* **Gestor de Software Resiliente (Multi-Motor)**: Integra `Winget` y `Chocolatey` para actualizaciones y descargas masivas.
-* **Gestión de Inicio 100% Nativa**: GUI para administrar programas de inicio (Registro, Carpetas y Tareas) replicando los valores binarios del Administrador de Tareas.
-* **Inventario Profesional**: Generación de reportes detallados (TXT, HTML, CSV) incluyendo salud de discos (S.M.A.R.T.), RAM, GPU y actualizaciones.
-* **Herramientas de Diagnóstico y Respaldo**: Diagnóstico de red, análisis inteligente de logs de eventos, respaldo de datos de usuario (Robocopy) y reubicación de carpetas de usuario.
+* **Interfaz Híbrida (Consola + GUI)**: Combina la fluidez de la consola para operaciones de orquestación con interfaces gráficas (Windows Forms) modernas e intuitivas para la gestión de drivers, servicios, bloatware, despliegue, metadatos y registro.
+* **Auto-Actualizador Inteligente**: El script busca automáticamente nuevas versiones en el repositorio de GitHub al iniciar y ofrece una actualización transparente (en caliente) mediante un módulo externo seguro.
+* **Configuración Persistente**: Guarda las rutas de trabajo (Directorio de Montaje y Directorio Temporal) en un archivo `config.json` para que tus preferencias de entorno sean permanentes.
+* **Robustez y Seguridad de Grado Empresarial**:
+    * **Protección de Hives (Registro)**: Implementa limpieza profunda de memoria en .NET (`GC::Collect()`) y pausas de seguridad para evitar la corrupción de las colmenas del registro al desmontar. Se mantiene la herencia (SDDL) de forma quirúrgica.
+    * **Motor de Arquitectura (Escudo)**: Previene la inyección accidental de paquetes o drivers incompatibles (ej. x86 en x64) analizando heurísticamente los nombres y manifiestos.
+    * **Logging Detallado**: Sistema de reporte de errores rotativo con "Stack Trace" completo para facilitar el diagnóstico de fallos críticos, guardado en la carpeta `Logs`.
+    * **Saneamiento Automático**: Limpieza proactiva del directorio temporal (`Scratch_DIR`) para evitar errores de espacio o archivos bloqueados/corruptos (Error C1420116).
+    * **Tablero de Estado (Dashboard)**: Muestra en tiempo real la información de la imagen montada (Nombre, Versión, Build, Arquitectura, Directorio y Estado) en el menú principal.
+* **Detección y Auto-Montaje Automático**: Verifica al iniciar si ya existe una imagen montada en el sistema (incluyendo discos virtuales VHD/VHDX) y carga su información dinámicamente, permitiendo recuperar sesiones tras cierres inesperados.
+* **Gestión de Imágenes**: Montaje, desmontaje (con o sin descartes), guardado de cambios (commit/append/guardar como nuevo WIM) y recarga rápida. Soporte completo para montar y editar archivos **VHD/VHDX** con guardado en tiempo real (Live Edit).
+* **Editor de Metadatos WIM**: Interfaz gráfica dedicada para editar el Nombre, Descripción, Nombre Mostrado y el ID de Edición de los índices de una imagen WIM (usando motor nativo C# vía P/Invoke sobre `wimgapi.dll`).
+* **Gestión de Idiomas (OSD Offline)**: Asistente automatizado para inyectar paquetes de idioma (LP), características bajo demanda (FOD) y paquetes de experiencia local (LXP). Procesa secuencialmente WinRE, el sistema operativo (`install.wim`) y el instalador (`boot.wim`), regenerando `lang.ini` y optimizando el tamaño final.
+* **Herramientas de Arranque y Medios**:
+    * **Gestor Inteligente de boot.wim**: Herramienta dedicada para detectar y montar el instalador (Setup) o el entorno de rescate (WinPE) para inyectar utilidades extra (DaRT) y drivers de almacenamiento (VMD/RAID).
+    * **Despliegue a VHD / Disco Físico**: Crea discos virtuales o unidades USB/HDD arrancables desde un WIM o ESD, configurando particiones de forma automatizada (GPT/UEFI o MBR/BIOS) y aplicando el sector de arranque.
+    * **Generador de ISO**: Crea imágenes ISO arrancables (Legacy/UEFI) utilizando `oscdimg`, leyendo la etiqueta oficial de la imagen e inyectando opcionalmente archivos de respuesta desatendidos (`autounattend.xml`).
+* **Conversión de Formatos**: Transformación de compresión sólida (ESD a WIM) y captura de volúmenes virtuales (VHD/VHDX a WIM) con auto-detección de la partición del sistema operativo.
+* **Cambio de Edición de Windows**: Detección y escalado de edición (ej. Home a Pro, Pro a Workstation) offline con advertencias críticas de seguridad al operar sobre VHDs.
+* **Gestión Avanzada de Drivers (GUI)**:
+    * **Inyector Flexible**: Interfaz que permite cargar carpetas recursivamente o archivos `.inf` individuales. Compara la caché de la imagen para omitir drivers ya instalados (Amarillo = Ya instalado | Blanco = Nuevo).
+    * **Desinstalador de Drivers**: Lista los controladores de terceros (OEM) instalados en la imagen base y permite su purga selectiva y segura.
+* **Centro de Personalización Completa**:
+    * **Eliminación de Bloatware**: Interfaz gráfica con clasificación por categorías (Verde=Sistema Vital, Naranja=Bloatware) para purgar aplicaciones Appx/MSIX preinstaladas.
+    * **Gestor de Características (Features)**: Interfaz para activar/desactivar características opcionales de Windows (Hyper-V, SMB, WSL). Incluye motor de *Staging* inteligente para la **integración offline de .NET 3.5** filtrando paquetes `.cab` por arquitectura desde la carpeta `sxs`.
+    * **Optimización de Servicios**: Interfaz por pestañas para deshabilitar servicios innecesarios (Telemetría, Xbox, Red) modificando directamente las colmenas. Incluye función de **Restauración** a valores de fábrica.
+    * **Tweaks y Registro Offline**: 
+        * Gestor visual para aplicar docenas de ajustes predefinidos de rendimiento y privacidad. 
+        * **Importador .REG Inteligente**: Traducción al vuelo de rutas online (`HKCU`, `HKLM\Software`) a colmenas offline, con vista previa de cambios (`Modo Turbo .NET`), creación de perfiles y procesamiento en lote (Queue Manager).
+    * **Inyector de Apps Modernas (Heurístico)**: Aprovisionamiento de aplicaciones UWP (`.appx`, `.appxbundle`) analizando el manifiesto XML en RAM para resolver dependencias y licencias automáticamente.
+    * **Automatización OOBE (Unattend.xml)**: Generador avanzado para saltar las pantallas de configuración. Incluye:
+        * Creación de cuenta de Administrador Local y AutoLogon.
+        * **Hacks Win11**: Inyecta claves para eludir TPM, SecureBoot y RAM.
+        * **Privacidad y Red**: Instalación sin internet (BypassNRO), omisión de WiFi, desactivación de telemetría y Cortana en el primer inicio.
+        * Importación y validación de XML externos.
+    * **Inyector de Addons**: Integración masiva de paquetes de terceros (`.wim`, `.tpk`, `.bpk`, `.reg`) con ordenamiento automático por prioridad y filtrado de arquitectura.
+    * **Gestión de WinRE**: Entorno para extraer, montar, inyectar componentes y recomprimir agresivamente (`/Export-Image`) el entorno de recuperación para ahorrar espacio.
+    * **OEM Branding**: Personaliza el fondo de escritorio (Wallpaper), la pantalla de bloqueo (Lockscreen), el Tema Visual (Claro/Oscuro vía RunOnce) e inyecta los datos de soporte del ensamblador (Fabricante, Modelo, Web).
+* **Suite de Limpieza y Reparación**: Diagnóstico (`CheckHealth`, `ScanHealth`), Reparación (`RestoreHealth` con fallback a fuente WIM local), `SFC` offline y limpieza del almacén de componentes (`ResetBase`).
 
 ---
 
-## Requisitos
+## Requisitos del Sistema
 
-* Sistema Operativo Windows 10 o Windows 11.
-* Privilegios de Administrador para ejecutar el script.
-* Conexión a Internet para la auto-actualización, gestión de software y descarga de herramientas auxiliares (como `EmptyStandbyList.exe`).
+* Sistema Operativo Windows 10 / 11 Pro / Enterprise (Host).
+* PowerShell 5.1 o superior.
+* Privilegios de Administrador (Elevación UAC).
+* Módulo de Hyper-V habilitado (Obligatorio para operaciones de montaje de VHD/VHDX).
+* **[Windows Assessment and Deployment Kit (ADK)](https://learn.microsoft.com/es-es/windows-hardware/get-started/adk-install) (CRÍTICO):** Instalado en el sistema, o en su defecto, contar con el ejecutable `oscdimg.exe` en la carpeta `Tools`. Esta dependencia es estrictamente necesaria para generar ISOs y sus complementos (`WinPE_OCs`) son indispensables para la inyección de idiomas en entornos de rescate.
+* Conexión a internet (Opcional, exclusivamente para el auto-actualizador de GitHub).
 
 ---
 
-## Modo de Uso
+## Modo de Uso y Estructura
 
-1.  Descarga el repositorio como un archivo `.zip` y extráelo.
-2.  Asegúrate de que la estructura de carpetas sea la siguiente:
-    ```
+1.  Descarga el repositorio como un archivo `.zip` y extráelo en una ruta corta (ej. `C:\AdminImagen`).
+2.  Asegúrate de mantener la integridad de la estructura de directorios:
+    ```text
     TuCarpetaPrincipal/
     │
-    ├── Run.bat
+    ├── AdminImagenOffline.exe    <-- Ejecutable Lanzador (Reemplaza al antiguo Run.bat)
     └── Script/
         │
-        └── AegisPhoenixSuite.ps1
+        ├── AdminImagenOffline.ps1
+        ├── Modulo-Appx.ps1
+        ├── Modulo-DeployVHD.ps1
+        ├── Modulo-Drivers.ps1
+        ├── Modulo-Features.ps1
+        ├── Modulo-Idioma.ps1
+        ├── Modulo-IsoMaker.ps1
+        ├── Modulo-Metadata.ps1
+        ├── Modulo-OEMBranding.ps1
+        ├── Modulo-Unattend.ps1
         └── Catalogos/
             ├── Ajustes.ps1
             ├── Servicios.ps1
             └── Bloatware.ps1
     ```
-3.  Haz doble clic en **`Run.bat`**. El script validará los permisos y se iniciará.
-4.  Navega por los menús de consola y abre las nuevas herramientas gráficas según necesites.
+3.  Haz doble clic en **`AdminImagenOffline.exe`**. El lanzador solicitará permisos de Administrador y preparará el entorno de PowerShell con las políticas de ejecución correctas.
+4.  Si es la primera ejecución, ve al menú **[8] Configuración** para definir tus directorios de trabajo permanente (`MOUNT_DIR` y `Scratch_DIR`). Se recomienda usar rutas lo más cortas posibles (ej. `C:\Mount`) para evitar el límite de 260 caracteres de la API de Windows durante las extracciones.
 
 ---
 
-## Explicación Detallada de los Módulos
+## Notas de Seguridad y Mejores Prácticas
 
-### Menú Principal
-
-Al iniciar, se presentan las categorías principales de la suite.
-
-* **1. Crear Punto de Restauración**: Utiliza `Checkpoint-Computer` con gestión robusta del servicio VSS.
-* **2. Módulo de Optimizacion y Limpieza**: Accede a las herramientas de rendimiento.
-* **3. Módulo de Mantenimiento y Reparación**: Utilidades de diagnóstico y reparación del SO.
-* **4. Herramientas Avanzadas**: Módulos de nivel experto (Tweaks, Inventario, Drivers, Software, Admin).
-* **L. Ver Registro de Actividad (Log)**: Abre el historial de acciones.
-
-### 2. Módulo de Optimización y Limpieza
-
-* **1. Gestor de Servicios No Esenciales (GUI)**: Nueva interfaz gráfica con buscador y filtros por categoría. Permite deshabilitar o restaurar servicios del sistema con descripciones detalladas.
-* **2. Optimizar Servicios de Programas Instalados (GUI)**: Panel visual que detecta servicios no nativos. Crea backups automáticos en JSON y permite alternar su estado.
-* **3. Módulo de Limpieza Profunda (GUI)**: Interfaz gráfica que permite "Escanear" el espacio ocupado por temporales, cachés y `Windows.old`. Incluye ejecución robusta de `CleanMgr` y limpieza de cachés de iconos/miniaturas.
-* **4. Eliminar Apps Preinstaladas (GUI)**: Gestor visual de Bloatware. Clasifica apps por colores (Verde=Protegido, Naranja=Recomendado). Permite selección múltiple y limpieza de residuos en AppData.
-* **5. Gestionar Programas de Inicio (GUI)**: Panel interactivo para habilitar, deshabilitar o eliminar programas de arranque (Registro, Carpetas, Tareas). Muestra rutas y comandos detallados.
-
-### 3. Módulo de Mantenimiento y Reparación
-
-* **1. Verificar y Reparar Archivos del Sistema**: Secuencia inteligente: `DISM /ScanHealth` -> `DISM /RestoreHealth` (si es necesario) -> `sfc /scannow`. Incluye programación de `CHKDSK` con detección de idioma.
-* **2. Limpiar Caches de Sistema**: Limpieza de DNS, ARP, Tienda de Windows, Fuentes, SSL y caché de iconos.
-* **3. Optimizar Unidades**: Desfragmentación (HDD) o TRIM (SSD) con reportes en tiempo real.
-* **4. Generar Reporte de Salud (Energía)**: Diagnósticos `powercfg` (Energy, Battery, Sleep) con barra de progreso visual.
-* **5. Purgar Memoria RAM**: Usa `EmptyStandbyList.exe` para liberar memoria en espera (Standby List).
-* **6. Diagnostico y Reparacion de Red**: Submenú con GUI y consola para Ping, DNS, Tracert, limpiar caché DNS, renovar IP y Reset completo de pila de red.
-* **7. Reconstruir Índice de Búsqueda**: Purgado y regeneración de la base de datos de Windows Search.
-* **8. Limpieza Profunda de Cache de Navegadores**: Detecta y limpia cachés de Chrome, Edge, Brave, Opera y Firefox, gestionando el cierre de procesos.
-
-### 4. Herramientas Avanzadas
-
-#### → Gestor de Ajustes del Sistema (GUI Optimizada)
-
-* **Nueva Interfaz**: Ventana gráfica con buscador en tiempo real y filtrado por categorías.
-* **Control Total**: Permite activar/desactivar ajustes individuales (Rendimiento, Privacidad, UI, Seguridad).
-* **Estado Visual**: Muestra claramente si un ajuste está `[Activado]` (Verde) o `[Desactivado]` (Rojo/Salmón).
-
-#### → Inventario y Reportes del Sistema
-
-* Genera reportes detallados en `.txt`, `.html` (interactivo y moderno) o `.csv`.
-* Información exhaustiva: Sistema, Hardware, RAM (detalles de slots), Usuarios, Seguridad, Discos (S.M.A.R.T.), Procesos Top, Updates y Software instalado.
-
-#### → Gestión de Drivers (GUI)
-
-* **Interfaz Visual**: Tabla con todos los drivers de terceros instalados.
-* **Backup Selectivo**: Permite marcar drivers específicos o todos para exportar usando `pnputil`.
-* **Gestión Total**: Opciones para Instalar (Restaurar) y Eliminar drivers del almacén (con modo forzado).
-
-#### → Gestión de Software (Multi-Motor)
-
-* **Selector de Motor**: Cambia dinámicamente entre `Winget` y `Chocolatey`.
-* **Actualizaciones**: Busca actualizaciones disponibles y permite aplicarlas selectivamente mediante GUI.
-* **Instalación**: Búsqueda e instalación individual o en masa (desde archivo `.txt`).
-
-#### → Administración de Sistema (Submenú)
-
-1.  **Limpiar Registros de Eventos**: Borrado seguro de logs de Windows (Application, Security, System, Setup).
-2.  **Gestionar Tareas Programadas de Terceros (GUI)**: Interfaz para habilitar/deshabilitar/eliminar tareas programadas no nativas.
-3.  **Reubicar Carpetas de Usuario**: Asistente seguro para mover carpetas personales (Escritorio, Documentos, etc.) a otra unidad, actualizando el registro.
-4.  **Gestor de Claves Wi-Fi (GUI)**: Visualiza todas las redes guardadas, muestra contraseñas, permite exportar (Backup), importar y eliminar perfiles.
-
-#### → Analizador Inteligente de Registros de Eventos
-
-* **Escaneo Rápido**: Detecta patrones de problemas comunes en las últimas 24h.
-* **Análisis Profundo**: Filtros personalizados por fecha, severidad y origen.
-* **Reporte HTML**: Genera informes interactivos y visuales.
-* **Base de Conocimientos**: Soluciones integradas para errores comunes (ID 153, 41, etc.).
-
-#### → Herramienta de Respaldo de Datos de Usuario
-
-* Interfaz para `Robocopy` con modos Copia, Espejo (Mirror) y Mover.
-* Validación anti-bucle y cálculo de espacio previo.
-* Verificación de integridad (Rápida `/L` o Hash Profundo SHA256).
+* **ANTIVIRUS / WINDOWS DEFENDER:** Durante las operaciones de guardado (`Commit`) o inyección masiva, los antivirus pueden bloquear temporalmente los archivos de la imagen, causando que DISM falle con errores de acceso (C1420116). Se recomienda pausar la protección en tiempo real o agregar exclusiones a tus carpetas de montaje temporal.
+* **COPIA DE SEGURIDAD:** Es **altamente recomendable** realizar una copia de seguridad física de tu archivo `.wim` / `.vhdx` antes de aplicar cambios de edición, limpieza profunda (`ResetBase`) o inyecciones masivas de registro.
+* **DISCOS VIRTUALES (VHD):** Los cambios sobre VHD/VHDX montados a través del script **se aplican instantáneamente en el disco duro**. A diferencia de los WIM, no puedes "Descartar" los cambios simplemente desmontando.
+* **IDIOMA:** El script, sus catálogos y sus mensajes de consola están íntegramente en español.
 
 ---
+
+## ☕ Apoya el Proyecto
+
+AdminImagenOffline es una herramienta de grado empresarial desarrollada y mantenida para facilitar la ingeniería de sistemas. Si esta suite te ha ahorrado horas de trabajo empaquetando software, depurando imágenes WIM o ha mejorado tus despliegues corporativos, considera apoyar su desarrollo para garantizar actualizaciones continuas frente a las nuevas iteraciones de Windows.
+
+* [💳 Donar vía PayPal](https://www.paypal.com/donate/?hosted_button_id=U65G2GXDTUGML)
+
+## Descargo de Responsabilidad
+
+Este software realiza operaciones avanzadas de bajo nivel que modifican archivos de imagen base de Windows, manipulan permisos SDDL y alteran las colmenas del registro del sistema. El autor, **SOFTMAXTER**, no se hace responsable de la pérdida de datos, corrupción de sistemas operativos host o daños que puedan ocurrir derivados del mal uso de esta herramienta. 
+
+**Úsalo bajo tu propio riesgo y siempre en entornos de prueba antes de su paso a producción.**
 
 ## Autor y Colaboradores
 
 * **Autor Principal**: SOFTMAXTER
-* **Desarrollo y Refinamiento**: Colaboración con **Gemini** para optimización de código, seguridad y diseño de interfaces gráficas.
+* **Colaboradores**: [LatinserverEc](https://github.com/LatinserverEc) (Gracias por el Feedback y el testing continuo).
+* **Análisis y refinamiento de código**: Realizado en colaboración con inteligencia artificial para garantizar máxima calidad, seguridad SDDL, optimización de algoritmos y transición integral a interfaces gráficas nativas de Windows Forms.
 
 ---
 
-## Cómo Contribuir
+### Cómo Contribuir
 
-¡Las contribuciones son bienvenidas!
+Si deseas contribuir al código fuente de este proyecto:
 
-1.  Haz un **Fork** de este repositorio.
-2.  Crea una nueva rama (`git checkout -b feature/NuevaFuncionalidad`).
-3.  Realiza tus cambios y haz **Commit**.
-4.  Haz **Push** a tu rama.
-5.  Abre un **Pull Request**.
+1.  Haz un Fork del repositorio.
+2.  Crea una nueva rama (`git checkout -b feature/nueva-funcionalidad`).
+3.  Realiza tus cambios asegurándote de no romper las llamadas a módulos en el orquestador principal (`git commit -am 'Añade nueva funcionalidad'`).
+4.  Haz Push a la rama (`git push origin feature/nueva-funcionalidad`).
+5.  Abre un Pull Request.
 
 ---
-
-## Descargo de Responsabilidad
-
-Este script realiza operaciones avanzadas que modifican el sistema. El autor no se hace responsable de la pérdida de datos o daños que puedan ocurrir en tu sistema.
-
-**Se recomienda encarecidamente crear una copia de seguridad y utilizar la función "Crear Punto de Restauracion" (Opción 1) antes de aplicar cambios importantes.**
-
 ## 📝 Licencia y Modelo de Negocio (Dual Licensing)
 
-Este proyecto está protegido bajo derechos de autor y utiliza un modelo de **Doble Licencia (Dual Licensing)** para garantizar que siga siendo libre para la comunidad, ofreciendo al mismo tiempo un marco legal estructurado para integraciones corporativas.
+Este proyecto está protegido bajo derechos de autor y utiliza un modelo de **Doble Licencia (Dual Licensing)**:
 
 ### 1. Licencia Comunitaria (Open Source)
-Distribuido bajo la **Licencia GNU GPLv3**. Eres libre de usar, estudiar, modificar y compartir este software de forma gratuita. Sin embargo, bajo esta licencia de naturaleza *Copyleft*, cualquier obra derivada, script o producto que integre código de Aegis Phoenix Suite **debe ser publicado con su código fuente abierto** bajo esta misma licencia. El software se entrega "tal cual", sin garantías explícitas o implícitas.
+Distribuido bajo la **Licencia GNU GPLv3**. Eres libre de usar, modificar y compartir este software en entornos personales o académicos. Bajo esta licencia (*Copyleft*), cualquier herramienta derivada o script que integre código o módulos de AdminImagenOffline **debe ser obligatoriamente de código abierto** y distribuirse bajo la misma licencia.
 
-### 2. Licencia Comercial Exclusiva
-Si representas a una empresa o entidad que desea integrar el motor o la arquitectura de Aegis Phoenix Suite en una herramienta comercial propietaria (cerrada), distribuirlo sin revelar su código fuente, o requiere un Acuerdo de Nivel de Servicio (SLA) y soporte técnico garantizado, **debes adquirir una Licencia Comercial**. 
+### 2. Licencia Comercial Corporativa
+Si deseas integrar el motor, las interfaces o los algoritmos de heurística de esta suite en un producto comercial propietario (closed-source), o requieres Acuerdos de Nivel de Servicio (SLA) y soporte dedicado para tu corporación, **debes adquirir una Licencia Comercial**. 
 
-Para discutir regalías (royalties), adquisiciones o emitir una licencia comercial para tu corporación, por favor contacta a: `[softmaxter@hotmail.com]`
+Para consultas sobre licenciamiento corporativo, por favor contactar a: `(softmaxter@hotmail.com)`
