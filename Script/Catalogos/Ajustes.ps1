@@ -1545,7 +1545,8 @@ $script:SystemTweaks = @(
             $keyPath = "Registry::HKEY_CLASSES_ROOT\exefile\shell\removefromfirewall";
             New-Item -Path $keyPath -Force | Out-Null;
             Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Restaurar acceso a Internet (Desbloquear)";
-            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"; 
+            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl";
+            Set-ItemProperty -Path $keyPath -Name "HasLUAShield" -Value "";
             
             $commandPath = "$keyPath\command";
             New-Item -Path $commandPath -Force | Out-Null;
