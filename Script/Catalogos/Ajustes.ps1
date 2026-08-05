@@ -31,6 +31,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento UI"
         Description    = "Desactiva animaciones, sombras y transparencias para priorizar la fluidez y velocidad del sistema sobre los efectos visuales. Ideal para equipos de bajos recursos o para minimizar distracciones."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = {
             # --- VALORES VERIFICADOS POR EL USUARIO APLICADOS A HKLM ---
             $basePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
@@ -120,6 +121,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Modifica el planificador de Windows para que la aplicacion que estas usando reciba mas potencia de la CPU, mejorando su capacidad de respuesta."
         Method         = "Registry"
+        Hidden         = $true
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\PriorityControl"
         RegistryKey    = "Win32PrioritySeparation"
         EnabledValue   = 26
@@ -132,6 +134,15 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Configura el raton para una precision 1:1, eliminando la aceleracion de Windows."
         Method         = "Command"
+        SnapshotCommand = {
+            $mousePath = 'Registry::HKEY_CURRENT_USER\Control Panel\Mouse'
+            Get-AegisRegistryValuesSnapshot -Values @(
+                @{Path=$mousePath; Name='MouseSpeed'},
+                @{Path=$mousePath; Name='MouseThreshold1'},
+                @{Path=$mousePath; Name='MouseThreshold2'}
+            )
+        }
+        RestoreCommand = { param($snapshot) Restore-AegisRegistryValuesSnapshot -Values @($snapshot) }
         EnableCommand  = {
             # Desactivar aceleracion (Plano)
             # IMPORTANTE: Se fuerza el tipo 'String' para respetar el formato del registro
@@ -163,6 +174,8 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Desactiva la seguridad basada en virtualizacion para ganar FPS. (Protegido: Detecta si usas WSL2/Docker/Sandbox y te advierte que dejaran de funcionar)."
         Method         = "Command"
+        RiskLevel      = "High"
+        Hidden         = $true
         EnableCommand  = {
             # 1. Deteccion de Conflictos (WSL2 / Virtual Machine Platform)
             $hasConflict = $false
@@ -192,17 +205,16 @@ $script:SystemTweaks = @(
             }
 
             # 3. Ejecucion
-            bcdedit /set hypervisorlaunchtype off
+            Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/set','hypervisorlaunchtype','off') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Write-Host "VBS desactivado. Reinicia para ganar rendimiento." -ForegroundColor Green
         }
         DisableCommand = { 
-            bcdedit /set hypervisorlaunchtype Auto 
+            Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/set','hypervisorlaunchtype','Auto') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Write-Host "VBS/Hipervisor reactivado (Auto). Reinicia para recuperar WSL/Docker." -ForegroundColor Green
         }
         CheckCommand   = {
-			$output = bcdedit /enum "{current}";
-			if ($LASTEXITCODE -ne 0) { return 'NotApplicable' };
-		    return ($output -like "*hypervisorlaunchtype*Off*")
+			$result = Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/enum','{current}') -TimeoutSeconds 60 -ValidExitCodes @(0)
+		    return ($result.StdOut -match '(?im)^hypervisorlaunchtype\s+Off\s*$')
 		}
         RestartNeeded  = "Reboot"
     },
@@ -211,10 +223,22 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Desactiva globalmente la Xbox Game Bar y la grabacion en segundo plano (DVR) aplicando ajustes de usuario y directivas de sistema. Libera recursos, mejora los FPS y evita que se reactive."
         Method         = "Command"
+        SnapshotCommand = {
+            Get-AegisRegistryValuesSnapshot -Values @(
+                @{Path='Registry::HKEY_CURRENT_USER\System\GameConfigStore'; Name='GameDVR_Enabled'},
+                @{Path='Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR'; Name='AppCaptureEnabled'},
+                @{Path='Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR'; Name='AllowGameDVR'}
+            )
+        }
+        RestoreCommand = { param($snapshot) Restore-AegisRegistryValuesSnapshot -Values @($snapshot) }
         EnableCommand  = {
             # 1. Ajustes de Usuario (HKCU)
-            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            $gameConfigPath = "Registry::HKEY_CURRENT_USER\System\GameConfigStore"
+            $gameDvrPath = "Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\GameDVR"
+            if (-not (Test-Path $gameConfigPath)) { New-Item -Path $gameConfigPath -Force | Out-Null }
+            if (-not (Test-Path $gameDvrPath)) { New-Item -Path $gameDvrPath -Force | Out-Null }
+            Set-ItemProperty -Path $gameConfigPath -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction Stop
+            Set-ItemProperty -Path $gameDvrPath -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction Stop
             
             # 2. Directiva de Maquina (HKLM) - GPO
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
@@ -247,6 +271,18 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Activa el plan 'Ultimate Performance'. ADVERTENCIA: En portatiles puede causar alto consumo de bateria y calor excesivo."
         Method         = "Command"
+        RiskLevel      = "High"
+        SnapshotCommand = {
+            $result = Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/getactivescheme') -TimeoutSeconds 30 -ValidExitCodes @(0)
+            if ($result.StdOut -notmatch '(?i)\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b') { throw 'No se pudo identificar el plan de energia activo.' }
+            [ordered]@{ ActiveScheme=$matches[0] }
+        }
+        RestoreCommand = {
+            param($snapshot)
+            $scheme = [string]$snapshot.ActiveScheme
+            if ($scheme -notmatch '^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') { throw 'GUID de energia no valido en el respaldo.' }
+            Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/setactive',$scheme) -TimeoutSeconds 30 -ValidExitCodes @(0) | Out-Null
+        }
         EnableCommand  = {
             # --- PROTECCIoN PARA PORTaTILES ---
             $isPortable = $false
@@ -274,23 +310,23 @@ $script:SystemTweaks = @(
             # Codigo original de activacion
             $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
             # Intentar duplicar el esquema si no existe
-            $check = powercfg /list
-            if ($check -notmatch $ultimatePlanGuid) {
-                powercfg -duplicatescheme $ultimatePlanGuid | Out-Null
+            $check = Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/list') -TimeoutSeconds 30 -ValidExitCodes @(0)
+            if ($check.StdOut -notmatch [regex]::Escape($ultimatePlanGuid)) {
+                Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/duplicatescheme',$ultimatePlanGuid) -TimeoutSeconds 30 -ValidExitCodes @(0) | Out-Null
             }
-            powercfg /setactive $ultimatePlanGuid
+            Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/setactive',$ultimatePlanGuid) -TimeoutSeconds 30 -ValidExitCodes @(0) | Out-Null
             Write-Host "Plan de Maximo Rendimiento Activado."
         }
         DisableCommand = {
             # Volver a Equilibrado (Balanced)
             $balancedPlanGuid = "381b4222-f694-41f0-9685-ff5bb260df2e"
-            powercfg /setactive $balancedPlanGuid
+            Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/setactive',$balancedPlanGuid) -TimeoutSeconds 30 -ValidExitCodes @(0) | Out-Null
             Write-Host "Restaurado a Plan Equilibrado."
         }
         CheckCommand   = {
             $ultimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-            $activeScheme = powercfg /getactivescheme
-            return ($activeScheme -match $ultimatePlanGuid)
+            $activeScheme = Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/getactivescheme') -TimeoutSeconds 30 -ValidExitCodes @(0)
+            return ($activeScheme.StdOut -match [regex]::Escape($ultimatePlanGuid))
         }
         RestartNeeded  = "None"
     },
@@ -299,6 +335,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Aumenta la memoria cache para operaciones de archivos (NTFS), acelerando la lectura/escritura en disco. (Protegido: Solo se activa si detecta 8 GB de RAM o mas)."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = {
             # 1. Obtener Memoria Total en GB (Redondeado)
             $totalRamBytes = (Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory
@@ -332,6 +369,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Obliga a Windows a mantener el nucleo del sistema y los drivers en la memoria RAM (mas rapida) en lugar de moverlos al disco duro. Reduce micro-cortes (stuttering). (Protegido: Requiere 8 GB+ RAM)."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = {
             # 1. Protección de Hardware (Mínimo 8 GB de RAM física)
             $ramInfo = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -378,11 +416,12 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Reduce el tiempo de espera del menu de arranque (si aparece) de 30 a 10 segundos, acelerando el inicio."
         Method         = "Command"
-        EnableCommand  = { bcdedit /timeout 10 }
-        DisableCommand = { bcdedit /timeout 30 }
+        Hidden         = $true
+        EnableCommand  = { Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/timeout','10') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null }
+        DisableCommand = { Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/timeout','30') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null }
         CheckCommand   = {
-			$output = bcdedit /enum '{bootmgr}';
-			$timeoutValue = ($output | Select-String 'timeout').Line -replace '\D','';
+			$result = Invoke-AegisNativeProcess -FilePath 'bcdedit.exe' -ArgumentList @('/enum','{bootmgr}') -TimeoutSeconds 60 -ValidExitCodes @(0)
+			$timeoutValue = (($result.StdOut | Select-String '(?im)^\s*timeout\s+\d+\s*$').Line -replace '\D','')
 			return $timeoutValue -eq '10'
 			}
         RestartNeeded  = "Reboot" 
@@ -439,11 +478,11 @@ $script:SystemTweaks = @(
             }
 
             # 3. Ejecucion (Si es escritorio o el usuario acepto el riesgo)
-            powercfg.exe /hibernate off
+            Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/hibernate','off') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Write-Host "Hibernacion desactivada y hiberfil.sys eliminado." -ForegroundColor Green
         }
         DisableCommand = { 
-            powercfg.exe /hibernate on 
+            Invoke-AegisNativeProcess -FilePath 'powercfg.exe' -ArgumentList @('/hibernate','on') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Write-Host "Hibernacion reactivada." -ForegroundColor Green
         }
         CheckCommand   = {
@@ -457,6 +496,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Ajusta el programador de tareas para que los procesos en segundo plano no interfieran con las aplicaciones en tiempo real, reduciendo el lag en juegos y audio."
         Method         = "Registry"
+        Hidden         = $true
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
         RegistryKey    = "SystemResponsiveness"
         EnabledValue   = 10
@@ -481,6 +521,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Reduce el tiempo que Windows espera a que los servicios se detengan antes de forzar el apagado (de 5000ms a 2000ms)."
         Method         = "Registry"
+        Hidden         = $true
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control"
         RegistryKey    = "WaitToKillServiceTimeout"
         EnabledValue   = "2000"
@@ -505,6 +546,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Permite que la tarjeta grafica gestione su propia memoria, reduciendo latencia. (Protegido: Requiere Windows 10 v2004+ y drivers compatibles)."
         Method         = "Registry"
+        MinimumBuild   = 19041
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
         RegistryKey    = "HwSchMode"
         EnabledValue   = 2
@@ -528,6 +570,8 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento del Sistema"
         Description    = "Mejora el rendimiento de escritura en NTFS al dejar de crear nombres compatibles con MS-DOS (ej. ARCHIV~1.TXT). Recomendado si no usas software de 16-bits."
         Method         = "Command"
+        RiskLevel      = "High"
+        Hidden         = $true
         EnableCommand  = { fsutil behavior set disable8dot3 1 }
         DisableCommand = { fsutil behavior set disable8dot3 0 }
         CheckCommand   = { 
@@ -565,35 +609,15 @@ $script:SystemTweaks = @(
 
 	# --- Categoria: Windows 11 UI y Nuevas Funciones ---
     [PSCustomObject]@{
-        Name           = "Deshabilitar Windows Copilot (Sistema y App)"
+        Name           = "Deshabilitar integracion de Windows Copilot"
         Category       = "Windows 11 UI"
-        Description    = "Desactiva la integracion de Copilot. En versiones modernas (24H2+), tambien desinstala la aplicacion web de Copilot para evitar que se reactive."
-        Method         = "Command"
-        EnableCommand  = {
-            # 1. Método Legacy (Registro para versiones 23H2 e inferiores)
-            $regPath = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
-            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
-            Set-ItemProperty -Path $regPath -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force
-
-            # 2. Método Moderno (Desinstalar el paquete Appx para 24H2+)
-            Get-AppxPackage -Name "Microsoft.Copilot" -AllUsers -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
-        }
-        DisableCommand = {
-            # Restaurar clave de registro
-            $regPath = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
-            if (Test-Path $regPath) { Remove-ItemProperty -Path $regPath -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue }
-            
-            Write-Warning "Si estás en Windows 11 24H2, deberás reinstalar la app 'Microsoft Copilot' desde la Tienda manualmente."
-        }
-        CheckCommand   = {
-            if ([Environment]::OSVersion.Version.Build -lt 22000) { return 'NotApplicable' }
-            
-            # Verificamos si la Appx NO existe O si la clave de registro está activa
-            $appExists = Get-AppxPackage -Name "Microsoft.Copilot" -ErrorAction SilentlyContinue
-            $regVal = (Get-ItemProperty -Path "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -ErrorAction SilentlyContinue).TurnOffWindowsCopilot
-            
-            return ($null -eq $appExists -or $regVal -eq 1)
-        }
+        Description    = "Desactiva la integracion mediante directiva sin desinstalar el paquete AppX, de modo que el cambio sea reversible. La disponibilidad de esta politica depende de la edicion y version de Windows."
+        Method         = "Registry"
+        MinimumBuild   = 22000
+        RegistryPath   = "Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\WindowsCopilot"
+        RegistryKey    = "TurnOffWindowsCopilot"
+        EnabledValue   = 1
+        RegistryType   = "DWord"
         RestartNeeded  = "Explorer"
     },
     [PSCustomObject]@{
@@ -734,12 +758,13 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Cambia el algoritmo de control de congestion a CUBIC (estandar en Linux/Android). Mejora la estabilidad del ping y la velocidad en conexiones de fibra optica modernas."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             # Activa CUBIC explicitamente
-            netsh int tcp set supplemental template=internet congestionprovider=cubic
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','supplemental','template=internet','congestionprovider=cubic') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
         }
         DisableCommand = {
-            netsh int tcp set supplemental template=internet congestionprovider=ctcp
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','supplemental','template=internet','congestionprovider=ctcp') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
         }
         CheckCommand   = {
             try {
@@ -756,20 +781,21 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Evita que Windows intente adivinar y limitar dinamicamente el tamano de la ventana TCP, lo que a menudo reduce la velocidad de descarga innecesariamente. (Nota: En Windows 10/11, si el Auto-Tuning es 'Normal', el sistema fuerza este ajuste a 'Desactivado' permanentemente)."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             # Intentamos desactivar (Optimizar)
-            netsh int tcp set heuristics disabled
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','heuristics','disabled') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Disabled -ErrorAction SilentlyContinue
         }
         DisableCommand = { 
             # Intentamos restaurar (Windows podria bloquear esto, lo cual es normal)
-            netsh int tcp set heuristics enabled
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','heuristics','enabled') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
             Set-NetTCPSetting -SettingName Internet -ScalingHeuristics Enabled -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
             # Verificacion robusta en Español e Ingles
-            $res = netsh int tcp show heuristics
-            return ($res -match "disabled" -or $res -match "deshabilitado")
+            $res = Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','show','heuristics') -TimeoutSeconds 60 -ValidExitCodes @(0)
+            return ($res.StdOut -match "disabled" -or $res.StdOut -match "deshabilitado")
         }
         RestartNeeded  = "None"
     },
@@ -778,6 +804,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Desactiva la reserva de ancho de banda que Windows hace para streaming, permitiendo que todas las aplicaciones (juegos, descargas) usen la totalidad de tu conexion."
         Method         = "Registry"
+        Hidden         = $true
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
         RegistryKey    = "NetworkThrottlingIndex"
         EnabledValue   = '4294967295'
@@ -789,6 +816,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Desactiva el servicio de monitorizacion de red (NDU),"
         Method         = "Registry"
+        Hidden         = $true
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Ndu"
         RegistryKey    = "Start"
         EnabledValue   = 4
@@ -801,6 +829,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Fuerza a la tarjeta de red a calcular los checksums de paquetes TCP/UDP, reduciendo la carga de la CPU. (Generalmente activado por defecto)."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
             # Metodo universal (driver)
@@ -828,6 +857,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Permite al sistema enviar paquetes grandes a la NIC, y que sea la tarjeta de red (y no la CPU) quien los segmente. Mejora el rendimiento de envio."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
             # Metodo universal (driver)
@@ -853,17 +883,18 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Distribuye el procesamiento de los paquetes de red recibidos entre multiples nucleos de la CPU."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
             # Intento 1: Metodo estandar de PowerShell
             Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Enable-NetAdapterRss -ErrorAction SilentlyContinue
             # Intento 2: Metodo global (netsh) para casos con Hyper-V
-            netsh int tcp set global rss=enabled
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','global','rss=enabled') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
         }
         DisableCommand = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
             Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Disable-NetAdapterRss -ErrorAction SilentlyContinue
-            netsh int tcp set global rss=disabled
+            Invoke-AegisNativeProcess -FilePath 'netsh.exe' -ArgumentList @('int','tcp','set','global','rss=disabled') -TimeoutSeconds 60 -ValidExitCodes @(0) | Out-Null
         }
         CheckCommand   = {
             try {
@@ -882,6 +913,7 @@ $script:SystemTweaks = @(
         Category       = "Rendimiento de Red"
         Description    = "Agrupa paquetes recibidos para reducir uso de CPU."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = { 
             Import-Module NetAdapter -ErrorAction SilentlyContinue
             # CAMBIO: Quitamos '-Physical' y apuntamos a cualquier adaptador activo (incluyendo vEthernet)
@@ -937,6 +969,7 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "Desactiva el protocolo de red obsoleto SMBv1 (vector de ataque de WannaCry). Verifica primero si esta activo para evitar procesos innecesarios."
         Method         = "Command"
+        RiskLevel      = "High"
         EnableCommand  = {
             $featName = "SMB1Protocol"
             $feat = Get-WindowsOptionalFeature -Online -FeatureName $featName -ErrorAction SilentlyContinue
@@ -973,6 +1006,7 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "Desactiva el antiguo motor de PowerShell v2.0 (obsoleto e inseguro) para reducir la superficie de ataque. Verifica primero si esta instalado."
         Method         = "Command"
+        RiskLevel      = "High"
         EnableCommand  = {
             $features = @("MicrosoftWindowsPowerShellV2", "MicrosoftWindowsPowerShellV2Root")
             
@@ -1007,6 +1041,7 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "ADVERTENCIA: Desactiva por directiva el uso de datos biometricos (huella, rostro). Esto rompera el inicio de sesion con Windows Hello."
         Method         = "Registry"
+        RiskLevel      = "High"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Biometrics"
         RegistryKey    = "Enabled"
         EnabledValue   = 0
@@ -1019,6 +1054,7 @@ $script:SystemTweaks = @(
         Category       = "Seguridad"
         Description    = "Los avisos de administrador (UAC) apareceran sobre tu escritorio actual sin atenuar la pantalla. Acelera el proceso pero reduce el aislamiento de seguridad del aviso."
         Method         = "Registry"
+        RiskLevel      = "High"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         RegistryKey    = "PromptOnSecureDesktop"
         EnabledValue   = 0
@@ -1027,76 +1063,50 @@ $script:SystemTweaks = @(
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
-        Name           = "Configurar Windows Update Solo Seguridad (Empresarial)"
+        Name           = "Controlar Windows Update (sin drivers, diferir funciones)"
         Category       = "Seguridad"
-        Description    = "Aplica una politica estricta: Solo descargas de seguridad, sin drivers automaticos, sin reinicios forzados y difiere grandes actualizaciones por 6 meses. Ideal para maxima estabilidad."
+        Description    = "Notifica antes de descargar, excluye controladores de las actualizaciones de calidad, evita reinicios con una sesion activa y difiere actualizaciones de caracteristicas 180 dias. Las actualizaciones acumulativas incluyen seguridad y calidad; Windows no ofrece un modo fiable de 'solo seguridad'."
         Method         = "Command"
+        RiskLevel      = "High"
+        SnapshotCommand = {
+            $wuPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+            $auPath = "$wuPath\AU"
+            Get-AegisRegistryValuesSnapshot -Values @(
+                @{Path=$auPath; Name='AUOptions'},
+                @{Path=$auPath; Name='NoAutoRebootWithLoggedOnUsers'},
+                @{Path=$wuPath; Name='ExcludeWUDriversInQualityUpdate'},
+                @{Path=$wuPath; Name='DeferFeatureUpdates'},
+                @{Path=$wuPath; Name='DeferFeatureUpdatesPeriodInDays'}
+            )
+        }
+        RestoreCommand = { param($snapshot) Restore-AegisRegistryValuesSnapshot -Values @($snapshot) }
         EnableCommand  = {
-            # 1. Metadatos de dispositivos (Evita trafico innecesario)
-            $path1 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Device Metadata"
-            if (-not (Test-Path $path1)) { New-Item -Path $path1 -Force | Out-Null }
-            Set-ItemProperty -Path $path1 -Name "PreventDeviceMetadataFromNetwork" -Value 1 -Type DWord -Force
-
-            # 2. Busqueda de Drivers (Solo si faltan, sin avisos, prioriza WU)
-            $path2 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DriverSearching"
-            if (-not (Test-Path $path2)) { New-Item -Path $path2 -Force | Out-Null }
-            Set-ItemProperty -Path $path2 -Name "DontSearchWindowsUpdate" -Value 0 -Type DWord -Force
-            Set-ItemProperty -Path $path2 -Name "DontPromptForWindowsUpdate" -Value 1 -Type DWord -Force
-            Set-ItemProperty -Path $path2 -Name "DriverUpdateWizardWuSearchEnabled" -Value 0 -Type DWord -Force
-            Set-ItemProperty -Path $path2 -Name "SearchOrderConfig" -Value 1 -Type DWord -Force
-            
-            # Ajuste adicional de drivers en CurrentVersion
-            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" -Name "SearchOrderConfig" -Value 1 -Type DWord -Force
-
-            # 3. Solo Seguridad y Sin Reinicios
-            $path3 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
-            if (-not (Test-Path $path3)) { New-Item -Path $path3 -Force | Out-Null }
-            Set-ItemProperty -Path $path3 -Name "AUOptions" -Value 2 -Type DWord -Force # Notificar descarga y notificar instalacion
-            Set-ItemProperty -Path $path3 -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord -Force
-            Set-ItemProperty -Path $path3 -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force
-            Set-ItemProperty -Path $path3 -Name "AUPowerManagement" -Value 0 -Type DWord -Force
-
-            # 4. Canal Estable (Diferir 180 dias)
-            $path4 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
-            if (-not (Test-Path $path4)) { New-Item -Path $path4 -Force | Out-Null }
-            Set-ItemProperty -Path $path4 -Name "BranchReadinessLevel" -Value 20 -Type DWord -Force
-            Set-ItemProperty -Path $path4 -Name "DeferFeatureUpdatesPeriodInDays" -Value 180 -Type DWord -Force
-            Set-ItemProperty -Path $path4 -Name "DeferQualityUpdatesPeriodInDays" -Value 180 -Type DWord -Force
-
-            # 5. Asegurar instalacion de dispositivos habilitada
-            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name "DeviceInstallDisabled" -Value 0 -Type DWord -Force
+            $windowsUpdatePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+            $auPath = "$windowsUpdatePath\AU"
+            if (-not (Test-Path $windowsUpdatePath)) { New-Item -Path $windowsUpdatePath -Force | Out-Null }
+            if (-not (Test-Path $auPath)) { New-Item -Path $auPath -Force | Out-Null }
+            Set-ItemProperty -Path $auPath -Name "AUOptions" -Value 2 -Type DWord -Force
+            Set-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $windowsUpdatePath -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $windowsUpdatePath -Name "DeferFeatureUpdates" -Value 1 -Type DWord -Force
+            Set-ItemProperty -Path $windowsUpdatePath -Name "DeferFeatureUpdatesPeriodInDays" -Value 180 -Type DWord -Force
         }
         DisableCommand = {
-            # Revertir a valores por defecto (Eliminar politicas)
-            Remove-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Device Metadata" -Name "PreventDeviceMetadataFromNetwork" -ErrorAction SilentlyContinue
-            
-            $path2 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DriverSearching"
-            Remove-ItemProperty -Path $path2 -Name "DontSearchWindowsUpdate" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path2 -Name "DontPromptForWindowsUpdate" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path2 -Name "DriverUpdateWizardWuSearchEnabled" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path2 -Name "SearchOrderConfig" -ErrorAction SilentlyContinue
-            
-            # Restaurar valor por defecto de busqueda de drivers
-            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" -Name "SearchOrderConfig" -Value 1 -Type DWord -Force # Se suele dejar en 1 o 2
-
-            $path3 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
-            Remove-ItemProperty -Path $path3 -Name "AUOptions" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path3 -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path3 -Name "NoAutoRebootWithLoggedOnUsers" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path3 -Name "AUPowerManagement" -ErrorAction SilentlyContinue
-
-            $path4 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
-            Remove-ItemProperty -Path $path4 -Name "BranchReadinessLevel" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path4 -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $path4 -Name "DeferQualityUpdatesPeriodInDays" -ErrorAction SilentlyContinue
+            $windowsUpdatePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+            $auPath = "$windowsUpdatePath\AU"
+            Remove-ItemProperty -Path $auPath -Name "AUOptions" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $windowsUpdatePath -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $windowsUpdatePath -Name "DeferFeatureUpdates" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $windowsUpdatePath -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue
         }
         CheckCommand   = {
-            # Verificamos 3 claves criticas para determinar si el perfil esta activo
-            $val1 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -ErrorAction SilentlyContinue).AUOptions
-            $val2 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue).DeferFeatureUpdatesPeriodInDays
-            $val3 = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue).ExcludeWUDriversInQualityUpdate
-            
-            return ($val1 -eq 2 -and $val2 -eq 180 -and $val3 -eq 1)
+            $windowsUpdatePath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+            $auPath = "$windowsUpdatePath\AU"
+            $auOptions = (Get-ItemProperty -Path $auPath -Name "AUOptions" -ErrorAction SilentlyContinue).AUOptions
+            $drivers = (Get-ItemProperty -Path $windowsUpdatePath -Name "ExcludeWUDriversInQualityUpdate" -ErrorAction SilentlyContinue).ExcludeWUDriversInQualityUpdate
+            $featureDays = (Get-ItemProperty -Path $windowsUpdatePath -Name "DeferFeatureUpdatesPeriodInDays" -ErrorAction SilentlyContinue).DeferFeatureUpdatesPeriodInDays
+            return ($auOptions -eq 2 -and $drivers -eq 1 -and $featureDays -eq 180)
         }
         RestartNeeded  = "Reboot"
     },
@@ -1242,6 +1252,7 @@ $script:SystemTweaks = @(
         Category       = "Privacidad y Telemetria"
         Description    = "Deshabilita servicios de rastreo (DiagTrack, DmWapPush) y tareas del programa de experiencia del cliente."
         Method         = "Command"
+        Hidden         = $true
         EnableCommand  = {
             # Tareas
             Get-ScheduledTask -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -ErrorAction SilentlyContinue | Disable-ScheduledTask
@@ -1276,6 +1287,16 @@ $script:SystemTweaks = @(
         Category       = "Privacidad y Telemetria"
         Description    = "Establece el permiso por defecto a 'Denegar' para el acceso a hardware y datos sensibles (camara, microfono, documentos)."
         Method         = "Command"
+        RiskLevel      = "High"
+        SnapshotCommand = {
+            $consentRoot = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore"
+            Get-AegisRegistryValuesSnapshot -Values @(
+                @{Path="$consentRoot\webcam"; Name='Value'},
+                @{Path="$consentRoot\microphone"; Name='Value'},
+                @{Path="$consentRoot\documentsLibrary"; Name='Value'}
+            )
+        }
+        RestoreCommand = { param($snapshot) Restore-AegisRegistryValuesSnapshot -Values @($snapshot) }
         EnableCommand  = {
             Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam" -Name "Value" -Value "Deny" -Type String -Force
             Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone" -Name "Value" -Value "Deny" -Type String -Force
@@ -1343,32 +1364,24 @@ $script:SystemTweaks = @(
 	[PSCustomObject]@{
         Name           = "Desactivar Optimizacion de Entrega (P2P Updates)"
         Category       = "Privacidad y Telemetria"
-        Description    = "Impide que Windows use tu ancho de banda para subir actualizaciones a otros equipos en Internet. (Modo de descarga: Simple)."
+        Description    = "Configura Optimizacion de entrega en modo HTTP, sin intercambio P2P con otros equipos."
         Method         = "Registry"
         RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
         RegistryKey    = "DODownloadMode"
-        EnabledValue   = 99 # 99 = Simple (Sin P2P), 0 = HTTP Only
+        EnabledValue   = 0
         DefaultValue   = 1  # 1 = LAN P2P
         RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
-        Name           = "Desactivar Informe de Errores de Windows"
+        Name           = "Desactivar envio de Informes de Errores de Windows"
         Category       = "Privacidad y Telemetria"
-        Description    = "Deshabilita el servicio WerSvc que recopila y envia informes de fallos a Microsoft."
-        Method         = "Command"
-        EnableCommand  = {
-            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -Value 1 -Type DWord -Force
-            Set-Service -Name "WerSvc" -StartupType Disabled -ErrorAction SilentlyContinue
-        }
-        DisableCommand = {
-            Set-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -Value 0 -Type DWord -Force
-            Set-Service -Name "WerSvc" -StartupType Manual -ErrorAction SilentlyContinue
-        }
-        CheckCommand   = {
-            $val = (Get-ItemProperty -Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting" -Name "Disabled" -ErrorAction SilentlyContinue).Disabled
-            return $val -eq 1
-        }
+        Description    = "Desactiva el envio de informes mediante directiva sin cambiar el tipo de inicio del servicio WerSvc."
+        Method         = "Registry"
+        RegistryPath   = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting"
+        RegistryKey    = "Disabled"
+        EnabledValue   = 1
+        RegistryType   = "DWord"
         RestartNeeded  = "Reboot"
     },
 	[PSCustomObject]@{
@@ -1506,9 +1519,13 @@ $script:SystemTweaks = @(
 	            	$keyPath = "Registry::HKEY_CLASSES_ROOT\exefile\shell\blockinfirewall";
 		            New-Item -Path $keyPath -Force | Out-Null;
 		            Set-ItemProperty -Path $keyPath -Name "(Default)" -Value "Bloquear en Firewall";
-		            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl"; $commandPath = "$keyPath\command";
+		            Set-ItemProperty -Path $keyPath -Name "Icon" -Value "firewall.cpl";
+		            Set-ItemProperty -Path $keyPath -Name "HasLUAShield" -Value "";
+		            $commandPath = "$keyPath\command";
 		            New-Item -Path $commandPath -Force | Out-Null;
-	            	$command = "powershell -WindowStyle Hidden -Command `"New-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -Direction Outbound -Program `"%1`" -Action Block`"";
+	            	$helperPath = Join-Path $script:AegisScriptRoot 'Invoke-AegisFirewallAction.ps1';
+	            	if (-not (Test-Path -LiteralPath $helperPath)) { throw 'No se encontro el auxiliar seguro de Firewall.' };
+	            	$command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$helperPath`" -Action Block -Program `"%1`"";
 		            Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
 	            	}
         DisableCommand = {
@@ -1533,8 +1550,9 @@ $script:SystemTweaks = @(
             $commandPath = "$keyPath\command";
             New-Item -Path $commandPath -Force | Out-Null;
             
-            # El comando busca y elimina la regla especifica creada por Aegis Phoenix
-            $command = "powershell -WindowStyle Hidden -Command `"Remove-NetFirewallRule -DisplayName 'AegisPhoenixBlock - %1' -ErrorAction SilentlyContinue`"";
+            $helperPath = Join-Path $script:AegisScriptRoot 'Invoke-AegisFirewallAction.ps1';
+            if (-not (Test-Path -LiteralPath $helperPath)) { throw 'No se encontro el auxiliar seguro de Firewall.' };
+            $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$helperPath`" -Action Unblock -Program `"%1`"";
             Set-ItemProperty -Path $commandPath -Name "(Default)" -Value $command
         }
         DisableCommand = {
@@ -1780,21 +1798,31 @@ $script:SystemTweaks = @(
 
 	# --- Categoria: Extras ---
 	[PSCustomObject]@{
-        Name           = "Desinstalar OneDrive Completamente"
+        Name           = "Desinstalar OneDrive conservando datos"
         Category       = "Extras"
-        Description    = "ADVERTENCIA: Desinstala OneDrive buscando el desinstalador en multiples rutas y elimina sus datos locales. Mueve los archivos importantes fuera de la carpeta OneDrive antes de proceder."
+        Description    = "Desinstala OneDrive mediante su desinstalador oficial y aplica la directiva de bloqueo. Conserva la carpeta OneDrive y todos los datos del usuario; no fuerza una limpieza manual."
         Method         = "Command"
+        RiskLevel      = "High"
+        SnapshotCommand = {
+            Get-AegisRegistryValuesSnapshot -Values @(
+                @{Path='Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive'; Name='DisableFileSyncNGSC'}
+            )
+        }
+        RestoreCommand = {
+            param($snapshot)
+            Restore-AegisRegistryValuesSnapshot -Values @($snapshot)
+            Write-Warning 'Se restauro la directiva previa. Si OneDrive fue desinstalado, debes reinstalarlo para recuperar el cliente.'
+        }
         EnableCommand  = {
-            # --- PASO 1: Deshabilitar OneDrive via Directiva de Grupo (Previene reinstalacion automatica) ---
             $policyPath = "Registry::HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\OneDrive"
             if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
             Set-ItemProperty -Path $policyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
 
-            # --- PASO 2: Detener el proceso ---
-            Write-Host "   - Deteniendo procesos de OneDrive..." -ForegroundColor Gray
-            Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
+            foreach ($process in @(Get-Process -Name 'OneDrive' -ErrorAction SilentlyContinue)) {
+                if ($process.MainWindowHandle -ne 0) { [void]$process.CloseMainWindow() }
+            }
+            Start-Sleep -Seconds 2
 
-            # --- PASO 3: Busqueda dinamica y ejecucion del desinstalador ---
             $installerPath = $null
             $possiblePaths = @(
                 "$env:SystemRoot\SysWOW64\OneDriveSetup.exe",
@@ -1814,31 +1842,12 @@ $script:SystemTweaks = @(
 
             if ($installerPath) {
                 Write-Host "   - Desinstalador encontrado en: $installerPath" -ForegroundColor Cyan
-                Start-Process -FilePath $installerPath -ArgumentList "/uninstall" -Wait
+                $result = Invoke-AegisNativeProcess -FilePath $installerPath -ArgumentList @('/uninstall') -TimeoutSeconds 900 -ValidExitCodes @(0,1641,3010)
+                Write-Host "   - Desinstalador finalizado con codigo $($result.ExitCode)." -ForegroundColor Gray
             } else {
-                Write-Warning "   - No se encontro el desinstalador oficial. Se procedera con la limpieza manual forzada."
+                throw "No se encontro el desinstalador oficial; no se realizara una limpieza manual que pueda borrar datos."
             }
-            
-            # --- PASO 4: Limpieza de Registro (Iconos del Explorador) ---
-            Write-Host "   - Limpiando claves de registro..." -ForegroundColor Gray
-            Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "Registry::HKEY_CLASSES_ROOT\WOW6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" -Recurse -Force -ErrorAction SilentlyContinue
-            
-            # Ocultar del panel de navegacion por si acaso quedo algo
-            $clsidPath = "Registry::HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
-            if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
-            Set-ItemProperty -Path $clsidPath -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force
-
-            # --- PASO 5: Limpieza de Archivos y Tareas ---
-            Write-Host "   - Eliminando archivos residuales y tareas..." -ForegroundColor Gray
-            Get-ScheduledTask -TaskPath '\' -TaskName 'OneDrive*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
-            
-            # Eliminacion de carpetas de datos (Ojo: No borra la carpeta de documentos del usuario, solo la app)
-            Remove-Item -Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OneDrive.lnk" -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:USERPROFILE\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:PROGRAMDATA\Microsoft OneDrive" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "C:\OneDriveTemp" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "   - Los archivos de usuario y la carpeta OneDrive se conservaron." -ForegroundColor Green
         }
         DisableCommand = { 
             # Para reactivar, eliminamos la directiva que lo bloquea
