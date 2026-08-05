@@ -1,4 +1,4 @@
-# Aegis Phoenix Suite v4.9.2 by SOFTMAXTER
+# Aegis Phoenix Suite v4.9.6 by SOFTMAXTER
 
 <p align="center">
   <img width="240" height="240" alt="Aegis Phoenix Logo" src="https://github.com/user-attachments/assets/0ccf3143-8d95-44b8-bfef-c16865d6c874" />
@@ -10,6 +10,8 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
 
 ## Novedades:
 
+* **Monitoreo de Eventos en Tiempo Real (Experimental)**: Nuevo modo dentro del Analizador de Eventos que muestra en vivo los eventos del sistema a medida que ocurren, con filtros por nivel de severidad, registros a monitorear y duración configurable.
+* **Control de Firewall por Aplicación (Menú Contextual)**: Nuevos tweaks en el Gestor de Ajustes para añadir "Bloquear en Firewall" / "Desbloquear de Firewall" al menú contextual de archivos `.exe`, ejecutados mediante un auxiliar elevado que valida la ruta y el hash del ejecutable.
 * **Limpieza Profunda de Navegadores**: Módulo dedicado para purgar cachés de Chrome, Edge, Firefox, Brave y Opera, cerrando procesos de forma segura.
 * **Interfaz Gráfica (GUI) Optimizada**: Mejoras en los gestores (Ajustes, Servicios, Inicio, Drivers, Limpieza) con estilo oscuro, tablas ordenables y renderizado `DoubleBuffered` para evitar parpadeos.
 
@@ -43,16 +45,35 @@ Fue creado para administradores de TI, técnicos de soporte y entusiastas de Win
     ```
     TuCarpetaPrincipal/
     │
-    ├── Run.bat
+    ├── AegisPhoenixSuite.exe
+    ├── LICENSE
+    ├── README.md
+    ├── version.txt
     └── Script/
-        │
-        └── AegisPhoenixSuite.ps1
+        ├── AegisPhoenixSuite.ps1
+        ├── Invoke-AegisFirewallAction.ps1
+        ├── Modulo-Ajustes.ps1
+        ├── Modulo-Aplicaciones.ps1
+        ├── Modulo-Drivers.ps1
+        ├── Modulo-Eventos.ps1
+        ├── Modulo-Inventario.ps1
+        ├── Modulo-Limpieza.ps1
+        ├── Modulo-Red.ps1
+        ├── Modulo-Respaldos.ps1
+        ├── Modulo-ReubicacionPerfil.ps1
+        ├── Modulo-Servicios.ps1
+        ├── Modulo-ServiciosTerceros.ps1
+        ├── Modulo-Sistema.ps1
+        ├── Modulo-Software.ps1
+        ├── Modulo-TareasProgramadas.ps1
+        ├── Modulo-Wi-fi.ps1
         └── Catalogos/
             ├── Ajustes.ps1
-            ├── Servicios.ps1
-            └── Bloatware.ps1
+            ├── Bloatware.ps1
+            ├── EventSolutions.ps1
+            └── Servicios.ps1
     ```
-3.  Haz doble clic en **`Run.bat`**. El script validará los permisos y se iniciará.
+3.  Haz doble clic en **`AegisPhoenixSuite.exe`**. Es un lanzador que solicita automáticamente la elevación a Administrador (UAC) y ejecuta `Script\AegisPhoenixSuite.ps1` con `powershell.exe -NoProfile -ExecutionPolicy Bypass`. Si no encuentra el script en esa ruta, muestra un aviso de error y se cierra.
 4.  Navega por los menús de consola y abre las nuevas herramientas gráficas según necesites.
 
 ---
@@ -95,6 +116,7 @@ Al iniciar, se presentan las categorías principales de la suite.
 * **Nueva Interfaz**: Ventana gráfica con buscador en tiempo real y filtrado por categorías.
 * **Control Total**: Permite activar/desactivar ajustes individuales (Rendimiento, Privacidad, UI, Seguridad).
 * **Estado Visual**: Muestra claramente si un ajuste está `[Activado]` (Verde) o `[Desactivado]` (Rojo/Salmón).
+* **Bloqueo de Apps por Firewall**: Tweak que añade "Bloquear en Firewall" / "Desbloquear de Firewall" al menú contextual de cualquier `.exe`, apoyado en `Invoke-AegisFirewallAction.ps1` para crear/eliminar la regla con privilegios elevados.
 
 #### → Inventario y Reportes del Sistema
 
@@ -124,6 +146,7 @@ Al iniciar, se presentan las categorías principales de la suite.
 
 * **Escaneo Rápido**: Detecta patrones de problemas comunes en las últimas 24h.
 * **Análisis Profundo**: Filtros personalizados por fecha, severidad y origen.
+* **Monitoreo en Tiempo Real (Experimental)**: Sigue en vivo los registros System, Application y Security con filtro por nivel de severidad y duración configurable (o manual).
 * **Reporte HTML**: Genera informes interactivos y visuales.
 * **Base de Conocimientos**: Soluciones integradas para errores comunes (ID 153, 41, etc.).
 
@@ -139,6 +162,14 @@ Al iniciar, se presentan las categorías principales de la suite.
 
 * **Autor Principal**: SOFTMAXTER
 * **Desarrollo y Refinamiento**: Colaboración con **Gemini** para optimización de código, seguridad y diseño de interfaces gráficas.
+
+---
+
+## Apoya el Proyecto
+
+El desarrollo de estas herramientas de automatización y sus interfaces nativas requiere cientos de horas de ingeniería y pruebas continuas. Si Aegis Phoenix Suite ha optimizado tu flujo de trabajo, ahorrándote tiempo y dolores de cabeza en tus tareas de mantenimiento, considera apoyar el desarrollo continuo:
+
+* [💳 Donar vía PayPal](https://www.paypal.com/donate/?hosted_button_id=U65G2GXDTUGML).
 
 ---
 
