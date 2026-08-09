@@ -349,8 +349,6 @@ function Invoke-FullRepoUpdater {
             throw "El servidor devolvio un archivo de version vacio o no valido."
         }
 
-        Write-Log -LogLevel INFO -Message "UPDATER: Version remota detectada: v$remoteVersionStr. Version local: v$($script:Version)."
-
         try {
             if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
                 $updateAvailable = $true
@@ -370,10 +368,10 @@ function Invoke-FullRepoUpdater {
     }
 
     if (-not $updateAvailable) {
-        Write-Log -LogLevel INFO -Message "UPDATER: No hay una actualizacion pendiente. Version actual: v$($script:Version)."
         return
     }
 
+    Write-Log -LogLevel INFO -Message "UPDATER: Version remota detectada: v$remoteVersionStr. Version local: v$($script:Version)."
     Write-Log -LogLevel INFO -Message "UPDATER: Nueva version disponible: v$remoteVersionStr."
 
     Write-Host ""
@@ -609,6 +607,9 @@ del "%~f0"
     }
 }
 
+Write-Log -LogLevel INFO -Message "================================================="
+Write-Log -LogLevel INFO -Message "Aegis Phoenix Suite v$($script:Version) iniciado en modo Administrador."
+
 # --- CARGA DE CATALOGOS EXTERNOS ---
 Write-Host "Cargando catalogos..."
 try {
@@ -704,9 +705,6 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Read-Host "Presiona Enter para salir."
     exit
 }
-
-Write-Log -LogLevel INFO -Message "================================================="
-Write-Log -LogLevel INFO -Message "Aegis Phoenix Suite v$($script:Version) iniciado en modo Administrador."
 
 # Consultar actualizaciones solo despues de validar archivos locales y
 # privilegios. La instalacion siempre requiere confirmacion explicita.
