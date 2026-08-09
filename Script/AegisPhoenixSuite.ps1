@@ -319,118 +319,293 @@ function Invoke-FullRepoUpdater {
 
     try {
         $response = Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers @{"Cache-Control"="no-cache"} -TimeoutSec 5 -ErrorAction Stop
-        
-        # Separar el contenido del archivo por saltos de línea
+
+        # Separar el contenido del archivo por saltos de linea
         $lines = $response.Content -split "`r?`n" | ForEach-Object { $_.Trim() }
-        
+
         if ($lines.Count -gt 0) {
-            # 1. La primera línea es la versión (quitamos la 'v' o 'V' inicial si existe para evitar errores de parseo)
+            # La primera linea es la version; se elimina una 'v' inicial si existe.
             $remoteVersionStr = $lines[0] -replace '(?i)^v', ''
-            
-            # 2. Bucle para extraer las novedades entre los separadores
+
+            # Extraer las novedades entre separadores.
             $inChangelog = $false
             for ($i = 1; $i -lt $lines.Count; $i++) {
-                # Detectar separadores (líneas que empiezan con múltiples '=')
                 if ($lines[$i] -match "^====+") {
                     if (-not $inChangelog) {
                         $inChangelog = $true
-                        continue # Saltamos la línea del separador
+                        continue
                     } else {
-                        break # Encontramos el segundo separador, dejamos de leer
+                        break
                     }
                 }
-                
-                # Si estamos dentro de la zona de novedades y la línea no está vacía, la guardamos
+
                 if ($inChangelog -and -not [string]::IsNullOrWhiteSpace($lines[$i])) {
                     $changelog += $lines[$i]
                 }
             }
         }
 
-        try { if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) { $updateAvailable = $true } }
-        catch { if ($remoteVersionStr -ne $script:Version) { $updateAvailable = $true } }
-    } catch { return }
+        if ([string]::IsNullOrWhiteSpace($remoteVersionStr)) {
+            throw "El servidor devolvio un archivo de version vacio o no valido."
+        }
 
-    if ($updateAvailable) {
-        Write-Host ""
-        Write-Host "  =======================================================" -ForegroundColor Cyan
-        Write-Host "           NUEVA VERSION DISPONIBLE DETECTADA!          " -ForegroundColor Green
-        Write-Host "  =======================================================" -ForegroundColor Cyan
-        Write-Host "     Version Local  : v$($script:Version)" -ForegroundColor Gray
-        Write-Host "     Version Remota : v$remoteVersionStr" -ForegroundColor Yellow
-        
-        # 3. Mostrar el Changelog en la consola si hay líneas capturadas
-        if ($changelog.Count -gt 0) {
-            Write-Host "  -------------------------------------------------------" -ForegroundColor Cyan
-            Write-Host "     NOVEDADES Y CAMBIOS: " -ForegroundColor Magenta
-            foreach ($line in $changelog) {
-                Write-Host "      $line" -ForegroundColor White
+        Write-Log -LogLevel INFO -Message "UPDATER: Version remota detectada: v$remoteVersionStr. Version local: v$($script:Version)."
+
+        try {
+            if ([System.Version]$remoteVersionStr -gt [System.Version]$script:Version) {
+                $updateAvailable = $true
             }
         }
-        Write-Host "  =======================================================" -ForegroundColor Cyan
+        catch {
+            Write-Log -LogLevel WARN -Message "UPDATER: No fue posible comparar las versiones como System.Version. Se usara comparacion de texto. Detalle: $($_.Exception.Message)"
+            if ($remoteVersionStr -ne $script:Version) {
+                $updateAvailable = $true
+            }
+        }
+    }
+    catch {
+        $line = $_.InvocationInfo.ScriptLineNumber
+        Write-Log -LogLevel ERROR -Message "UPDATER: Fallo la comprobacion de actualizaciones. Error: $($_.Exception.Message). Linea: $line."
+        return
+    }
 
-        if ((Read-Host "`n  [?] Deseas descargar e instalar la actualizacion ahora? (S/N)").ToUpper() -eq 'S') {
-            Write-Host "`n  [!] Preparando la actualizacion de forma segura..." -ForegroundColor Magenta
-            
-            $installPath = Split-Path -Path (if ($PSScriptRoot) { $PSScriptRoot } else { $PWD.Path }) -Parent
-            $tempZip = Join-Path $installPath "update.zip"
-            $tempExtract = Join-Path $installPath "update_extracted"
+    if (-not $updateAvailable) {
+        Write-Log -LogLevel INFO -Message "UPDATER: No hay una actualizacion pendiente. Version actual: v$($script:Version)."
+        return
+    }
 
-            try {
-                if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force -ErrorAction SilentlyContinue }
-                if (Test-Path $tempZip)     { Remove-Item -Path $tempZip    -Force         -ErrorAction SilentlyContinue }
-                
-                Write-Host "   > Descargando paquete (v$remoteVersionStr)..." -ForegroundColor Cyan
-                Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing
-                
-                Write-Host "   > Extrayendo archivos..." -ForegroundColor Cyan
-                Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
-                
-                Write-Host "   > Generando motor de inyeccion..." -ForegroundColor Cyan
-                $batPath = Join-Path $installPath "ApplyUpdate.cmd"
-                $exePath = Join-Path $installPath "AegisPhoenixSuite.exe"
+    Write-Log -LogLevel INFO -Message "UPDATER: Nueva version disponible: v$remoteVersionStr."
 
-                # ATENCION: El cierre "@ de este bloque NO debe tener espacios a la izquierda
-                $batContent = @"
+    Write-Host ""
+    Write-Host "  =======================================================" -ForegroundColor Cyan
+    Write-Host "           NUEVA VERSION DISPONIBLE DETECTADA!          " -ForegroundColor Green
+    Write-Host "  =======================================================" -ForegroundColor Cyan
+    Write-Host "     Version Local  : v$($script:Version)" -ForegroundColor Gray
+    Write-Host "     Version Remota : v$remoteVersionStr" -ForegroundColor Yellow
+
+    if ($changelog.Count -gt 0) {
+        Write-Host "  -------------------------------------------------------" -ForegroundColor Cyan
+        Write-Host "     NOVEDADES Y CAMBIOS: " -ForegroundColor Magenta
+        foreach ($line in $changelog) {
+            Write-Host "      $line" -ForegroundColor White
+        }
+    }
+    Write-Host "  =======================================================" -ForegroundColor Cyan
+
+    $updateChoice = (Read-Host "`n  [?] Deseas descargar e instalar la actualizacion ahora? (S/N)").ToUpper()
+    if ($updateChoice -ne 'S') {
+        Write-Host "`n  [i] Actualizacion pospuesta por el usuario." -ForegroundColor Gray
+        Write-Log -LogLevel INFO -Message "UPDATER: Actualizacion a v$remoteVersionStr pospuesta por el usuario. Respuesta: '$updateChoice'."
+        Start-Sleep -Seconds 1
+        return
+    }
+
+    Write-Log -LogLevel ACTION -Message "UPDATER: El usuario acepto instalar la version v$remoteVersionStr."
+    Write-Host "`n  [!] Preparando la actualizacion de forma segura..." -ForegroundColor Magenta
+
+    $installPath = $null
+    $tempZip = $null
+    $tempExtract = $null
+    $batPath = $null
+
+    try {
+        # Determinar de forma segura la carpeta raiz de instalacion.
+        # AegisPhoenixSuite.ps1 vive en \Script, por eso usamos su carpeta padre.
+        $scriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+            $PSScriptRoot
+        } elseif (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+            Split-Path -Path $PSCommandPath -Parent
+        } else {
+            $PWD.Path
+        }
+
+        $installPath = Split-Path -Path $scriptRoot -Parent
+        if ([string]::IsNullOrWhiteSpace($installPath) -or -not (Test-Path -LiteralPath $installPath -PathType Container)) {
+            throw "No se pudo determinar una ruta de instalacion valida. ScriptRoot: '$scriptRoot'"
+        }
+
+        Write-Log -LogLevel INFO -Message "UPDATER: Ruta de instalacion resuelta: '$installPath'."
+
+        $tempZip = Join-Path -Path $installPath -ChildPath "update.zip"
+        $tempExtract = Join-Path -Path $installPath -ChildPath "update_extracted"
+        $batPath = Join-Path -Path $installPath -ChildPath "ApplyUpdate.cmd"
+        $exePath = Join-Path -Path $installPath -ChildPath "AegisPhoenixSuite.exe"
+
+        if (Test-Path -LiteralPath $tempExtract) {
+            Write-Log -LogLevel ACTION -Message "UPDATER: Eliminando carpeta temporal anterior '$tempExtract'."
+            Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction Stop
+        }
+
+        if (Test-Path -LiteralPath $tempZip) {
+            Write-Log -LogLevel ACTION -Message "UPDATER: Eliminando paquete temporal anterior '$tempZip'."
+            Remove-Item -LiteralPath $tempZip -Force -ErrorAction Stop
+        }
+
+        if (Test-Path -LiteralPath $batPath) {
+            Write-Log -LogLevel ACTION -Message "UPDATER: Eliminando instalador temporal anterior '$batPath'."
+            Remove-Item -LiteralPath $batPath -Force -ErrorAction Stop
+        }
+
+        Write-Host "   > Descargando paquete (v$remoteVersionStr)..." -ForegroundColor Cyan
+        Write-Log -LogLevel ACTION -Message "UPDATER: Descargando paquete v$remoteVersionStr desde '$zipUrl'."
+        Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
+
+        if (-not (Test-Path -LiteralPath $tempZip -PathType Leaf)) {
+            throw "La descarga finalizo sin crear el archivo '$tempZip'."
+        }
+
+        $downloadSize = (Get-Item -LiteralPath $tempZip -ErrorAction Stop).Length
+        if ($downloadSize -le 0) {
+            throw "El paquete descargado esta vacio."
+        }
+        Write-Log -LogLevel INFO -Message "UPDATER: Descarga completada. Archivo: '$tempZip'. Tamano: $downloadSize bytes."
+
+        Write-Host "   > Extrayendo archivos..." -ForegroundColor Cyan
+        Write-Log -LogLevel ACTION -Message "UPDATER: Extrayendo paquete en '$tempExtract'."
+        Expand-Archive -LiteralPath $tempZip -DestinationPath $tempExtract -Force -ErrorAction Stop
+
+        $repoExtractedPath = Join-Path -Path $tempExtract -ChildPath "Aegis-Phoenix-Suite-main"
+        if (-not (Test-Path -LiteralPath $repoExtractedPath -PathType Container)) {
+            throw "La estructura esperada del paquete no existe: '$repoExtractedPath'."
+        }
+        Write-Log -LogLevel INFO -Message "UPDATER: Extraccion completada correctamente."
+
+        Write-Host "   > Generando motor de inyeccion..." -ForegroundColor Cyan
+        Write-Log -LogLevel ACTION -Message "UPDATER: Generando instalador diferido '$batPath'."
+
+        # El proceso CMD continua despues de que PowerShell termina; por eso
+        # escribe directamente en Logs\Registro.log.
+        # Guardamos el PID actual para que ApplyUpdate.cmd espere de forma
+        # dinamica a que este proceso libere los archivos, sin depender de
+        # un timeout fijo.
+        $updaterParentPid = $PID
+
+        $batContent = @"
 @echo off
+setlocal EnableExtensions EnableDelayedExpansion
 title Instalando Actualizacion...
 color 0B
+
+set "LOGDIR=%~dp0Logs"
+set "LOGFILE=%LOGDIR%\Registro.log"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" >NUL 2>&1
+
+echo [%date% %time:~0,8%] [ACTION] - UPDATER CMD: Proceso de instalacion iniciado. Version destino: v$remoteVersionStr.>>"%LOGFILE%"
+echo [%date% %time:~0,8%] [INFO] - UPDATER CMD: Ruta de instalacion: %~dp0>>"%LOGFILE%"
+
 echo.
 echo =========================================================
 echo    APLICANDO ACTUALIZACION A LA VERSION $remoteVersionStr
 echo =========================================================
 echo.
 echo Esperando a que el sistema libere los archivos...
-timeout /t 4 /nobreak > NUL
+echo [%date% %time:~0,8%] [ACTION] - UPDATER CMD: Esperando cierre del proceso origen PID $updaterParentPid.>>"%LOGFILE%"
+
+set /a "WAIT_COUNT=0"
+:WAIT_PARENT_PROCESS
+tasklist /FI "PID eq $updaterParentPid" /NH 2^>NUL | findstr /R /C:"[ ]$updaterParentPid[ ]" >NUL
+if errorlevel 1 goto PARENT_RELEASED
+
+set /a "WAIT_COUNT+=1"
+if !WAIT_COUNT! GEQ 30 (
+    echo [%date% %time:~0,8%] [WARN] - UPDATER CMD: El proceso PID $updaterParentPid sigue activo tras 30 segundos. Se continuara con la actualizacion.>>"%LOGFILE%"
+    goto PARENT_RELEASED
+)
+
+rem Pausa aproximada de 1 segundo sin depender de un timeout fijo global.
+ping 127.0.0.1 -n 2 >NUL
+goto WAIT_PARENT_PROCESS
+
+:PARENT_RELEASED
+echo [%date% %time:~0,8%] [INFO] - UPDATER CMD: Archivos liberados tras !WAIT_COUNT! segundo(s) de espera.>>"%LOGFILE%"
 
 echo Instalando nuevos archivos...
-xcopy /Y /E /H /C /I "%~dp0update_extracted\Aegis-Phoenix-Suite-main\*" "%~dp0" > NUL
+echo [%date% %time:~0,8%] [ACTION] - UPDATER CMD: Copiando archivos nuevos sobre la instalacion.>>"%LOGFILE%"
+xcopy /Y /E /H /C /I "%~dp0update_extracted\Aegis-Phoenix-Suite-main\*" "%~dp0" >NUL 2>&1
+set "XCOPY_EXIT=!ERRORLEVEL!"
+
+if not "!XCOPY_EXIT!"=="0" (
+    echo [%date% %time:~0,8%] [ERROR] - UPDATER CMD: XCOPY fallo. Codigo de salida: !XCOPY_EXIT!. Los temporales se conservaran para diagnostico.>>"%LOGFILE%"
+    echo.
+    echo [ERROR] No se pudo aplicar la actualizacion. Codigo XCOPY: !XCOPY_EXIT!
+    echo Revisa Logs\Registro.log para mas detalles.
+    timeout /t 8 /nobreak >NUL
+    exit /b !XCOPY_EXIT!
+)
+
+echo [%date% %time:~0,8%] [INFO] - UPDATER CMD: Archivos de la nueva version copiados correctamente.>>"%LOGFILE%"
 
 echo Limpiando temporales...
+echo [%date% %time:~0,8%] [ACTION] - UPDATER CMD: Eliminando archivos temporales de actualizacion.>>"%LOGFILE%"
 rmdir /S /Q "%~dp0update_extracted" 2>NUL
+if errorlevel 1 echo [%date% %time:~0,8%] [WARN] - UPDATER CMD: No se pudo eliminar completamente update_extracted.>>"%LOGFILE%"
+
 del /F /Q "%~dp0update.zip" 2>NUL
+if errorlevel 1 echo [%date% %time:~0,8%] [WARN] - UPDATER CMD: No se pudo eliminar update.zip.>>"%LOGFILE%"
 
 echo Reiniciando aplicacion...
+if not exist "$exePath" (
+    echo [%date% %time:~0,8%] [ERROR] - UPDATER CMD: No se encontro el ejecutable '$exePath' despues de aplicar la actualizacion.>>"%LOGFILE%"
+    echo [ERROR] No se encontro AegisPhoenixSuite.exe.
+    timeout /t 8 /nobreak >NUL
+    exit /b 10
+)
+
+echo [%date% %time:~0,8%] [ACTION] - UPDATER CMD: Reiniciando AegisPhoenixSuite.exe.>>"%LOGFILE%"
 start "" "$exePath"
+set "START_EXIT=!ERRORLEVEL!"
+if not "!START_EXIT!"=="0" (
+    echo [%date% %time:~0,8%] [ERROR] - UPDATER CMD: No se pudo reiniciar la aplicacion. Codigo: !START_EXIT!.>>"%LOGFILE%"
+    exit /b !START_EXIT!
+)
+
+echo [%date% %time:~0,8%] [INFO] - UPDATER CMD: Actualizacion a v$remoteVersionStr aplicada correctamente.>>"%LOGFILE%"
 del "%~f0"
 "@
-                [System.IO.File]::WriteAllText($batPath, $batContent, [System.Text.Encoding]::ASCII)
-                
-                Write-Host "`n  [!] El sistema se cerrara para aplicar los cambios." -ForegroundColor Red
-                Start-Sleep -Seconds 2
-                
-                Start-Process "cmd.exe" -ArgumentList "/c `"$batPath`""
-                exit
-            } catch {
-                Write-Host "`n  [ERROR] Fallo la actualizacion: $_" -ForegroundColor Red
-                if (Test-Path $tempZip)     { Remove-Item -Path $tempZip    -Force         -ErrorAction SilentlyContinue }
-                if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force -ErrorAction SilentlyContinue }
-                Start-Sleep -Seconds 3
-            }
-        } else {
-            Write-Host "`n  [i] Actualizacion pospuesta por el usuario." -ForegroundColor Gray
-            Start-Sleep -Seconds 1
+
+        [System.IO.File]::WriteAllText($batPath, $batContent, [System.Text.Encoding]::ASCII)
+        if (-not (Test-Path -LiteralPath $batPath -PathType Leaf)) {
+            throw "No se pudo generar '$batPath'."
         }
+        Write-Log -LogLevel INFO -Message "UPDATER: Instalador diferido generado correctamente."
+
+        Write-Host "`n  [!] El sistema se cerrara para aplicar los cambios." -ForegroundColor Red
+        Write-Log -LogLevel ACTION -Message "UPDATER: Lanzando ApplyUpdate.cmd y cerrando la sesion actual para liberar archivos."
+        Start-Sleep -Seconds 2
+
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batPath`"" -ErrorAction Stop | Out-Null
+        Write-Log -LogLevel INFO -Message "UPDATER: ApplyUpdate.cmd iniciado correctamente. El registro continuara desde el proceso CMD."
+        exit
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        $errorType = $_.Exception.GetType().FullName
+        $errorLine = $_.InvocationInfo.ScriptLineNumber
+
+        Write-Host "`n  [ERROR] Fallo la actualizacion: $errorMessage" -ForegroundColor Red
+        Write-Log -LogLevel ERROR -Message "UPDATER: Fallo durante la preparacion de la actualizacion. Error: $errorMessage. Tipo: $errorType. Linea: $errorLine."
+
+        if ($tempZip -and (Test-Path -LiteralPath $tempZip)) {
+            try {
+                Remove-Item -LiteralPath $tempZip -Force -ErrorAction Stop
+                Write-Log -LogLevel ACTION -Message "UPDATER: Paquete temporal eliminado tras el error: '$tempZip'."
+            }
+            catch {
+                Write-Log -LogLevel WARN -Message "UPDATER: No se pudo eliminar '$tempZip' despues del error. Motivo: $($_.Exception.Message)"
+            }
+        }
+
+        if ($tempExtract -and (Test-Path -LiteralPath $tempExtract)) {
+            try {
+                Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction Stop
+                Write-Log -LogLevel ACTION -Message "UPDATER: Carpeta temporal eliminada tras el error: '$tempExtract'."
+            }
+            catch {
+                Write-Log -LogLevel WARN -Message "UPDATER: No se pudo eliminar '$tempExtract' despues del error. Motivo: $($_.Exception.Message)"
+            }
+        }
+
+        Start-Sleep -Seconds 3
     }
 }
 
@@ -478,16 +653,20 @@ foreach ($modulo in $modulosDisponibles) {
     [void]$modulosACargar.Add($modulo)
 }
 
+$modulosCargados = 0
+
 foreach ($modulo in $modulosACargar) {
     try {
         . $modulo.FullName
-        Write-Log -LogLevel INFO -Message "Modulo cargado: $($modulo.Name)"
+        $modulosCargados++
     }
     catch {
         Write-Log -LogLevel ERROR -Message "Fallo al cargar '$($modulo.Name)': $($_.Exception.Message) (Linea $($_.InvocationInfo.ScriptLineNumber))"
         [void]$script:ModulosFallidos.Add($modulo.Name)
     }
 }
+
+Write-Log -LogLevel INFO -Message "Modulos funcionales: $modulosCargados cargados | $($script:ModulosFallidos.Count) fallidos | $($modulosOmitidos.Count) omitidos."
 
 if ($modulosOmitidos.Count -gt 0) {
     Write-Host "`n[ADVERTENCIA] Se omitieron $($modulosOmitidos.Count) archivo(s) por parecer copias duplicadas:" -ForegroundColor Yellow
@@ -861,8 +1040,8 @@ function Invoke-MainMenuLoop {
     
     # Bucle infinito controlado
     while ($true) {
-        Clear-Host
-        
+		Clear-Host
+
         # --- ENCABEZADO UNIFICADO ---
         $consoleWidth = $Host.UI.RawUI.WindowSize.Width
         $line = "=" * $consoleWidth
